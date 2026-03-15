@@ -2,6 +2,13 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Runtime data (created by orbital dev)
+.claude/orbital/
+.claude/orbital-events/
+.claude/config/workflow-manifest.sh
+.claude/config/workflow.json
+.claude/config/workflows/
+
 # OS files
 .DS_Store
 Thumbs.db

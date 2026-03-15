@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "$id": "https://orbital-command.dev/schemas/orbital.config.schema.json",
+  "title": "Orbital Command Configuration",
+  "description": "Configuration file for Orbital Command — mission control for Claude Code projects",
+  "type": "object",
+  "properties": {
+    "projectName": { "type": "string", "description": "Display name in dashboard header", "default": "My Project" },
+    "scopesDir": { "type": "string", "description": "Directory for scope documents (relative to project root)", "default": "scopes" },
+    "eventsDir": { "type": "string", "description": "Directory for event bus files (relative to project root)", "default": ".claude/orbital-events" },
+    "dbDir": { "type": "string", "description": "Directory for SQLite database (relative to project root)", "default": ".claude/orbital" },
+    "configDir": { "type": "string", "description": "Directory for workflow config + manifest (relative to project root)", "default": ".claude/config" },
+    "serverPort": { "type": "integer", "description": "API server port", "default": 4444, "minimum": 1, "maximum": 65535 },
+    "clientPort": { "type": "integer", "description": "Vite dev server port", "default": 4445, "minimum": 1, "maximum": 65535 },
+    "terminal": {
+      "type": "object",
+      "properties": {
+        "adapter": { "type": "string", "enum": ["auto", "iterm2", "subprocess", "none"], "default": "auto", "description": "Terminal adapter for session launching" },
+        "profilePrefix": { "type": "string", "default": "Orbital", "description": "Prefix for iTerm2 dynamic profile names" }
+      },
+      "additionalProperties": false
+    },
+    "claude": {
+      "type": "object",
+      "properties": {
+        "executable": { "type": "string", "default": "claude", "description": "Path to Claude Code CLI executable" },
+        "flags": { "type": "array", "items": { "type": "string" }, "default": ["--dangerously-skip-permissions"], "description": "Default flags for Claude Code sessions" }
+      },
+      "additionalProperties": false
+    },
+    "commands": {
+      "type": "object",
+      "description": "Build/test/lint commands. Set to null to skip.",
+      "properties": {
+        "typeCheck": { "type": ["string", "null"], "default": null },
+        "lint": { "type": ["string", "null"], "default": null },
+        "build": { "type": ["string", "null"], "default": null },
+        "test": { "type": ["string", "null"], "default": null },
+        "validateTemplates": { "type": ["string", "null"], "default": null },
+        "validateDocs": { "type": ["string", "null"], "default": null },
+        "checkRules": { "type": ["string", "null"], "default": null }
+      },
+      "additionalProperties": false
+    },
+    "categories": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": ["feature", "bugfix", "refactor", "infrastructure", "docs"],
+      "description": "Scope categories shown in the dashboard"
+    },
+    "agents": {
+      "type": "array",
+      "description": "Agent definitions for the dashboard and agent system",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "emoji", "color"],
+        "properties": {
+          "id": { "type": "string", "description": "Agent identifier (lowercase, kebab-case)" },
+          "label": { "type": "string", "description": "Display name" },
+          "emoji": { "type": "string", "description": "Emoji icon for the agent" },
+          "color": { "type": "string", "description": "Hex color for dashboard display" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "healthChecks": {
+      "type": "object",
+      "description": "Health check URLs by environment",
+      "properties": {
+        "staging": { "type": "string", "format": "uri" },
+        "production": { "type": "string", "format": "uri" }
+      },
+      "additionalProperties": { "type": "string", "format": "uri" }
+    }
+  },
+  "additionalProperties": false
+}

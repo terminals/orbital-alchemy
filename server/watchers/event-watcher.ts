@@ -1,4 +1,4 @@
-import chokidar from 'chokidar';
+import chokidar, { type FSWatcher } from 'chokidar';
 import path from 'path';
 import fs from 'fs';
 import { parseEventFile } from '../parsers/event-parser.js';
@@ -14,7 +14,7 @@ const ARCHIVE_DIR_NAME = 'processed';
 export function startEventWatcher(
   eventsDir: string,
   eventService: EventService
-): chokidar.FSWatcher {
+): FSWatcher {
   // Ensure directories exist
   fs.mkdirSync(eventsDir, { recursive: true });
   const archiveDir = path.join(eventsDir, ARCHIVE_DIR_NAME);
@@ -32,8 +32,6 @@ export function startEventWatcher(
     persistent: true,
     ignoreInitial: true,
     depth: 0,
-    // Allow watching inside dotfile directories
-    dot: true,
   });
 
   watcher.on('add', (filePath: string) => {

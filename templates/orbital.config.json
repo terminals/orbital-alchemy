@@ -1,4 +1,5 @@
 {
+  "$schema": "https://orbital-command.dev/schemas/orbital.config.schema.json",
   "projectName": "My Project",
   "scopesDir": "scopes",
   "eventsDir": ".claude/orbital-events",

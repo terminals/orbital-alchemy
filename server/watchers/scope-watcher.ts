@@ -1,11 +1,11 @@
-import chokidar from 'chokidar';
+import chokidar, { type FSWatcher } from 'chokidar';
 import path from 'path';
 import type { ScopeService } from '../services/scope-service.js';
 
 export function startScopeWatcher(
   scopesDir: string,
   scopeService: ScopeService
-): chokidar.FSWatcher {
+): FSWatcher {
   const watcher = chokidar.watch(scopesDir, {
     ignored: [/(^|[/\\])\../, /node_modules/, /_template\.md$/],
     persistent: true,

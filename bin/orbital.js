@@ -325,7 +325,7 @@ function cmdInit(args) {
   // 8. Merge hook registrations into settings.local.json
   console.log('');
   const settingsTarget = path.join(claudeDir, 'settings.local.json');
-  const settingsSrc = path.join(TEMPLATES_DIR, 'settings-hooks-reference.json');
+  const settingsSrc = path.join(TEMPLATES_DIR, 'settings-hooks.json');
   mergeSettingsHooks(settingsTarget, settingsSrc);
   console.log(`  Merged   hook registrations into .claude/settings.local.json`);
 
@@ -372,7 +372,7 @@ function cmdDev() {
   const viteProcess = spawn(
     'npx',
     ['vite', '--config', path.join(PACKAGE_ROOT, 'vite.config.ts'), '--port', String(clientPort)],
-    { stdio: 'inherit', cwd: PACKAGE_ROOT }
+    { stdio: 'inherit', env, cwd: PACKAGE_ROOT }
   );
 
   // Clean shutdown on SIGINT/SIGTERM
@@ -495,7 +495,7 @@ function cmdUpdate(args) {
 
   // 4. Re-merge settings hooks
   const settingsTarget = path.join(claudeDir, 'settings.local.json');
-  const settingsSrc = path.join(TEMPLATES_DIR, 'settings-hooks-reference.json');
+  const settingsSrc = path.join(TEMPLATES_DIR, 'settings-hooks.json');
   mergeSettingsHooks(settingsTarget, settingsSrc);
   console.log(`  Merged   hook registrations into .claude/settings.local.json`);
 

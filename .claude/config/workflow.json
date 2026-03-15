@@ -1,0 +1,527 @@
+{
+  "version": 1,
+  "name": "Default Workflow",
+  "description": "Default 9-list, 15-edge scope lifecycle workflow",
+  "lists": [
+    {
+      "id": "icebox",
+      "label": "Icebox",
+      "order": 0,
+      "group": "planning",
+      "color": "187 72% 43%",
+      "hex": "#1faabd",
+      "isEntryPoint": true,
+      "hasDirectory": true
+    },
+    {
+      "id": "planning",
+      "label": "Planning",
+      "order": 1,
+      "group": "planning",
+      "color": "220 9% 46%",
+      "hex": "#6b7280",
+      "hasDirectory": true
+    },
+    {
+      "id": "backlog",
+      "label": "Backlog",
+      "order": 2,
+      "group": "planning",
+      "color": "231 99% 66%",
+      "hex": "#526cfe",
+      "supportsSprint": true,
+      "hasDirectory": true
+    },
+    {
+      "id": "implementing",
+      "label": "Implementing",
+      "order": 3,
+      "group": "development",
+      "color": "40 100% 50%",
+      "hex": "#ffaa00",
+      "hasDirectory": true,
+      "sessionKey": "implement"
+    },
+    {
+      "id": "review",
+      "label": "Review",
+      "order": 4,
+      "group": "development",
+      "color": "263 70% 50%",
+      "hex": "#6b26d9",
+      "hasDirectory": true,
+      "sessionKey": "reviewGate"
+    },
+    {
+      "id": "completed",
+      "label": "Completed",
+      "order": 5,
+      "group": "development",
+      "color": "175 70% 42%",
+      "hex": "#20b6aa",
+      "supportsBatch": true,
+      "hasDirectory": true
+    },
+    {
+      "id": "dev",
+      "label": "Dev",
+      "order": 6,
+      "group": "deploy-dev",
+      "color": "199 100% 63%",
+      "hex": "#42c3ff",
+      "supportsBatch": true,
+      "hasDirectory": true,
+      "sessionKey": "pushToDev"
+    },
+    {
+      "id": "staging",
+      "label": "Staging",
+      "order": 7,
+      "group": "deploy-staging",
+      "color": "330 81% 60%",
+      "hex": "#ec4699",
+      "supportsBatch": true,
+      "hasDirectory": true,
+      "gitBranch": "staging",
+      "sessionKey": "pushToStaging"
+    },
+    {
+      "id": "production",
+      "label": "Production",
+      "order": 8,
+      "group": "deploy-prod",
+      "color": "153 100% 39%",
+      "hex": "#00c76d",
+      "hasDirectory": true,
+      "gitBranch": "main",
+      "sessionKey": "pushToProduction"
+    }
+  ],
+  "edges": [
+    {
+      "from": "icebox",
+      "to": "planning",
+      "direction": "forward",
+      "command": null,
+      "confirmLevel": "quick",
+      "label": "Create Scope",
+      "description": "Launches /scope create with idea context pre-filled.",
+      "dispatchOnly": false,
+      "hooks": ["session-enforcer", "block-workarounds", "scope-create-gate", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
+    },
+    {
+      "from": "planning",
+      "to": "backlog",
+      "direction": "forward",
+      "command": "/scope review {id}",
+      "confirmLevel": "quick",
+      "label": "Team Review",
+      "description": "Runs full agent team review, locks spec, moves to backlog.",
+      "dispatchOnly": true,
+      "hooks": ["session-enforcer", "block-workarounds", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
+    },
+    {
+      "from": "planning",
+      "to": "implementing",
+      "direction": "shortcut",
+      "command": "/scope implement {id}",
+      "confirmLevel": "full",
+      "checklist": [
+        "Scope is small and well-understood",
+        "Spec is complete — no open questions",
+        "No cross-scope dependencies to resolve first"
+      ],
+      "label": "Fast Track",
+      "description": "Skips team review and starts implementing directly.",
+      "dispatchOnly": false,
+      "humanOnly": true,
+      "hooks": ["session-enforcer", "block-workarounds", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
+    },
+    {
+      "from": "backlog",
+      "to": "implementing",
+      "direction": "forward",
+      "command": "/scope implement {id}",
+      "confirmLevel": "quick",
+      "label": "Start Implementing",
+      "description": "Opens a Claude session running /scope implement.",
+      "dispatchOnly": true,
+      "hooks": ["session-enforcer", "block-workarounds", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
+    },
+    {
+      "from": "implementing",
+      "to": "review",
+      "direction": "forward",
+      "command": "/scope review-gate {id}",
+      "confirmLevel": "full",
+      "checklist": [
+        "Implementation is complete and tested",
+        "DoD self-assessment done in scope document",
+        "Must be run in a different session than implementation"
+      ],
+      "label": "Run Review Gate",
+      "description": "Launches formal review gate. Moves to review only if all criteria pass.",
+      "skipServerTransition": true,
+      "dispatchOnly": true,
+      "hooks": ["session-enforcer", "block-workarounds", "review-gate-check", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
+    },
+    {
+      "from": "implementing",
+      "to": "completed",
+      "direction": "shortcut",
+      "command": null,
+      "confirmLevel": "full",
+      "checklist": [
+        "Change is small and self-contained",
+        "I have manually verified this change works",
+        "No review verdict needed for this scope"
+      ],
+      "label": "Skip Review",
+      "description": "Moves directly to completed without running the review gate.",
+      "dispatchOnly": false,
+      "humanOnly": true,
+      "hooks": ["session-enforcer", "block-workarounds", "completion-checklist", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
+    },
+    {
+      "from": "review",
+      "to": "completed",
+      "direction": "forward",
+      "command": "/work save",
+      "confirmLevel": "full",
+      "checklist": [
+        "Review gate passed (verdict file exists)",
+        "No uncommitted changes outside scope"
+      ],
+      "label": "Commit",
+      "description": "Commits scope work to feature branch.",
+      "skipServerTransition": true,
+      "dispatchOnly": true,
+      "hooks": ["session-enforcer", "block-workarounds", "completion-checklist", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update", "scope-commit-logger"]
+    },
+    {
+      "from": "completed",
+      "to": "dev",
+      "direction": "forward",
+      "command": "/git pr-dev",
+      "confirmLevel": "full",
+      "checklist": [
+        "All scope commits on feature branch",
+        "No merge conflicts with dev"
+      ],
+      "label": "Merge to Dev",
+      "description": "Merges feature branch into dev. Batches multiple completed scopes.",
+      "dispatchOnly": true,
+      "hooks": ["session-enforcer", "block-workarounds", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
+    },
+    {
+      "from": "dev",
+      "to": "staging",
+      "direction": "forward",
+      "command": "/git pr-staging",
+      "confirmLevel": "full",
+      "checklist": [
+        "Dev branch pushed to remote",
+        "No merge conflicts with staging",
+        "Tests pass on dev branch"
+      ],
+      "label": "PR to Staging",
+      "description": "Creates a GitHub PR from dev to staging.",
+      "dispatchOnly": true,
+      "hooks": ["session-enforcer", "block-workarounds", "lifecycle-gate", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update", "scope-commit-logger"]
+    },
+    {
+      "from": "staging",
+      "to": "production",
+      "direction": "forward",
+      "command": "/git pr-production",
+      "confirmLevel": "full",
+      "checklist": [
+        "Staging deployment verified healthy",
+        "No regressions in staging tests",
+        "Ready for production release"
+      ],
+      "label": "PR to Production",
+      "description": "Creates a release PR from staging to main for production.",
+      "dispatchOnly": true,
+      "hooks": ["session-enforcer", "block-workarounds", "lifecycle-gate", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update", "scope-commit-logger"]
+    },
+    {
+      "from": "review",
+      "to": "implementing",
+      "direction": "backward",
+      "command": "/scope implement {id}",
+      "confirmLevel": "full",
+      "checklist": [
+        "Review issues identified and documented",
+        "Scope spec updated if requirements changed"
+      ],
+      "label": "Back to Implementing",
+      "description": "Re-opens implementation to address review findings.",
+      "dispatchOnly": true,
+      "hooks": ["session-enforcer", "block-workarounds", "scope-transition", "orbital-scope-update"]
+    },
+    {
+      "from": "dev",
+      "to": "implementing",
+      "direction": "backward",
+      "command": "/scope implement {id}",
+      "confirmLevel": "full",
+      "checklist": [
+        "Regression or issue identified post-commit",
+        "Fix scope documented"
+      ],
+      "label": "Back to Implementing",
+      "description": "Re-opens implementation to fix issues found after commit.",
+      "dispatchOnly": true,
+      "hooks": ["session-enforcer", "block-workarounds", "scope-transition", "orbital-scope-update"]
+    },
+    {
+      "from": "completed",
+      "to": "implementing",
+      "direction": "backward",
+      "command": "/scope implement {id}",
+      "confirmLevel": "full",
+      "checklist": [
+        "Issue identified post-commit",
+        "Fix scope documented"
+      ],
+      "label": "Back to Implementing",
+      "description": "Re-opens implementation to fix issues found after commit.",
+      "dispatchOnly": true,
+      "hooks": ["session-enforcer", "block-workarounds", "scope-transition", "orbital-scope-update"]
+    },
+    {
+      "from": "planning",
+      "to": "icebox",
+      "direction": "backward",
+      "command": null,
+      "confirmLevel": "quick",
+      "label": "Demote to Idea",
+      "description": "Sends this scope back to the icebox as an idea.",
+      "dispatchOnly": false,
+      "humanOnly": true,
+      "hooks": ["session-enforcer", "block-workarounds", "scope-transition", "orbital-scope-update"]
+    },
+    {
+      "from": "backlog",
+      "to": "planning",
+      "direction": "backward",
+      "command": null,
+      "confirmLevel": "quick",
+      "label": "Revert to Planning",
+      "description": "Sends this scope back for more planning. Unlocks spec.",
+      "dispatchOnly": false,
+      "humanOnly": true,
+      "hooks": ["session-enforcer", "block-workarounds", "scope-transition", "orbital-scope-update"]
+    }
+  ],
+  "hooks": [
+    {
+      "id": "session-enforcer",
+      "label": "Session Authorization",
+      "timing": "before",
+      "type": "shell",
+      "target": ".claude/hooks/session-id-enforcer.sh",
+      "blocking": true,
+      "description": "Blocks unauthorized status transitions without a valid session",
+      "category": "guard"
+    },
+    {
+      "id": "block-workarounds",
+      "label": "Safety Guard",
+      "timing": "before",
+      "type": "shell",
+      "target": ".claude/hooks/block-workarounds.sh",
+      "blocking": true,
+      "description": "Blocks dangerous bash patterns (sed pipes, git add scopes/)",
+      "category": "guard"
+    },
+    {
+      "id": "completion-checklist",
+      "label": "Completion Checklist",
+      "timing": "before",
+      "type": "shell",
+      "target": ".claude/hooks/completion-checklist.sh",
+      "blocking": true,
+      "description": "Blocks completion if DoD items are unchecked",
+      "category": "guard"
+    },
+    {
+      "id": "review-gate-check",
+      "label": "Review Verdict Check",
+      "timing": "before",
+      "type": "shell",
+      "target": ".claude/hooks/review-gate-check.sh",
+      "blocking": false,
+      "description": "Warns if review verdict file is missing",
+      "category": "gate"
+    },
+    {
+      "id": "blocker-check",
+      "label": "Blocker Check",
+      "timing": "before",
+      "type": "shell",
+      "target": ".claude/hooks/blocker-check.sh",
+      "blocking": false,
+      "description": "Warns if unresolved blockers exist on the scope",
+      "category": "gate"
+    },
+    {
+      "id": "dependency-check",
+      "label": "Dependency Check",
+      "timing": "before",
+      "type": "shell",
+      "target": ".claude/hooks/dependency-check.sh",
+      "blocking": false,
+      "description": "Warns if cross-scope dependencies are unresolved",
+      "category": "gate"
+    },
+    {
+      "id": "scope-create-gate",
+      "label": "Scope Creation Gate",
+      "timing": "before",
+      "type": "shell",
+      "target": ".claude/hooks/scope-create-gate.sh",
+      "blocking": false,
+      "description": "Validates new scope structure before creation",
+      "category": "gate"
+    },
+    {
+      "id": "scope-transition",
+      "label": "Scope File Mover",
+      "timing": "before",
+      "type": "shell",
+      "target": ".claude/hooks/scope-transition.sh",
+      "blocking": false,
+      "description": "Moves scope files between directories and updates frontmatter",
+      "category": "lifecycle"
+    },
+    {
+      "id": "lifecycle-gate",
+      "label": "Git Lifecycle Gate",
+      "timing": "before",
+      "type": "shell",
+      "target": ".claude/hooks/scope-lifecycle-gate.sh",
+      "blocking": false,
+      "description": "Intercepts git push/commit and triggers batch transitions",
+      "category": "lifecycle"
+    },
+    {
+      "id": "orbital-scope-update",
+      "label": "Dashboard Sync",
+      "timing": "after",
+      "type": "shell",
+      "target": ".claude/hooks/orbital-scope-update.sh",
+      "blocking": false,
+      "description": "Pushes status updates to the Orbital Command dashboard",
+      "category": "observer"
+    },
+    {
+      "id": "scope-commit-logger",
+      "label": "Commit Logger",
+      "timing": "after",
+      "type": "shell",
+      "target": ".claude/hooks/scope-commit-logger.sh",
+      "blocking": false,
+      "description": "Logs git commits that mention scope IDs",
+      "category": "observer"
+    }
+  ],
+  "groups": [
+    { "id": "planning", "label": "Planning", "order": 0 },
+    { "id": "development", "label": "Development", "order": 1 },
+    { "id": "deploy-dev", "label": "Dev", "order": 2 },
+    { "id": "deploy-staging", "label": "Staging", "order": 3 },
+    { "id": "deploy-prod", "label": "Production", "order": 4 }
+  ],
+  "eventInference": [
+    {
+      "eventType": "SCOPE_STATUS_CHANGED",
+      "targetStatus": "",
+      "dataField": "to",
+      "forwardOnly": true
+    },
+    {
+      "eventType": "AGENT_STARTED",
+      "targetStatus": "implementing",
+      "forwardOnly": true
+    },
+    {
+      "eventType": "AGENT_STARTED",
+      "targetStatus": "review",
+      "conditions": { "mode": "review" },
+      "forwardOnly": true
+    },
+    {
+      "eventType": "AGENT_COMPLETED",
+      "targetStatus": "implementing",
+      "forwardOnly": true
+    },
+    {
+      "eventType": "AGENT_COMPLETED",
+      "targetStatus": "",
+      "conditions": {
+        "outcome": ["success", "failure", "committed"],
+        "dispatchResolution": true
+      },
+      "forwardOnly": false
+    },
+    {
+      "eventType": "AGENT_CONSENSUS",
+      "targetStatus": "implementing",
+      "forwardOnly": true
+    },
+    {
+      "eventType": "GATE_STARTED",
+      "targetStatus": "review",
+      "forwardOnly": true
+    },
+    {
+      "eventType": "GATE_PASSED",
+      "targetStatus": "review",
+      "forwardOnly": true
+    },
+    {
+      "eventType": "GATE_FAILED",
+      "targetStatus": "review",
+      "forwardOnly": true
+    },
+    {
+      "eventType": "ALL_GATES_PASSED",
+      "targetStatus": "review",
+      "forwardOnly": true
+    },
+    {
+      "eventType": "PR_CREATED",
+      "targetStatus": "review",
+      "forwardOnly": true
+    },
+    {
+      "eventType": "PR_MERGED",
+      "targetStatus": "review",
+      "forwardOnly": true
+    },
+    {
+      "eventType": "DEPLOY_STARTED",
+      "targetStatus": "",
+      "dataField": "environment",
+      "dataMap": { "production": "production", "_default": "staging" },
+      "forwardOnly": true
+    },
+    {
+      "eventType": "DEPLOY_HEALTHY",
+      "targetStatus": "",
+      "dataField": "environment",
+      "dataMap": { "production": "production", "_default": "staging" },
+      "forwardOnly": true
+    },
+    {
+      "eventType": "SCOPE_COMPLETED",
+      "targetStatus": "completed",
+      "forwardOnly": true
+    }
+  ],
+  "allowedCommandPrefixes": ["/scope ", "/work ", "/git ", "/test "],
+  "terminalStatuses": ["completed", "dev", "staging", "production"],
+  "commitBranchPatterns": "^(dev|feat/|fix/|scope/|chore/)"
+}

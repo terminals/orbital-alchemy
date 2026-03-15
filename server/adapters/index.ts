@@ -1,5 +1,7 @@
 import type { TerminalAdapter } from './terminal-adapter.js';
 import { getConfig } from '../config.js';
+import { ITerm2Adapter, isITerm2Available } from './iterm2-adapter.js';
+import { SubprocessAdapter } from './subprocess-adapter.js';
 
 export type { TerminalAdapter, LaunchOptions, CategorizedLaunchOptions, WindowCategory } from './terminal-adapter.js';
 
@@ -25,8 +27,6 @@ export function getTerminalAdapter(): TerminalAdapter {
 
   if (preference === 'iterm2' || preference === 'auto') {
     try {
-      // Dynamic import to avoid loading AppleScript dependencies on non-macOS
-      const { ITerm2Adapter, isITerm2Available } = require('./iterm2-adapter.js');
       if (preference === 'iterm2' || isITerm2Available()) {
         _adapter = new ITerm2Adapter();
         return _adapter;
@@ -36,8 +36,6 @@ export function getTerminalAdapter(): TerminalAdapter {
     }
   }
 
-  // Fallback to subprocess
-  const { SubprocessAdapter } = require('./subprocess-adapter.js');
   _adapter = new SubprocessAdapter();
   return _adapter;
 }

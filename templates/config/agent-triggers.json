@@ -1,0 +1,93 @@
+{
+  "version": "1.0",
+  "patterns": [
+    {
+      "pattern": "encrypt.*\\.ts$",
+      "agents": ["attacker"],
+      "mode": "SECURITY",
+      "keyPoints": [
+        "Secrets ONLY decrypted at moment of use?",
+        "No logging of decrypted material?",
+        "Memory cleared after use?"
+      ]
+    },
+    {
+      "pattern": "auth.*\\.ts$",
+      "agents": ["attacker"],
+      "mode": "SECURITY",
+      "keyPoints": [
+        "Auth middleware applied?",
+        "User ownership verified (not just authenticated)?",
+        "All parameters validated with bounds?"
+      ]
+    },
+    {
+      "pattern": "controllers/.*\\.ts$",
+      "agents": ["attacker", "architect"],
+      "mode": "SECURITY",
+      "keyPoints": [
+        "Auth middleware applied?",
+        "User ownership verified for all resources?",
+        "All parameters validated (type, length, range)?"
+      ]
+    },
+    {
+      "pattern": "frontend/src/.*\\.(tsx?|jsx?)$",
+      "agents": ["frontend-designer"],
+      "mode": "FULL",
+      "keyPoints": [
+        "Follows existing component patterns?",
+        "Proper loading/error states?",
+        "Consistent with design system?"
+      ]
+    },
+    {
+      "pattern": "migrations/.*\\.(ts|sql)$",
+      "agents": ["architect", "devops-expert"],
+      "mode": "FULL",
+      "keyPoints": [
+        "Backward compatible or versioned?",
+        "Rollback script provided?",
+        "Existing data migration path?"
+      ]
+    },
+    {
+      "pattern": ".*\\.test\\.ts$",
+      "agents": ["rules-enforcer"],
+      "mode": "FULL",
+      "keyPoints": [
+        "Tests follow project conventions?",
+        "Adequate coverage for the change?",
+        "Edge cases covered?"
+      ]
+    },
+    {
+      "pattern": "config/.*\\.ts$",
+      "agents": ["chaos"],
+      "mode": "FULL",
+      "keyPoints": [
+        "What happens if this config value is wrong?",
+        "Are there sensible defaults?",
+        "Migration needed for existing deployments?"
+      ]
+    },
+    {
+      "pattern": "middleware/.*\\.ts$",
+      "agents": ["attacker", "architect"],
+      "mode": "SECURITY",
+      "keyPoints": [
+        "Security middleware correctly applied?",
+        "Error handling doesn't leak internals?",
+        "Middleware ordering correct?"
+      ]
+    }
+  ],
+  "agentEmojis": {
+    "attacker": "\ud83d\udde1\ufe0f",
+    "chaos": "\ud83d\udca5",
+    "frontend-designer": "\ud83c\udfa8",
+    "architect": "\ud83c\udfd7\ufe0f",
+    "devops-expert": "\ud83d\ude80",
+    "rules-enforcer": "\ud83d\udccb"
+  }
+}

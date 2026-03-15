@@ -1,0 +1,26 @@
+{
+  "name": "Development",
+  "version": 1,
+  "lists": [
+    { "id": "backlog", "label": "Backlog", "order": 0, "color": "#536dfe" },
+    { "id": "implementing", "label": "Implementing", "order": 1, "color": "#ffaa00", "sessionKey": "implement" },
+    { "id": "review", "label": "Review", "order": 2, "color": "#6b26d9", "sessionKey": "reviewGate" },
+    { "id": "completed", "label": "Completed", "order": 3, "color": "#20b6aa" },
+    { "id": "dev", "label": "Dev", "order": 4, "color": "#42c3ff", "gitBranch": "dev" }
+  ],
+  "edges": [
+    { "from": "backlog", "to": "implementing", "direction": "forward", "command": "/scope implement {id}", "dispatchOnly": true },
+    { "from": "implementing", "to": "review", "direction": "forward", "command": "/scope review-gate {id}", "skipServerTransition": true },
+    { "from": "review", "to": "completed", "direction": "forward", "command": "/work save", "skipServerTransition": true, "dispatchOnly": true },
+    { "from": "completed", "to": "dev", "direction": "forward", "command": "/git pr-dev", "dispatchOnly": true },
+    { "from": "review", "to": "implementing", "direction": "backward" },
+    { "from": "completed", "to": "implementing", "direction": "backward" }
+  ],
+  "hooks": [],
+  "eventInference": [],
+  "config": {
+    "allowedCommandPrefixes": ["/scope ", "/work ", "/git ", "/test "],
+    "terminalStatuses": ["dev"],
+    "commitBranchPatterns": "^(dev|feat/|fix/|scope/|chore/)"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "Minimal",
+  "version": 1,
+  "lists": [
+    { "id": "todo", "label": "To Do", "order": 0, "color": "#536dfe" },
+    { "id": "in-progress", "label": "In Progress", "order": 1, "color": "#ffaa00" },
+    { "id": "done", "label": "Done", "order": 2, "color": "#00c76d" }
+  ],
+  "edges": [
+    { "from": "todo", "to": "in-progress", "direction": "forward" },
+    { "from": "in-progress", "to": "done", "direction": "forward" }
+  ],
+  "hooks": [],
+  "eventInference": [],
+  "config": {
+    "allowedCommandPrefixes": ["/scope ", "/work ", "/git "],
+    "terminalStatuses": ["done"],
+    "commitBranchPatterns": "^(main|feat/|fix/|chore/)"
+  }
+}

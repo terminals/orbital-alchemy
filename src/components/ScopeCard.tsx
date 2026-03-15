@@ -1,0 +1,178 @@
+import { useDraggable } from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
+import { Lightbulb, Sparkles } from 'lucide-react';
+import type { Scope, CardDisplayConfig } from '@/types';
+import { Card, CardContent } from '@/components/ui/card';
+import { cn, formatScopeId } from '@/lib/utils';
+import { useActiveDispatches } from '@/hooks/useActiveDispatches';
+import { useWorkflow } from '@/hooks/useWorkflow';
+
+interface ScopeCardProps {
+  scope: Scope;
+  onClick?: (scope: Scope) => void;
+  isDragOverlay?: boolean;
+  cardDisplay?: CardDisplayConfig;
+  dimmed?: boolean;
+}
+
+const PRIORITY_COLOR: Record<string, string> = {
+  critical: 'border-ask-red text-ask-red',
+  high:     'border-warning-amber text-warning-amber',
+  medium:   'border-accent-blue text-accent-blue',
+  low:      'border-muted-foreground/30 text-muted-foreground',
+};
+
+const CATEGORY_COLOR: Record<string, string> = {
+  'trading':    'border-category-trading text-category-trading',
+  'funding':    'border-category-funding text-category-funding',
+  'blockchain': 'border-category-blockchain text-category-blockchain',
+  'security':   'border-category-security text-category-security',
+  'frontend':   'border-category-frontend text-category-frontend',
+  'platform':   'border-category-platform text-category-platform',
+  'devex':      'border-category-devex text-category-devex',
+};
+
+const CATEGORY_BORDER: Record<string, string> = {
+  'trading':    'border-l-2 border-l-category-trading scope-cat-trading',
+  'funding':    'border-l-2 border-l-category-funding scope-cat-funding',
+  'blockchain': 'border-l-2 border-l-category-blockchain scope-cat-blockchain',
+  'security':   'border-l-2 border-l-category-security scope-cat-security',
+  'frontend':   'border-l-2 border-l-category-frontend scope-cat-frontend',
+  'platform':   'border-l-2 border-l-category-platform scope-cat-platform',
+  'devex':      'border-l-2 border-l-category-devex scope-cat-devex',
+};
+
+const GHOST = 'inline-block rounded border px-1.5 py-0 text-[10px] uppercase bg-transparent';
+
+function abbreviateEffort(raw: string): string {
+  const s = raw.toLowerCase().trim();
+  const minMatch = s.match(/^~?(\d+)(?:\s*-\s*\d+)?\s*min/);
+  if (minMatch) return `${minMatch[1]}M`;
+  const hrMatch = s.match(/^~?(\d+(?:\.\d+)?)(?:\s*-\s*\d+(?:\.\d+)?)?\s*hour/);
+  if (hrMatch) return `${hrMatch[1]}H`;
+  const parenMatch = s.match(/\((\d+(?:\.\d+)?)(?:\s*-\s*\d+(?:\.\d+)?)?\s*(hour|min)/);
+  if (parenMatch) return `${parenMatch[1]}${parenMatch[2].startsWith('h') ? 'H' : 'M'}`;
+  if (s.includes('large') || s.includes('multi')) return 'LG';
+  if (s.includes('medium') || s.includes('half')) return 'MD';
+  if (s.includes('small')) return 'SM';
+  if (s === 'tbd') return 'TBD';
+  return 'TBD';
+}
+
+export function ScopeCard({ scope, onClick, isDragOverlay, cardDisplay, dimmed }: ScopeCardProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    isDragging,
+  } = useDraggable({
+    id: scope.id,
+    disabled: isDragOverlay || dimmed,
+  });
+
+  const style = transform
+    ? { transform: CSS.Translate.toString(transform) }
+    : undefined;
+
+  const { engine } = useWorkflow();
+  const { activeScopes } = useActiveDispatches();
+  const entryPointId = engine.getEntryPoint().id;
+  const isIdea = scope.status === entryPointId;
+  const isGhost = isIdea && !!scope.is_ghost;
+  const isDispatched = !isIdea && activeScopes.has(scope.id);
+
+  return (
+    <Card
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        'scope-card cursor-grab transition-[colors,opacity] duration-200 hover:bg-surface-light active:cursor-grabbing',
+        isGhost
+          ? 'scope-card-ghost ghost-shimmer opacity-70'
+          : isIdea
+          ? 'border-l-2 border-dashed border-l-warning-amber/60'
+          : scope.category ? CATEGORY_BORDER[scope.category] : '',
+        isDispatched && 'scope-card-dispatched',
+        isDragging && 'opacity-30',
+        dimmed && !isDragging && 'opacity-30 cursor-default',
+      )}
+      onClick={() => {
+        if (!isDragging) onClick?.(scope);
+      }}
+      {...attributes}
+      {...listeners}
+    >
+      <CardContent className="px-2.5 py-1.5">
+        {/* Header: ID/idea label + badges */}
+        <div className="mb-1.5 flex items-center gap-1.5">
+          {isGhost ? (
+            <span className="flex items-center gap-1 text-xxs text-purple-400">
+              <Sparkles className="h-3 w-3" />
+              ai suggestion
+            </span>
+          ) : isIdea ? (
+            <span className="flex items-center gap-1 text-xxs text-warning-amber">
+              <Lightbulb className="h-3 w-3" />
+              idea
+            </span>
+          ) : (
+            <span className="font-mono text-xxs text-muted-foreground flex items-center gap-1">
+              {isDispatched && <span className="h-1.5 w-1.5 rounded-full bg-pink-500 animate-pulse" />}
+              {formatScopeId(scope.id)}
+            </span>
+          )}
+          {!isIdea && (
+            <div className="ml-auto flex items-center gap-1">
+              {scope.effort_estimate && cardDisplay?.effort !== false && (
+                <span className={cn(GHOST, 'effort-ghost border-muted-foreground/30 text-muted-foreground')}>
+                  {abbreviateEffort(scope.effort_estimate)}
+                </span>
+              )}
+              {scope.category && cardDisplay?.category !== false && (
+                <span className={cn(
+                  GHOST,
+                  CATEGORY_COLOR[scope.category] ?? 'border-muted-foreground/30 text-muted-foreground'
+                )}>
+                  {scope.category}
+                </span>
+              )}
+              {scope.priority && cardDisplay?.priority !== false && (
+                <span className={cn(
+                  GHOST,
+                  PRIORITY_COLOR[scope.priority] ?? 'border-muted-foreground/30 text-muted-foreground'
+                )}>
+                  {scope.priority}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Title */}
+        <h3 className="text-xs font-light leading-snug line-clamp-2">
+          {scope.title}
+        </h3>
+
+        {/* Tags (ideas don't have tags) */}
+        {!isIdea && scope.tags.length > 0 && cardDisplay?.tags !== false && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {scope.tags.slice(0, 3).map((tag) => (
+              <span
+                key={tag}
+                className="glass-pill inline-block rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+              >
+                {tag}
+              </span>
+            ))}
+            {scope.tags.length > 3 && (
+              <span className="text-[10px] text-muted-foreground">
+                +{scope.tags.length - 3}
+              </span>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

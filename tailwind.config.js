@@ -88,6 +88,7 @@ export default {
         'agent': {
           'attacker':  'var(--agent-attacker, #ff1744)',
           'chaos':     'var(--agent-chaos, #F97316)',
+          'solana':    'var(--agent-solana, #8B5CF6)',
           'frontend':  'var(--agent-frontend, #EC4899)',
           'architect': 'var(--agent-architect, #536dfe)',
           'devops':    'var(--agent-devops, #40c4ff)',

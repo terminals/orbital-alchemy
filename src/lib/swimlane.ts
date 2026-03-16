@@ -30,13 +30,11 @@ const PRIORITY_LANE_COLOR: Record<string, string> = {
 };
 
 const CATEGORY_LANE_COLOR: Record<string, string> = {
-  trading: 'bg-category-trading',
-  funding: 'bg-category-funding',
-  blockchain: 'bg-category-blockchain',
-  security: 'bg-category-security',
-  frontend: 'bg-category-frontend',
-  platform: 'bg-category-platform',
-  devex: 'bg-category-devex',
+  feature: 'bg-category-feature',
+  bugfix: 'bg-category-bugfix',
+  refactor: 'bg-category-refactor',
+  infrastructure: 'bg-category-infrastructure',
+  docs: 'bg-category-docs',
 };
 
 const DEP_LANE_LABEL: Record<string, string> = {

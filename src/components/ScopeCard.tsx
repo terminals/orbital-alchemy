@@ -23,23 +23,19 @@ const PRIORITY_COLOR: Record<string, string> = {
 };
 
 const CATEGORY_COLOR: Record<string, string> = {
-  'trading':    'border-category-trading text-category-trading',
-  'funding':    'border-category-funding text-category-funding',
-  'blockchain': 'border-category-blockchain text-category-blockchain',
-  'security':   'border-category-security text-category-security',
-  'frontend':   'border-category-frontend text-category-frontend',
-  'platform':   'border-category-platform text-category-platform',
-  'devex':      'border-category-devex text-category-devex',
+  'feature':        'border-category-feature text-category-feature',
+  'bugfix':         'border-category-bugfix text-category-bugfix',
+  'refactor':       'border-category-refactor text-category-refactor',
+  'infrastructure': 'border-category-infrastructure text-category-infrastructure',
+  'docs':           'border-category-docs text-category-docs',
 };
 
 const CATEGORY_BORDER: Record<string, string> = {
-  'trading':    'border-l-2 border-l-category-trading scope-cat-trading',
-  'funding':    'border-l-2 border-l-category-funding scope-cat-funding',
-  'blockchain': 'border-l-2 border-l-category-blockchain scope-cat-blockchain',
-  'security':   'border-l-2 border-l-category-security scope-cat-security',
-  'frontend':   'border-l-2 border-l-category-frontend scope-cat-frontend',
-  'platform':   'border-l-2 border-l-category-platform scope-cat-platform',
-  'devex':      'border-l-2 border-l-category-devex scope-cat-devex',
+  'feature':        'border-l-2 border-l-category-feature scope-cat-feature',
+  'bugfix':         'border-l-2 border-l-category-bugfix scope-cat-bugfix',
+  'refactor':       'border-l-2 border-l-category-refactor scope-cat-refactor',
+  'infrastructure': 'border-l-2 border-l-category-infrastructure scope-cat-infrastructure',
+  'docs':           'border-l-2 border-l-category-docs scope-cat-docs',
 };
 
 const GHOST = 'inline-block rounded border px-1.5 py-0 text-[10px] uppercase bg-transparent';

@@ -39,13 +39,11 @@ const FIELD_LABEL: Record<FilterField, string> = {
 };
 
 const CATEGORY_COLOR: Record<string, string> = {
-  trading:    '#00c853',
-  funding:    '#ffab00',
-  blockchain: '#8B5CF6',
-  security:   '#ff1744',
-  frontend:   '#EC4899',
-  platform:   '#536dfe',
-  devex:      '#f97316',
+  feature:        '#536dfe',
+  bugfix:         '#ff1744',
+  refactor:       '#8B5CF6',
+  infrastructure: '#40c4ff',
+  docs:           '#6B7280',
 };
 
 export function ScopeFilterBar({

@@ -49,7 +49,14 @@ const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
   cors: {
-    origin: [`http://localhost:${config.clientPort}`, `http://localhost:${config.serverPort}`],
+    origin: (origin, callback) => {
+      // Allow all localhost origins (dev tool, not production)
+      if (!origin || origin.startsWith('http://localhost:')) {
+        callback(null, true);
+      } else {
+        callback(new Error('CORS not allowed'));
+      }
+    },
     methods: ['GET', 'POST'],
   },
 });
@@ -172,7 +179,35 @@ function inferScopeStatus(
 
 // ─── Startup ───────────────────────────────────────────────
 
-httpServer.listen(config.serverPort, () => {
+/**
+ * Try to listen on the configured port. If EADDRINUSE, increment and retry
+ * (up to 10 attempts), matching Vite's port-conflict behavior.
+ */
+function startListening(port: number, maxAttempts = 10): void {
+  let attempt = 0;
+
+  httpServer.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE' && attempt < maxAttempts) {
+      attempt++;
+      const nextPort = port + attempt;
+      // eslint-disable-next-line no-console
+      console.log(`[Orbital] Port ${port + attempt - 1} is in use, trying ${nextPort}...`);
+      httpServer.listen(nextPort);
+    } else {
+      // eslint-disable-next-line no-console
+      console.error(`[Orbital] Failed to start server:`, err.message);
+      process.exit(1);
+    }
+  });
+
+  httpServer.listen(port);
+}
+
+startListening(config.serverPort);
+
+httpServer.on('listening', () => {
+  const addr = httpServer.address();
+  const actualPort = typeof addr === 'object' && addr ? addr.port : config.serverPort;
   // Sync scopes from filesystem on startup (populates in-memory cache)
   const scopeCount = scopeService.syncFromFilesystem();
 
@@ -253,8 +288,8 @@ httpServer.listen(config.serverPort, () => {
 ║                                                      ║
 ╠══════════════════════════════════════════════════════╣
 ║  Scopes:    ${String(scopeCount).padEnd(3)} loaded from filesystem          ║
-║  API:       http://localhost:${config.serverPort}/api/orbital/*       ║
-║  Socket.io: ws://localhost:${config.serverPort}                      ║
+║  API:       http://localhost:${actualPort}/api/orbital/*       ║
+║  Socket.io: ws://localhost:${actualPort}                      ║
 ╚══════════════════════════════════════════════════════╝
 `);
 });

@@ -358,7 +358,7 @@ function cmdDev() {
   const env = {
     ...process.env,
     ORBITAL_PROJECT_ROOT: projectRoot,
-    PORT: String(serverPort),
+    ORBITAL_SERVER_PORT: String(serverPort),
   };
 
   // Start the API server

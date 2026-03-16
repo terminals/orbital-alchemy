@@ -2,6 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
+const serverPort = process.env.ORBITAL_SERVER_PORT || '4444';
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -13,11 +15,11 @@ export default defineConfig({
     port: 4445,
     proxy: {
       '/api/orbital': {
-        target: 'http://localhost:4444',
+        target: `http://localhost:${serverPort}`,
         changeOrigin: true,
       },
       '/socket.io': {
-        target: 'http://localhost:4444',
+        target: `http://localhost:${serverPort}`,
         ws: true,
       },
     },

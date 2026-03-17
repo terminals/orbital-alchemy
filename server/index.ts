@@ -13,6 +13,7 @@ import { DeployService } from './services/deploy-service.js';
 import { SprintService } from './services/sprint-service.js';
 import { SprintOrchestrator } from './services/sprint-orchestrator.js';
 import { BatchOrchestrator } from './services/batch-orchestrator.js';
+import { ReadinessService } from './services/readiness-service.js';
 import { startScopeWatcher } from './watchers/scope-watcher.js';
 import { startEventWatcher } from './watchers/event-watcher.js';
 import { ensureDynamicProfiles } from './utils/terminal-launcher.js';
@@ -23,7 +24,11 @@ import { createDataRoutes } from './routes/data-routes.js';
 import { createDispatchRoutes } from './routes/dispatch-routes.js';
 import { createSprintRoutes } from './routes/sprint-routes.js';
 import { createWorkflowRoutes } from './routes/workflow-routes.js';
+import { createConfigRoutes } from './routes/config-routes.js';
+import { createGitRoutes } from './routes/git-routes.js';
 import { WorkflowService } from './services/workflow-service.js';
+import { GitService } from './services/git-service.js';
+import { GitHubService } from './services/github-service.js';
 import { WorkflowEngine } from '../shared/workflow-engine.js';
 import defaultWorkflow from '../shared/default-workflow.json' with { type: 'json' };
 import type { WorkflowConfig } from '../shared/workflow-config.js';
@@ -76,15 +81,26 @@ const deployService = new DeployService(db, io);
 const sprintService = new SprintService(db, io, scopeService);
 const sprintOrchestrator = new SprintOrchestrator(db, io, sprintService, scopeService, workflowEngine);
 const batchOrchestrator = new BatchOrchestrator(db, io, sprintService, scopeService, workflowEngine);
+const readinessService = new ReadinessService(scopeService, gateService, workflowEngine, config.projectRoot);
 const workflowService = new WorkflowService(config.configDir, workflowEngine, config.scopesDir, DEFAULT_CONFIG_PATH);
 workflowService.setSocketServer(io);
+
+// Ensure in-memory engine reflects the actual active config (may differ from bundled default
+// if the user applied a custom preset)
+workflowEngine.reload(workflowService.getActive());
+const gitService = new GitService(config.projectRoot, scopeCache);
+const githubService = new GitHubService(config.projectRoot);
+
+// Wire active-group guard into scope service (blocks manual moves for scopes in active batches/sprints)
+scopeService.setActiveGroupCheck((scopeId) => sprintService.getActiveGroupForScope(scopeId));
 
 // ─── Event Wiring ──────────────────────────────────────────
 
 eventService.onIngest((eventType, scopeId, data) => {
   // Handle SESSION_END: resolve all dispatches linked to the exiting PID
+  // and revert scopes that didn't complete their transition
   if (eventType === 'SESSION_END' && typeof data.pid === 'number') {
-    const count = resolveDispatchesByPid(db, io, data.pid);
+    const count = resolveDispatchesByPid(db, io, data.pid, scopeService);
     if (count > 0) {
       // eslint-disable-next-line no-console
       console.log(`[Orbital] SESSION_END: resolved ${count} dispatch(es) for PID ${data.pid}`);
@@ -128,11 +144,13 @@ app.get('/api/orbital/config', (_req, res) => {
   });
 });
 
-app.use('/api/orbital', createScopeRoutes({ db, io, scopeService, projectRoot: config.projectRoot }));
-app.use('/api/orbital', createDataRoutes({ db, io, gateService, deployService, projectRoot: config.projectRoot, inferScopeStatus }));
+app.use('/api/orbital', createScopeRoutes({ db, io, scopeService, readinessService, projectRoot: config.projectRoot, engine: workflowEngine }));
+app.use('/api/orbital', createDataRoutes({ db, io, gateService, deployService, engine: workflowEngine, projectRoot: config.projectRoot, inferScopeStatus }));
 app.use('/api/orbital', createDispatchRoutes({ db, io, scopeService, projectRoot: config.projectRoot, engine: workflowEngine }));
 app.use('/api/orbital', createSprintRoutes({ sprintService, sprintOrchestrator, batchOrchestrator }));
 app.use('/api/orbital', createWorkflowRoutes({ workflowService, projectRoot: config.projectRoot }));
+app.use('/api/orbital', createConfigRoutes({ projectRoot: config.projectRoot, workflowService, io }));
+app.use('/api/orbital', createGitRoutes({ gitService, githubService, engine: workflowEngine }));
 
 // ─── Socket.io ──────────────────────────────────────────────
 
@@ -203,6 +221,14 @@ function startListening(port: number, maxAttempts = 10): void {
   httpServer.listen(port);
 }
 
+// Module-level references for graceful shutdown
+let scopeWatcher: ReturnType<typeof startScopeWatcher>;
+let eventWatcher: ReturnType<typeof startEventWatcher>;
+let batchRecoveryInterval: ReturnType<typeof setInterval>;
+let staleCleanupInterval: ReturnType<typeof setInterval>;
+let sessionSyncInterval: ReturnType<typeof setInterval>;
+let gitPollInterval: ReturnType<typeof setInterval>;
+
 startListening(config.serverPort);
 
 httpServer.on('listening', () => {
@@ -222,11 +248,11 @@ httpServer.on('listening', () => {
   ensureDynamicProfiles();
 
   // Start file watchers
-  startScopeWatcher(config.scopesDir, scopeService);
-  startEventWatcher(config.eventsDir, eventService);
+  scopeWatcher = startScopeWatcher(config.scopesDir, scopeService);
+  eventWatcher = startEventWatcher(config.eventsDir, eventService);
   // Recover any active sprints/batches from before server restart
-  sprintOrchestrator.recoverActiveSprints().catch(() => {});
-  batchOrchestrator.recoverActiveBatches().catch(() => {});
+  sprintOrchestrator.recoverActiveSprints().catch(err => console.error('[Orbital] Sprint recovery failed:', err.message));
+  batchOrchestrator.recoverActiveBatches().catch(err => console.error('[Orbital] Batch recovery failed:', err.message));
 
   // Resolve stale batches on startup (catches stuck dispatches from previous runs)
   const staleBatchesResolved = batchOrchestrator.resolveStaleBatches();
@@ -236,12 +262,12 @@ httpServer.on('listening', () => {
   }
 
   // Poll active batch PIDs every 30s for two-phase completion (B-1)
-  setInterval(() => {
-    batchOrchestrator.recoverActiveBatches().catch(() => {});
+  batchRecoveryInterval = setInterval(() => {
+    batchOrchestrator.recoverActiveBatches().catch(err => console.error('[Orbital] Batch recovery failed:', err.message));
   }, 30_000);
 
   // Periodic stale dispatch + batch cleanup (crash recovery — catches SIGKILL'd sessions)
-  setInterval(() => {
+  staleCleanupInterval = setInterval(() => {
     const count = resolveStaleDispatches(db, io, scopeService, workflowEngine);
     if (count > 0) {
       // eslint-disable-next-line no-console
@@ -267,16 +293,29 @@ httpServer.on('listening', () => {
       // eslint-disable-next-line no-console
       console.log(`[Orbital] Purged ${purged.changes} legacy pattern-matched session rows`);
     }
-  });
+  }).catch(err => console.error('[Orbital] Session sync failed:', err.message));
 
   // Re-sync every 5 minutes so new sessions appear without restart
-  setInterval(() => {
+  sessionSyncInterval = setInterval(() => {
     syncClaudeSessionsToDB(db, scopeService)
       .then((count) => {
         if (count > 0) io.emit('session:updated', { type: 'resync', count });
       })
-      .catch(() => {});
+      .catch(err => console.error('[Orbital] Session resync failed:', err.message));
   }, 5 * 60 * 1000);
+
+  // Poll git status every 10s — emit socket event on change
+  let lastGitHash = '';
+  gitPollInterval = setInterval(async () => {
+    try {
+      const hash = await gitService.getStatusHash();
+      if (lastGitHash && hash !== lastGitHash) {
+        gitService.clearCache();
+        io.emit('git:status:changed');
+      }
+      lastGitHash = hash;
+    } catch { /* ok */ }
+  }, 10_000);
 
   // eslint-disable-next-line no-console
   console.log(`
@@ -294,14 +333,30 @@ httpServer.on('listening', () => {
 `);
 });
 
-process.on('SIGINT', () => {
-  closeDatabase();
-  process.exit(0);
-});
+let shuttingDown = false;
+function gracefulShutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  // eslint-disable-next-line no-console
+  console.log('[Orbital] Shutting down...');
+  scopeWatcher.close();
+  eventWatcher.close();
+  clearInterval(batchRecoveryInterval);
+  clearInterval(staleCleanupInterval);
+  clearInterval(sessionSyncInterval);
+  clearInterval(gitPollInterval);
+  io.close(() => {
+    closeDatabase();
+    process.exit(0);
+  });
+  // Force exit if server doesn't close within 2s
+  setTimeout(() => {
+    closeDatabase();
+    process.exit(0);
+  }, 2000);
+}
 
-process.on('SIGTERM', () => {
-  closeDatabase();
-  process.exit(0);
-});
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
 
 export { app, io, db, workflowEngine };

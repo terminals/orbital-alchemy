@@ -15,10 +15,8 @@ const DEFAULT_CONFIG: OrbitalConfig = {
   agents: [
     { id: 'attacker', label: 'Attacker', emoji: '\u{1F5E1}\u{FE0F}', color: '#ff1744' },
     { id: 'chaos', label: 'Chaos', emoji: '\u{1F4A5}', color: '#F97316' },
-    { id: 'solana-expert', label: 'Solana Expert', emoji: '\u{26D3}\u{FE0F}', color: '#8B5CF6' },
     { id: 'frontend-designer', label: 'Frontend Designer', emoji: '\u{1F3A8}', color: '#EC4899' },
     { id: 'architect', label: 'Architect', emoji: '\u{1F3D7}\u{FE0F}', color: '#536dfe' },
-    { id: 'devops-expert', label: 'DevOps Expert', emoji: '\u{1F680}', color: '#40c4ff' },
     { id: 'rules-enforcer', label: 'Rules Enforcer', emoji: '\u{1F4CB}', color: '#6B7280' },
   ],
   serverPort: 4444,
@@ -49,9 +47,7 @@ export function useOrbitalConfig(): OrbitalConfig {
           root.style.setProperty(`--agent-${agent.id}`, agent.color);
         }
       })
-      .catch(() => {
-        // Use defaults on error
-      });
+      .catch(err => console.warn('[Orbital] Config fetch failed:', err));
   }, []);
 
   return config;

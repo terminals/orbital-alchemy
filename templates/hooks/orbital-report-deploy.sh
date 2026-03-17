@@ -16,6 +16,7 @@
 # If not configured, the health check step is skipped.
 #
 # Fails silently if the Orbital server is not running.
+set -e
 
 ENVIRONMENT="${1:?Usage: orbital-report-deploy.sh <environment> <status> [commit_sha] [branch] [pr_number]}"
 STATUS="${2:?Usage: orbital-report-deploy.sh <environment> <status> [commit_sha] [branch] [pr_number]}"

@@ -40,7 +40,7 @@ export function EditToolbar({
   onPreview,
 }: EditToolbarProps) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-blue-500/30 bg-zinc-900/95 px-3 py-2 shadow-lg backdrop-blur">
+    <div className="flex items-center gap-2 rounded-lg border border-cyan-500/30 bg-zinc-900/95 px-3 py-2 shadow-lg backdrop-blur">
       {/* Add buttons */}
       <ToolButton icon={Plus} label="List" onClick={onAddList} color="blue" />
       <ToolButton icon={GitBranch} label="Edge" onClick={onAddEdge} color="blue" />

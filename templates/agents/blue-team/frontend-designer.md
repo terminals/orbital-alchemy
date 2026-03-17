@@ -252,17 +252,17 @@ Every user action needs:
 
 Primary (always):
 ```
-frontend/src/components/        - Existing components
-frontend/src/pages/             - Page structure
+src/components/                 - Existing components
+src/views/ or src/pages/        - Page structure
 .claude/agents/reference/component-registry.md
 ```
 
 Secondary (for relevant changes):
 ```
-frontend/src/hooks/             - Custom hooks
-frontend/src/context/           - State management
-frontend/src/services/api.ts    - API client
-frontend/src/types/             - Type definitions
+src/hooks/                      - Custom hooks
+src/context/                    - State management
+src/services/ or src/lib/       - API client / utilities
+src/types/                      - Type definitions
 tailwind.config.js              - Theme config
 ```
 
@@ -376,7 +376,7 @@ xl: 1280px  - Extra breathing room
 ## Trip Wire Behavior
 
 Auto-activates for:
-- `frontend/src/**/*` - Any frontend file
+- `src/**/*.{tsx,jsx,css}` - Any frontend file
 - ANY feature that affects user experience
 - New API endpoints (must have UI representation)
 - Error message changes

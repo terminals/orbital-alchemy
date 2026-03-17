@@ -165,7 +165,7 @@ function ForwardRules({ edge, fromLabel, toLabel }: {
       </div>
       {edge.dispatchOnly && (
         <p className="text-[9px] text-zinc-500">
-          This transition requires a <span className="text-blue-400">skill command</span> to trigger.
+          This transition requires a <span className="text-cyan-400">skill command</span> to trigger.
         </p>
       )}
     </div>

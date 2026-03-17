@@ -9,6 +9,8 @@ dist/
 .claude/config/workflow.json
 .claude/config/workflows/
 
+.worktrees/
+
 # OS files
 .DS_Store
 Thumbs.db

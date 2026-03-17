@@ -18,7 +18,7 @@ interface TokenSegment {
 
 const EXAMPLE_SCOPE_ID = '093';
 
-const KNOWN_PREFIXES = ['/scope ', '/work ', '/git ', '/test '];
+const KNOWN_PREFIXES = ['/scope-', '/git-', '/test-', '/session-'];
 
 // ─── Component ──────────────────────────────────────────
 
@@ -82,7 +82,7 @@ export function SkillCommandBuilder({ value, onChange, allowedPrefixes }: SkillC
             onFocus={() => !value && setShowSuggestions(true)}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
             className="flex-1 bg-transparent px-2 py-1.5 font-mono text-xs text-zinc-200 outline-none placeholder:text-zinc-600"
-            placeholder="/scope implement {id}"
+            placeholder="/scope-implement {id}"
           />
           {value && (
             <button
@@ -103,7 +103,7 @@ export function SkillCommandBuilder({ value, onChange, allowedPrefixes }: SkillC
                 onMouseDown={() => handleSuggestionClick(prefix)}
                 className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-zinc-700"
               >
-                <span className="font-mono text-blue-400">{prefix.trim()}</span>
+                <span className="font-mono text-cyan-400">{prefix.trim()}</span>
                 <span className="text-[9px] text-zinc-600">{'{id}'}</span>
               </button>
             ))}

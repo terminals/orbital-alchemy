@@ -34,6 +34,8 @@ export function startEventWatcher(
     depth: 0,
   });
 
+  watcher.on('error', (err: unknown) => console.error('[Orbital] Event watcher error:', err));
+
   watcher.on('add', (filePath: string) => {
     if (!filePath.endsWith('.json')) return;
     // Small delay to ensure file write is complete
@@ -64,8 +66,11 @@ function processExistingEvents(
       const filePath = path.join(eventsDir, file);
       processEventFile(filePath, eventService, archiveDir);
     }
-  } catch {
-    // Events dir may not exist yet
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') {
+      console.error('[Orbital] Event watcher startup error:', (err as Error).message);
+    }
   }
 }
 
@@ -83,8 +88,11 @@ function processEventFile(
   const fileName = path.basename(filePath);
   try {
     fs.renameSync(filePath, path.join(archiveDir, fileName));
-  } catch {
+  } catch (err) {
+    console.warn('[Orbital] Failed to archive event file', filePath, (err as Error).message);
     // If rename fails (cross-device), just delete the source
-    try { fs.unlinkSync(filePath); } catch { /* noop */ }
+    try { fs.unlinkSync(filePath); } catch (unlinkErr) {
+      console.warn('[Orbital] Failed to delete event file', filePath, (unlinkErr as Error).message);
+    }
   }
 }

@@ -50,13 +50,15 @@ export function useScopes() {
     socket.on('scope:updated', onScopeUpdated);
     socket.on('scope:created', onScopeCreated);
     socket.on('scope:deleted', onScopeDeleted);
+    socket.on('workflow:changed', fetchScopes);
 
     return () => {
       socket.off('scope:updated', onScopeUpdated);
       socket.off('scope:created', onScopeCreated);
       socket.off('scope:deleted', onScopeDeleted);
+      socket.off('workflow:changed', fetchScopes);
     };
-  }, []);
+  }, [fetchScopes]);
 
   return { scopes, loading, error, refetch: fetchScopes };
 }

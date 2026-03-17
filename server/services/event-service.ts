@@ -4,8 +4,19 @@ import type { RawEvent } from '../parsers/event-parser.js';
 
 export type EventIngestCallback = (type: string, scopeId: unknown, data: Record<string, unknown>) => void;
 
+export interface EventRow {
+  id: string;
+  type: string;
+  scope_id: number | null;
+  session_id: string | null;
+  agent: string | null;
+  data: string;
+  timestamp: string;
+  processed: number;
+}
+
 export class EventService {
-  private onIngestCallback: EventIngestCallback | null = null;
+  private onIngestCallbacks: EventIngestCallback[] = [];
 
   constructor(
     private db: Database.Database,
@@ -14,7 +25,7 @@ export class EventService {
 
   /** Register a callback to be called after each successful event ingest */
   onIngest(callback: EventIngestCallback): void {
-    this.onIngestCallback = callback;
+    this.onIngestCallbacks.push(callback);
   }
 
   /** Ingest a parsed event into the database and broadcast it */
@@ -46,35 +57,35 @@ export class EventService {
       });
 
       // Trigger event-driven inference
-      if (this.onIngestCallback) {
-        this.onIngestCallback(event.type, event.scope_id ?? data.scope_id, data);
+      for (const cb of this.onIngestCallbacks) {
+        cb(event.type, event.scope_id ?? data.scope_id, data);
       }
     }
   }
 
   /** Get recent events, optionally filtered by type */
-  getRecent(limit: number = 50, type?: string): unknown[] {
+  getRecent(limit: number = 50, type?: string): EventRow[] {
     if (type) {
       return this.db
         .prepare('SELECT * FROM events WHERE type = ? ORDER BY timestamp DESC LIMIT ?')
-        .all(type, limit);
+        .all(type, limit) as EventRow[];
     }
     return this.db
       .prepare('SELECT * FROM events ORDER BY timestamp DESC LIMIT ?')
-      .all(limit);
+      .all(limit) as EventRow[];
   }
 
   /** Get events for a specific agent */
-  getByAgent(agent: string, limit: number = 50): unknown[] {
+  getByAgent(agent: string, limit: number = 50): EventRow[] {
     return this.db
       .prepare('SELECT * FROM events WHERE agent = ? ORDER BY timestamp DESC LIMIT ?')
-      .all(agent, limit);
+      .all(agent, limit) as EventRow[];
   }
 
   /** Get events for a specific scope */
-  getByScope(scopeId: number, limit: number = 50): unknown[] {
+  getByScope(scopeId: number, limit: number = 50): EventRow[] {
     return this.db
       .prepare('SELECT * FROM events WHERE scope_id = ? ORDER BY timestamp DESC LIMIT ?')
-      .all(scopeId, limit);
+      .all(scopeId, limit) as EventRow[];
   }
 }

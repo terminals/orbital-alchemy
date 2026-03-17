@@ -2,6 +2,7 @@
 # scope-gate.sh — After plan approval, instruct agent to write scope doc
 # Trigger: PostToolUse:ExitPlanMode
 # Only fires when /scope create was invoked this session
+set -euo pipefail
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 MARKER="$PROJECT_DIR/.claude/metrics/.scope-create-session"
@@ -28,7 +29,7 @@ echo "  ⛔ Writes to non-scope files are BLOCKED until"
 echo "     the scope document is written."
 echo ""
 echo "  Then STOP. Implementation is a separate session:"
-echo "    /scope implement NNN"
+echo "    /scope-implement NNN"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 exit 0

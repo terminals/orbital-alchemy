@@ -7,7 +7,7 @@
 #   scope-transition.sh <direction|--from STATUS --to STATUS> [--scope ID] [--session UUID]
 #
 # Directions (backward-compat aliases):
-#   to-dev        — completed → dev   (called by /git pr-dev skill)
+#   to-dev        — completed → dev   (called by /git-dev skill)
 #   to-staging    — dev → staging     (on push/PR to staging)
 #   to-production — staging → production (on push/PR to main)
 #
@@ -85,6 +85,19 @@ else
   exit 1
 fi
 
+# ─── PID-aware file lock (survives kill -9 via stale detection) ───
+LOCK_DIR="/tmp/orbital-scope-${SCOPE_ID:-all}.lock"
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  LOCK_PID=$(cat "$LOCK_DIR/pid" 2>/dev/null)
+  if [ -n "$LOCK_PID" ] && ! kill -0 "$LOCK_PID" 2>/dev/null; then
+    rm -rf "$LOCK_DIR" && mkdir "$LOCK_DIR"
+  else
+    echo "Scope ${SCOPE_ID:-all} locked by PID $LOCK_PID" >&2; exit 0
+  fi
+fi
+echo $$ > "$LOCK_DIR/pid"
+trap 'rm -rf "$LOCK_DIR" 2>/dev/null' EXIT
+
 SOURCE_DIR="$SCOPE_PROJECT_DIR/scopes/$SOURCE_STATUS"
 TARGET_DIR="$SCOPE_PROJECT_DIR/scopes/$TARGET_STATUS"
 
@@ -130,6 +143,12 @@ for scope_file in $SCOPES_TO_TRANSITION; do
 
   # 2. Update the date
   set_frontmatter "$scope_file" "updated" "$TODAY"
+
+  # 2b. Record baseCommit when entering implementing
+  if [ "$TARGET_STATUS" = "implementing" ]; then
+    BASE_SHA=$(git rev-parse HEAD 2>/dev/null)
+    [ -n "$BASE_SHA" ] && set_frontmatter "$scope_file" "baseCommit" "$BASE_SHA"
+  fi
 
   # 3. Record session UUID if available
   if [ -n "$SESSION_UUID" ] && [ -n "$SESSION_KEY" ]; then

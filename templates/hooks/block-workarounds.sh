@@ -6,6 +6,7 @@
 # 1. --no-verify (skips pre-commit hooks)
 # 2. Direct push to main (bypasses PR workflow)
 #
+set -euo pipefail
 
 INPUT=$(cat)
 
@@ -44,11 +45,11 @@ if echo "$COMMAND" | grep -qE "\-\-no-verify"; then
 fi
 
 # Pattern 2: Direct push to main
-if echo "$COMMAND" | grep -qE "git push.*(origin[[:space:]]+main|:main([[:space:]]|$)|HEAD:main)"; then
+if echo "$COMMAND" | grep -qE "git push[[:space:]]+[^-][^[:space:]]*[[:space:]]+main([[:space:]]|$)|git push.*(:main([[:space:]]|$)|HEAD:main)"; then
   "$HOOK_DIR/orbital-emit.sh" VIOLATION "{\"rule\":\"push-main\",\"pattern\":\"push to main\",\"outcome\":\"blocked\"}"
   echo "BLOCKED: Direct push to main is forbidden"
   echo ""
-  echo "Use /work save to route to the proper workflow:"
+  echo "Use /git-commit to route to the proper workflow:"
   echo "  - Creates feature branch if needed"
   echo "  - Opens PR to staging (not main)"
   echo "  - Ensures CI runs before merge"

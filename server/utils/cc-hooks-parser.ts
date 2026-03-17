@@ -26,9 +26,9 @@ function extractScriptPath(command: string): string {
 }
 
 function deriveId(scriptName: string): string {
-  // "init-session.sh" → "orbital-init-session"
-  const base = scriptName.replace(/\.[^.]+$/, '');
-  return `orbital-${base}`;
+  // "init-session.sh" → "init-session"
+  // Uses the bare filename so it matches workflow hook IDs when they exist.
+  return scriptName.replace(/\.[^.]+$/, '');
 }
 
 export function parseCcHooks(settingsPath: string): CcHookParsed[] {

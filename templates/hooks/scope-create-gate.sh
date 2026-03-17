@@ -7,6 +7,7 @@
 # removed by scope-create-cleanup.sh after the scope document is written.
 #
 # Exit codes: 0 = allow, 2 = block
+set -e
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 MARKER="$PROJECT_DIR/.claude/metrics/.scope-create-session"

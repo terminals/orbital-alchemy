@@ -2,6 +2,7 @@
 # files-changed-summary.sh — Show planned vs actual files before completion
 # Trigger: PreToolUse:Edit (scope status → complete)
 # Nudge-style: always exits 0
+set -e
 
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)

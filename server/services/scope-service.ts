@@ -3,13 +3,14 @@ import path from 'path';
 import matter from 'gray-matter';
 import type { Server } from 'socket.io';
 import type { ParsedScope } from '../parsers/scope-parser.js';
-import { normalizeStatus, parseAllScopes, parseScopeFile } from '../parsers/scope-parser.js';
+import { normalizeStatus, parseAllScopes, parseScopeFile, setValidStatuses } from '../parsers/scope-parser.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 import type { TransitionContext, TransitionResult } from '../../shared/workflow-config.js';
 import type { ScopeCache } from './scope-cache.js';
 
 export class ScopeService {
   private onStatusChangeCallbacks: Array<(id: number, status: string) => void> = [];
+  private activeGroupCheck: ((scopeId: number) => { sprint_id: number; group_type: string } | null) | null = null;
 
   constructor(
     private cache: ScopeCache,
@@ -18,6 +19,12 @@ export class ScopeService {
     private engine: WorkflowEngine,
   ) {}
 
+  /** Register a callback that checks if a scope is in an active group (sprint/batch).
+   *  Used to guard patch-context status changes. */
+  setActiveGroupCheck(fn: (scopeId: number) => { sprint_id: number; group_type: string } | null): void {
+    this.activeGroupCheck = fn;
+  }
+
   /** Register a callback fired after every successful status update */
   onStatusChange(cb: (id: number, status: string) => void): void {
     this.onStatusChangeCallbacks.push(cb);
@@ -25,6 +32,9 @@ export class ScopeService {
 
   /** Load all scopes from the filesystem into the in-memory cache */
   syncFromFilesystem(): number {
+    // Push the engine's valid list IDs to the scope parser so
+    // inferStatusFromDir doesn't rely on a hardcoded set.
+    setValidStatuses(this.engine.getLists().map(l => l.id));
     const scopes = parseAllScopes(this.scopesDir);
     this.cache.loadAll(scopes);
     return scopes.length;
@@ -78,6 +88,15 @@ export class ScopeService {
       if (!current) {
         return { ok: false, error: 'Scope not found', code: 'NOT_FOUND' };
       }
+
+      // Guard: block manual moves for scopes in active groups (sprint/batch)
+      if (context === 'patch' && this.activeGroupCheck) {
+        const group = this.activeGroupCheck(id);
+        if (group) {
+          return { ok: false, error: `Scope is in an active ${group.group_type} (ID: ${group.sprint_id})`, code: 'SCOPE_IN_ACTIVE_GROUP' };
+        }
+      }
+
       const check = this.engine.validateTransition(current.status, status, context);
       if (!check.ok) return check;
     }

@@ -3,23 +3,39 @@ import { spawn } from 'child_process';
 import type Database from 'better-sqlite3';
 import type { Server } from 'socket.io';
 import type { ScopeService } from '../services/scope-service.js';
-import { launchInTerminal, buildSessionName, snapshotSessionPids, discoverNewSession, renameSession } from '../utils/terminal-launcher.js';
+import type { ReadinessService } from '../services/readiness-service.js';
+import type { WorkflowEngine } from '../../shared/workflow-engine.js';
+import { launchInTerminal, escapeForAnsiC, buildSessionName, snapshotSessionPids, discoverNewSession, renameSession } from '../utils/terminal-launcher.js';
 import { resolveDispatchEvent, linkPidToDispatch } from '../utils/dispatch-utils.js';
+import { getConfig } from '../config.js';
 
 interface ScopeRouteDeps {
   db: Database.Database;
   io: Server;
   scopeService: ScopeService;
+  readinessService: ReadinessService;
   projectRoot: string;
+  engine: WorkflowEngine;
 }
 
-export function createScopeRoutes({ db, io, scopeService, projectRoot }: ScopeRouteDeps): Router {
+export function createScopeRoutes({ db, io, scopeService, readinessService, projectRoot, engine }: ScopeRouteDeps): Router {
   const router = Router();
 
   // ─── Scope CRUD ──────────────────────────────────────────
 
   router.get('/scopes', (_req, res) => {
     res.json(scopeService.getAll());
+  });
+
+  // ─── Transition Readiness ──────────────────────────────────
+
+  router.get('/scopes/:id/readiness', (req, res) => {
+    const readiness = readinessService.getReadiness(Number(req.params.id));
+    if (!readiness) {
+      res.status(404).json({ error: 'Scope not found' });
+      return;
+    }
+    res.json(readiness);
   });
 
   /** Bulk update — must come before :id route to avoid matching "bulk" as an id */
@@ -105,11 +121,19 @@ export function createScopeRoutes({ db, io, scopeService, projectRoot }: ScopeRo
 
     const scopeId = result.id;
 
+    // Read command from workflow edge config (user-overridable)
+    const entryPoint = engine.getEntryPoint();
+    const targets = engine.getValidTargets(entryPoint.id);
+    const promoteTarget = targets[0] ?? 'planning';
+    const edge = engine.findEdge(entryPoint.id, promoteTarget);
+    const edgeCommand = edge ? engine.buildCommand(edge, scopeId) : null;
+    const command = edgeCommand ?? `/scope-create ${String(scopeId).padStart(3, '0')}`;
+
     // Record DISPATCH event for audit trail
     const eventId = crypto.randomUUID();
     const eventData = {
-      command: '/scope create',
-      transition: { from: 'icebox', to: 'planning' },
+      command,
+      transition: { from: entryPoint.id, to: promoteTarget },
       resolved: null,
     };
     db.prepare(
@@ -123,10 +147,10 @@ export function createScopeRoutes({ db, io, scopeService, projectRoot }: ScopeRo
       timestamp: new Date().toISOString(),
     });
 
-    const paddedId = String(scopeId).padStart(3, '0');
-    const fullCmd = `cd ${projectRoot} && claude --dangerously-skip-permissions '/scope create ${paddedId}'`;
+    const escaped = escapeForAnsiC(command);
+    const fullCmd = `cd '${projectRoot}' && claude --dangerously-skip-permissions $'${escaped}'`;
 
-    const promoteSessionName = buildSessionName({ scopeId, title: result.title, command: '/scope create' });
+    const promoteSessionName = buildSessionName({ scopeId, title: result.title, command });
     const promoteBeforePids = snapshotSessionPids(projectRoot);
 
     try {
@@ -139,7 +163,7 @@ export function createScopeRoutes({ db, io, scopeService, projectRoot }: ScopeRo
           linkPidToDispatch(db, eventId, session.pid);
           if (promoteSessionName) renameSession(projectRoot, session.sessionId, promoteSessionName);
         })
-        .catch(() => {});
+        .catch(err => console.error('[Orbital] PID discovery failed:', err.message));
     } catch (err) {
       resolveDispatchEvent(db, io, eventId, 'failed', String(err));
       res.status(500).json({ error: 'Failed to launch terminal', details: String(err) });
@@ -161,7 +185,7 @@ export function createScopeRoutes({ db, io, scopeService, projectRoot }: ScopeRo
     const today = new Date().toISOString().split('T')[0];
     const idRange = Array.from({ length: 5 }, (_, i) => nextIdStart + i);
 
-    const prompt = `You are analyzing a trading bot codebase to suggest feature ideas. Your ONLY job is to create markdown files.
+    const prompt = `You are analyzing the ${getConfig().projectName} codebase to suggest feature ideas. Your ONLY job is to create markdown files.
 
 Create exactly 3 idea files in the scopes/icebox/ directory. Each file must use this EXACT format:
 

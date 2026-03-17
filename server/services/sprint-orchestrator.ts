@@ -242,7 +242,7 @@ export class SprintOrchestrator {
 
       // Launch in iTerm — interactive TUI mode (no -p) for full visibility
       const escaped = escapeForAnsiC(command);
-      const fullCmd = `cd ${getConfig().projectRoot} && claude --dangerously-skip-permissions $'${escaped}'`;
+      const fullCmd = `cd '${getConfig().projectRoot}' && claude --dangerously-skip-permissions $'${escaped}'`;
       try {
         await launchInCategorizedTerminal(command, fullCmd, sessionName);
 
@@ -253,7 +253,7 @@ export class SprintOrchestrator {
             linkPidToDispatch(this.db, eventId, session.pid);
             if (sessionName) renameSession(getConfig().projectRoot, session.sessionId, sessionName);
           })
-          .catch(() => {});
+          .catch(err => console.error('[Orbital] PID discovery failed:', err.message));
       } catch (err) {
         // Rollback scope status to previous value
         this.scopeService.updateStatus(scopeId, previousStatus, 'rollback');

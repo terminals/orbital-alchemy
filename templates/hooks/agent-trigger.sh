@@ -4,6 +4,7 @@
 # This PreToolUse hook detects when Edit/Write operations target files matching
 # patterns in agent-triggers.json, then outputs relevant review points to guide
 # the AI assistant during security-sensitive modifications.
+set -e
 
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)

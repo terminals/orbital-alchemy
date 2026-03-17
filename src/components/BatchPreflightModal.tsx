@@ -15,13 +15,14 @@ import type { Sprint } from '@/types';
 interface BatchPreflightModalProps {
   open: boolean;
   batch: Sprint | null;
-  onConfirm: () => void;
+  onConfirm: (mergeMode?: string) => void;
   onCancel: () => void;
 }
 
 export function BatchPreflightModal({ open, batch, onConfirm, onCancel }: BatchPreflightModalProps) {
   const { engine } = useWorkflow();
   const [dispatching, setDispatching] = useState(false);
+  const [mergeMode, setMergeMode] = useState<string>('push');
 
   useEffect(() => {
     if (open) setDispatching(false);
@@ -37,7 +38,7 @@ export function BatchPreflightModal({ open, batch, onConfirm, onCancel }: BatchP
 
   const handleConfirm = () => {
     setDispatching(true);
-    onConfirm();
+    onConfirm(mergeMode);
   };
 
   return (
@@ -63,6 +64,26 @@ export function BatchPreflightModal({ open, batch, onConfirm, onCancel }: BatchP
               <span className="truncate flex-1">{ss.title}</span>
             </div>
           ))}
+        </div>
+
+        {/* Merge mode selector */}
+        <div className="px-4 py-2 border-t border-border/50 space-y-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Merge Mode</span>
+          <div className="flex gap-2">
+            {['push', 'pr', 'direct'].map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setMergeMode(mode)}
+                className={`rounded px-2 py-1 text-xs transition-colors ${
+                  mergeMode === mode
+                    ? 'bg-cyan-600/80 text-black'
+                    : 'bg-muted text-muted-foreground hover:bg-accent'
+                }`}
+              >
+                {mode === 'push' ? 'Push' : mode === 'pr' ? 'PR' : 'Direct Merge'}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Actions */}

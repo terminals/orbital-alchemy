@@ -48,6 +48,7 @@ export interface WorkflowConfig {
   version: 1;
   name: string;
   description?: string;
+  branchingMode?: 'trunk' | 'worktree';
   lists: WorkflowList[];
   edges: WorkflowEdge[];
   hooks?: WorkflowHook[];
@@ -71,6 +72,7 @@ export interface WorkflowList {
   hasDirectory: boolean;
   gitBranch?: string;
   sessionKey?: string;
+  activeHooks?: string[];
 }
 
 export interface WorkflowEdge {
@@ -86,6 +88,7 @@ export interface WorkflowEdge {
   dispatchOnly?: boolean;
   humanOnly?: boolean;
   hooks?: string[];
+  agents?: string[];
 }
 
 export interface WorkflowHook {
@@ -123,7 +126,10 @@ export function isWorkflowConfig(obj: unknown): obj is WorkflowConfig {
     o.version === 1 &&
     typeof o.name === 'string' &&
     Array.isArray(o.lists) &&
-    Array.isArray(o.edges)
+    Array.isArray(o.edges) &&
+    (o.lists as unknown[]).every(isWorkflowList) &&
+    (o.edges as unknown[]).every(isWorkflowEdge) &&
+    (o.branchingMode === undefined || o.branchingMode === 'trunk' || o.branchingMode === 'worktree')
   );
 }
 

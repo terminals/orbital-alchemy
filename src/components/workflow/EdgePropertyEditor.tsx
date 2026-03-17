@@ -62,7 +62,7 @@ export function EdgePropertyEditor({ edge, config, onSave, onDelete, onClose }: 
   }, [draft, errors, onSave]);
 
   return (
-    <div className="flex h-full w-80 shrink-0 flex-col rounded-lg border border-blue-500/30 bg-zinc-900/95 backdrop-blur">
+    <div className="flex h-full w-80 shrink-0 flex-col rounded-lg border border-cyan-500/30 bg-zinc-900/95 backdrop-blur">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
         <span className="text-sm font-medium">Edit Edge</span>
@@ -212,7 +212,7 @@ export function EdgePropertyEditor({ edge, config, onSave, onDelete, onClose }: 
         <button
           onClick={handleSave}
           disabled={errors.length > 0}
-          className="flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-blue-500 disabled:opacity-40"
+          className="flex items-center gap-1.5 rounded bg-cyan-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-cyan-500 disabled:opacity-40"
         >
           <Check className="h-3 w-3" />
           Apply
@@ -240,7 +240,7 @@ function HookCheckbox({ hook, checked, onToggle }: { hook: WorkflowHook; checked
         type="checkbox"
         checked={checked}
         onChange={onToggle}
-        className="h-3.5 w-3.5 rounded border-zinc-600 bg-zinc-800 text-blue-500 focus:ring-0 focus:ring-offset-0"
+        className="h-3.5 w-3.5 rounded border-zinc-600 bg-zinc-800 text-cyan-500 focus:ring-0 focus:ring-offset-0"
       />
       <div className="flex-1">
         <span className="text-zinc-300">{hook.label}</span>

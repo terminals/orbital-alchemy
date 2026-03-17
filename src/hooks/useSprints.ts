@@ -86,6 +86,15 @@ export function useSprints() {
     return res.json();
   }, []);
 
+  const renameSprint = useCallback(async (id: number, name: string): Promise<boolean> => {
+    const res = await fetch(`/api/orbital/sprints/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    return res.ok;
+  }, []);
+
   const deleteSprint = useCallback(async (id: number): Promise<boolean> => {
     const res = await fetch(`/api/orbital/sprints/${id}`, { method: 'DELETE' });
     return res.ok;
@@ -131,6 +140,7 @@ export function useSprints() {
     loading,
     refetch: fetchSprints,
     createSprint,
+    renameSprint,
     deleteSprint,
     addScopes,
     removeScopes,

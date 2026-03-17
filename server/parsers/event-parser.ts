@@ -42,7 +42,8 @@ export function parseEventFile(filePath: string): RawEvent | null {
       data,
       timestamp: String(parsed.timestamp),
     };
-  } catch {
+  } catch (err) {
+    console.warn('[Orbital] Failed to parse event file', filePath, (err as Error).message);
     return null;
   }
 }

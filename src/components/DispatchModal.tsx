@@ -70,7 +70,7 @@ export function DispatchModal({
           <div className="flex items-center gap-2 mb-2">
             <Badge variant="outline" className="text-xxs capitalize">{transition.from}</Badge>
             <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-            <Badge variant="default" className="text-xxs capitalize">{transition.to}</Badge>
+            <Badge variant="default" className="text-xxs capitalize [color:#000]">{transition.to}</Badge>
           </div>
           <DialogTitle className="text-sm font-normal">
             {transition.label}

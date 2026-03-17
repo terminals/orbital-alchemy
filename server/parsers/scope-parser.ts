@@ -20,9 +20,12 @@ export interface ParsedScope {
   is_ghost: boolean;
 }
 
+const VALID_PRIORITIES = new Set(['critical', 'high', 'medium', 'low']);
+
 const VALID_SESSION_KEYS = new Set([
-  'createScope', 'reviewScope', 'implementScope', 'reviewCode',
-  'pushToDev', 'pushToStaging', 'pushToProduction',
+  'createScope', 'reviewScope', 'implementScope',
+  'verifyScope', 'reviewGate', 'fixReview', 'commit',
+  'pushToMain', 'pushToDev', 'pushToStaging', 'pushToProduction',
 ]);
 
 /** Parse and validate the sessions frontmatter field */
@@ -110,7 +113,7 @@ function parseFrontmatterScope(
     id,
     title: String(fm.title ?? `Scope ${id}`),
     status,
-    priority: fm.priority ? String(fm.priority) : null,
+    priority: fm.priority && VALID_PRIORITIES.has(String(fm.priority)) ? String(fm.priority) : null,
     effort_estimate: fm.effort_estimate ? String(fm.effort_estimate) : null,
     category: fm.category ? String(fm.category) : null,
     tags: Array.isArray(fm.tags) ? fm.tags.map(String) : [],
@@ -137,7 +140,8 @@ function parseMarkdownScope(
 
   // Extract priority from markdown
   const priorityMatch = content.match(/##\s*Priority:\s*(?:[🔴🟡🟢⚪]\s*)?(\w+)/i);
-  const priority = priorityMatch ? priorityMatch[1].toLowerCase() : null;
+  const rawPriority = priorityMatch ? priorityMatch[1].toLowerCase() : null;
+  const priority = rawPriority && VALID_PRIORITIES.has(rawPriority) ? rawPriority : null;
 
   // Extract effort estimate
   const effortMatch = content.match(/##\s*(?:Estimated\s+)?Effort:\s*(.+)/i);
@@ -179,9 +183,20 @@ function scopeFileId(base: number, suffix?: string): number {
   return offset + base;
 }
 
+/** Valid directory statuses — updated at startup from the workflow engine */
+let validDirStatuses: Set<string> | null = null;
+
+/** Initialize the valid status set from the workflow engine's list IDs */
+export function setValidStatuses(statuses: Iterable<string>): void {
+  validDirStatuses = new Set(statuses);
+}
+
 function inferStatusFromDir(dirName: string): string {
-  const VALID = ['icebox', 'planning', 'backlog', 'implementing', 'review', 'completed', 'dev', 'staging', 'production'];
-  return VALID.includes(dirName) ? dirName : 'planning';
+  if (validDirStatuses) {
+    return validDirStatuses.has(dirName) ? dirName : 'planning';
+  }
+  // Fallback for when engine hasn't initialized yet (shouldn't happen in practice)
+  return dirName;
 }
 
 /**

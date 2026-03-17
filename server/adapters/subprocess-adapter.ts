@@ -12,6 +12,7 @@ export class SubprocessAdapter implements TerminalAdapter {
       detached: true,
       stdio: 'ignore',
     });
+    child.on('error', (err: Error) => console.error('[Orbital] Subprocess launch failed:', err.message));
     child.unref();
   }
 

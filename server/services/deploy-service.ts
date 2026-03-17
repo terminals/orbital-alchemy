@@ -1,14 +1,28 @@
 import type Database from 'better-sqlite3';
 import type { Server } from 'socket.io';
+import type { DeployStatus, DeployEnvironment } from '../../shared/api-types.js';
 
 export interface DeployRecord {
-  environment: 'staging' | 'production';
-  status: 'deploying' | 'healthy' | 'failed' | 'rolled-back';
+  environment: DeployEnvironment;
+  status: DeployStatus;
   commit_sha: string | null;
   branch: string | null;
   pr_number: number | null;
   health_check_url: string | null;
   details: Record<string, unknown> | null;
+}
+
+export interface DeployRow {
+  id: number;
+  environment: DeployEnvironment;
+  status: DeployStatus;
+  commit_sha: string | null;
+  branch: string | null;
+  pr_number: number | null;
+  health_check_url: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  details: string;
 }
 
 export class DeployService {
@@ -44,7 +58,7 @@ export class DeployService {
   }
 
   /** Update deployment status */
-  updateStatus(id: number, status: string, details?: string): void {
+  updateStatus(id: number, status: DeployStatus, details?: string): void {
     const completedAt = (status === 'healthy' || status === 'failed' || status === 'rolled-back')
       ? new Date().toISOString()
       : null;
@@ -60,20 +74,20 @@ export class DeployService {
   }
 
   /** Get recent deployments */
-  getRecent(limit: number = 20): unknown[] {
+  getRecent(limit: number = 20): DeployRow[] {
     return this.db
       .prepare('SELECT * FROM deployments ORDER BY started_at DESC LIMIT ?')
-      .all(limit);
+      .all(limit) as DeployRow[];
   }
 
   /** Get latest deployment per environment */
-  getLatestPerEnv(): unknown[] {
+  getLatestPerEnv(): DeployRow[] {
     return this.db.prepare(`
       SELECT * FROM deployments
       WHERE id IN (
         SELECT MAX(id) FROM deployments GROUP BY environment
       )
       ORDER BY environment
-    `).all();
+    `).all() as DeployRow[];
   }
 }

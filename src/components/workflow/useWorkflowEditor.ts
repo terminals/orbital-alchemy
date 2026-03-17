@@ -11,6 +11,8 @@ interface MigrationPlan {
   validationErrors: string[];
   removedLists: string[];
   addedLists: string[];
+  dirsToCreate: string[];
+  dirsToRemove: string[];
   orphanedScopes: Array<{ listId: string; scopeFiles: string[] }>;
   lostEdges: Array<{ from: string; to: string }>;
   suggestedMappings: Record<string, string>;

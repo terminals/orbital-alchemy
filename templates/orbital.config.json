@@ -28,10 +28,8 @@
   "agents": [
     { "id": "attacker", "label": "Attacker", "emoji": "\ud83d\udde1\ufe0f", "color": "#ff1744" },
     { "id": "chaos", "label": "Chaos", "emoji": "\ud83d\udca5", "color": "#F97316" },
-    { "id": "solana-expert", "label": "Solana Expert", "emoji": "\u26d3\ufe0f", "color": "#8B5CF6" },
     { "id": "frontend-designer", "label": "Frontend Designer", "emoji": "\ud83c\udfa8", "color": "#EC4899" },
     { "id": "architect", "label": "Architect", "emoji": "\ud83c\udfd7\ufe0f", "color": "#536dfe" },
-    { "id": "devops-expert", "label": "DevOps Expert", "emoji": "\ud83d\ude80", "color": "#40c4ff" },
     { "id": "rules-enforcer", "label": "Rules Enforcer", "emoji": "\ud83d\udccb", "color": "#6B7280" }
   ]
 }

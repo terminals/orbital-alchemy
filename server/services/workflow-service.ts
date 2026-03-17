@@ -1,9 +1,17 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import type { Server } from 'socket.io';
 import type { WorkflowConfig } from '../../shared/workflow-config.js';
 import { isWorkflowConfig } from '../../shared/workflow-config.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
+
+/** Short content digest of a WorkflowConfig (ignoring internal metadata fields). */
+function configDigest(config: WorkflowConfig): string {
+  // Strip internal metadata so the digest only reflects user-visible config
+  const { _defaultDigest: _, ...rest } = config as WorkflowConfig & { _defaultDigest?: string };
+  return crypto.createHash('sha256').update(JSON.stringify(rest)).digest('hex').slice(0, 16);
+}
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -25,6 +33,8 @@ export interface MigrationPlan {
   validationErrors: string[];
   removedLists: string[];
   addedLists: string[];
+  dirsToCreate: string[];
+  dirsToRemove: string[];
   orphanedScopes: Array<{ listId: string; scopeFiles: string[] }>;
   lostEdges: Array<{ from: string; to: string }>;
   suggestedMappings: Record<string, string>;
@@ -53,18 +63,40 @@ export class WorkflowService {
     // Ensure directories exist
     if (!fs.existsSync(this.presetsDir)) fs.mkdirSync(this.presetsDir, { recursive: true });
 
-    // Create active config if missing (copy from default)
+    // ─── Sync active config with bundled default ─────────────────
+    // The active config is a copy of the bundled default-workflow.json.
+    // When the package updates (new colors, lists, edges, etc.), the cached
+    // workflow.json becomes stale.  We embed a _defaultDigest so we can
+    // detect drift and auto-refresh — but only if the user hasn't applied
+    // a custom preset (which strips the digest).
+    const defaultConfig = JSON.parse(fs.readFileSync(this.defaultConfigPath, 'utf-8')) as WorkflowConfig;
+    const currentDigest = configDigest(defaultConfig);
+
     if (!fs.existsSync(this.activeConfigPath)) {
-      fs.copyFileSync(this.defaultConfigPath, this.activeConfigPath);
+      // First run — seed from bundled default with digest marker
+      this.writeWithDigest(this.activeConfigPath, defaultConfig, currentDigest);
+      this.engine.reload(defaultConfig);
+      fs.writeFileSync(this.manifestPath, this.engine.generateShellManifest(), 'utf-8');
+    } else {
+      const active = JSON.parse(fs.readFileSync(this.activeConfigPath, 'utf-8')) as WorkflowConfig & { _defaultDigest?: string };
+      if (!active._defaultDigest) {
+        // Legacy file without digest marker. If content matches current default, stamp it.
+        // If different, it's user-customized — leave it alone.
+        if (configDigest(active) === currentDigest) {
+          this.writeWithDigest(this.activeConfigPath, defaultConfig, currentDigest);
+        }
+      } else if (active._defaultDigest !== currentDigest) {
+        // Bundled default changed since last sync — refresh + regenerate manifest
+        this.writeWithDigest(this.activeConfigPath, defaultConfig, currentDigest);
+        this.engine.reload(defaultConfig);
+        fs.writeFileSync(this.manifestPath, this.engine.generateShellManifest(), 'utf-8');
+      }
     }
 
-    // Create default preset if missing
+    // Always keep the "default" preset in sync with the bundled default
     const defaultPresetPath = path.join(this.presetsDir, 'default.json');
-    if (!fs.existsSync(defaultPresetPath)) {
-      const config = JSON.parse(fs.readFileSync(this.activeConfigPath, 'utf-8')) as WorkflowConfig;
-      const preset = { _preset: { name: 'default', savedAt: new Date().toISOString(), savedFrom: 'initial' }, ...config };
-      fs.writeFileSync(defaultPresetPath, JSON.stringify(preset, null, 2));
-    }
+    const preset = { _preset: { name: 'default', savedAt: new Date().toISOString(), savedFrom: 'bundled' }, ...defaultConfig };
+    fs.writeFileSync(defaultPresetPath, JSON.stringify(preset, null, 2));
   }
 
   setSocketServer(io: Server): void {
@@ -84,6 +116,10 @@ export class WorkflowService {
     if (!isWorkflowConfig(config)) {
       errors.push('Invalid config shape: must have version=1, name, lists[], edges[]');
       return { valid: false, errors, warnings };
+    }
+
+    if (config.branchingMode !== undefined && config.branchingMode !== 'trunk' && config.branchingMode !== 'worktree') {
+      warnings.push(`Invalid branchingMode: "${config.branchingMode}" — defaulting to "trunk"`);
     }
 
     // Unique list IDs
@@ -134,16 +170,24 @@ export class WorkflowService {
   // ─── Active Config ──────────────────────────────────
 
   getActive(): WorkflowConfig {
+    let raw: WorkflowConfig;
     if (fs.existsSync(this.activeConfigPath)) {
-      return JSON.parse(fs.readFileSync(this.activeConfigPath, 'utf-8')) as WorkflowConfig;
+      raw = JSON.parse(fs.readFileSync(this.activeConfigPath, 'utf-8')) as WorkflowConfig;
+    } else {
+      raw = JSON.parse(fs.readFileSync(this.defaultConfigPath, 'utf-8')) as WorkflowConfig;
     }
-    return JSON.parse(fs.readFileSync(this.defaultConfigPath, 'utf-8')) as WorkflowConfig;
+    // Strip internal digest marker before returning to clients
+    delete (raw as WorkflowConfig & { _defaultDigest?: string })._defaultDigest;
+    return raw;
   }
 
   updateActive(config: WorkflowConfig): ValidationResult {
     const result = this.validate(config);
     if (!result.valid) return result;
+    // Strip digest — user edits mean this is no longer a pristine default
+    delete (config as WorkflowConfig & { _defaultDigest?: string })._defaultDigest;
     this.writeAtomic(this.activeConfigPath, config);
+    this.io?.emit('workflow:changed', { config });
     return result;
   }
 
@@ -160,7 +204,7 @@ export class WorkflowService {
       };
       const stat = fs.statSync(filePath);
       return {
-        name: f.replace('.json', ''),
+        name: f.endsWith('.json') ? f.slice(0, -5) : f,
         createdAt: content._preset?.savedAt ?? stat.birthtime.toISOString(),
         listCount: Array.isArray(content.lists) ? content.lists.length : 0,
         edgeCount: Array.isArray(content.edges) ? content.edges.length : 0,
@@ -202,8 +246,8 @@ export class WorkflowService {
     if (!validation.valid) {
       return {
         valid: false, validationErrors: validation.errors,
-        removedLists: [], addedLists: [], orphanedScopes: [],
-        lostEdges: [], suggestedMappings: {},
+        removedLists: [], addedLists: [], dirsToCreate: [], dirsToRemove: [],
+        orphanedScopes: [], lostEdges: [], suggestedMappings: {},
         impactSummary: 'New config has validation errors',
       };
     }
@@ -228,9 +272,26 @@ export class WorkflowService {
       suggestedMappings[orphan.listId] = this.findClosestList(orphan.listId, activeConfig, newConfig);
     }
 
+    // Directories to create: new lists with hasDirectory that don't exist on disk
+    const dirsToCreate = newConfig.lists
+      .filter((l) => l.hasDirectory && !fs.existsSync(path.join(this.scopesDir, l.id)))
+      .map((l) => l.id);
+
+    // Directories to remove: removed lists whose scopes/ dir is empty (or will be after moves)
+    const dirsToRemove = removedLists.filter((id) => {
+      const dir = path.join(this.scopesDir, id);
+      if (!fs.existsSync(dir)) return false;
+      const remaining = fs.readdirSync(dir).filter((f) => f.endsWith('.md'));
+      const orphan = orphanedScopes.find((o) => o.listId === id);
+      // All .md files will be moved out, so the dir will be empty
+      return orphan ? remaining.length <= orphan.scopeFiles.length : remaining.length === 0;
+    });
+
     const parts: string[] = [];
     if (removedLists.length) parts.push(`${removedLists.length} list(s) removed`);
     if (addedLists.length) parts.push(`${addedLists.length} list(s) added`);
+    if (dirsToCreate.length) parts.push(`${dirsToCreate.length} scope dir(s) to create`);
+    if (dirsToRemove.length) parts.push(`${dirsToRemove.length} scope dir(s) to remove`);
     if (orphanedScopes.length) {
       const total = orphanedScopes.reduce((sum, o) => sum + o.scopeFiles.length, 0);
       parts.push(`${total} scope(s) in ${orphanedScopes.length} orphaned list(s) need migration`);
@@ -239,7 +300,8 @@ export class WorkflowService {
 
     return {
       valid: true, validationErrors: [],
-      removedLists, addedLists, orphanedScopes, lostEdges, suggestedMappings,
+      removedLists, addedLists, dirsToCreate, dirsToRemove,
+      orphanedScopes, lostEdges, suggestedMappings,
       impactSummary: parts.length > 0 ? parts.join('; ') : 'No impact — configs are compatible',
     };
   }
@@ -247,6 +309,9 @@ export class WorkflowService {
   // ─── Atomic Apply ───────────────────────────────────
 
   applyMigration(newConfig: WorkflowConfig, orphanMappings: Record<string, string>): MigrationPlan {
+    // User-initiated migration — strip digest so auto-refresh won't overwrite
+    delete (newConfig as WorkflowConfig & { _defaultDigest?: string })._defaultDigest;
+
     // Step 1: Validate
     const validation = this.validate(newConfig);
     if (!validation.valid) {
@@ -288,13 +353,31 @@ export class WorkflowService {
         }
       }
 
-      // Step 4: Apply config atomically + regenerate manifest + reload engine
+      // Step 4: Create scopes/ directories for added lists with hasDirectory
+      for (const list of newConfig.lists) {
+        if (list.hasDirectory) {
+          const dir = path.join(this.scopesDir, list.id);
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        }
+      }
+
+      // Step 5: Remove empty scopes/ directories for removed lists
+      for (const listId of plan.removedLists) {
+        const dir = path.join(this.scopesDir, listId);
+        if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0) {
+          fs.rmdirSync(dir);
+        }
+      }
+
+      // Step 6: Apply config atomically + regenerate manifest + reload engine
       this.writeAtomic(this.activeConfigPath, newConfig);
       this.engine.reload(newConfig);
       const manifest = this.engine.generateShellManifest();
-      fs.writeFileSync(this.manifestPath, manifest);
+      const tmpManifestPath = this.manifestPath + '.tmp';
+      fs.writeFileSync(tmpManifestPath, manifest);
+      fs.renameSync(tmpManifestPath, this.manifestPath);
 
-      // Step 5: Emit socket event + log
+      // Step 7: Emit socket event + log
       this.io?.emit('workflow:changed', { config: newConfig, migratedScopes });
       // eslint-disable-next-line no-console
       console.log(`[Orbital] Workflow migrated: ${migratedScopes.length} scope(s) moved across ${plan.removedLists.length} removed list(s)`);
@@ -307,7 +390,7 @@ export class WorkflowService {
         try {
           fs.renameSync(move.dest, move.src);
           fs.writeFileSync(move.src, move.originalContent);
-        } catch { /* best-effort rollback */ }
+        } catch (rollbackErr) { console.error('[Orbital] Migration rollback failed for', move.src, rollbackErr); }
       }
       // Rollback: restore original config + reload engine
       if (fs.existsSync(backupPath)) {
@@ -360,6 +443,14 @@ export class WorkflowService {
   private writeAtomic(targetPath: string, data: WorkflowConfig): void {
     const tmpPath = targetPath + '.tmp';
     fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
+    fs.renameSync(tmpPath, targetPath);
+  }
+
+  /** Write config with a _defaultDigest marker so we can detect when the bundled default changes. */
+  private writeWithDigest(targetPath: string, config: WorkflowConfig, digest: string): void {
+    const withDigest = { _defaultDigest: digest, ...config };
+    const tmpPath = targetPath + '.tmp';
+    fs.writeFileSync(tmpPath, JSON.stringify(withDigest, null, 2));
     fs.renameSync(tmpPath, targetPath);
   }
 }

@@ -7,6 +7,8 @@ import { linkPidToDispatch, resolveDispatchEvent } from '../utils/dispatch-utils
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 import { getConfig } from '../config.js';
 
+const VALID_MERGE_MODES = ['push', 'pr'] as const;
+
 // ─── Orchestrator ───────────────────────────────────────────
 
 export class BatchOrchestrator {
@@ -19,7 +21,7 @@ export class BatchOrchestrator {
   ) {}
 
   /** Dispatch a batch — validates constraints and routes to column-specific handler */
-  async dispatch(batchId: number): Promise<{ ok: boolean; error?: string }> {
+  async dispatch(batchId: number, mergeMode?: string): Promise<{ ok: boolean; error?: string }> {
     const batch = this.sprintService.getById(batchId);
     if (!batch) return { ok: false, error: 'Batch not found' };
     if (batch.group_type !== 'batch') return { ok: false, error: 'Not a batch group' };
@@ -40,6 +42,7 @@ export class BatchOrchestrator {
 
     // Build scope IDs env var prefix (W-1: prepend to command, not process.env)
     const scopeIdsStr = batch.scope_ids.join(',');
+    const mergeModeStr = (VALID_MERGE_MODES as readonly string[]).includes(mergeMode ?? '') ? mergeMode! : 'push';
 
     // Record DISPATCH event
     const eventId = crypto.randomUUID();
@@ -64,7 +67,7 @@ export class BatchOrchestrator {
 
     // Launch single CLI session with BATCH_SCOPE_IDS prepended to command
     const escaped = escapeForAnsiC(command);
-    const fullCmd = `cd ${getConfig().projectRoot} && BATCH_SCOPE_IDS=${scopeIdsStr} claude --dangerously-skip-permissions $'${escaped}'`;
+    const fullCmd = `cd '${getConfig().projectRoot}' && BATCH_SCOPE_IDS='${scopeIdsStr}' MERGE_MODE='${mergeModeStr}' claude --dangerously-skip-permissions $'${escaped}'`;
     const beforePids = snapshotSessionPids(getConfig().projectRoot);
 
     try {
@@ -94,7 +97,7 @@ export class BatchOrchestrator {
             this.db.prepare('UPDATE events SET data = ? WHERE id = ?').run(JSON.stringify(data), eventId);
           }
         })
-        .catch(() => {});
+        .catch(err => console.error('[Orbital] PID discovery failed:', err.message));
 
       return { ok: true };
     } catch (err) {
@@ -104,7 +107,8 @@ export class BatchOrchestrator {
     }
   }
 
-  /** Called when a scope reaches a new status — check if it satisfies a batch */
+  /** Called when a scope reaches a new status — check if it satisfies a batch,
+   *  or remove the scope from the batch if its status diverged from the target. */
   onScopeStatusChanged(scopeId: number, newStatus: string): void {
     // Find any active batch containing this scope
     const match = this.sprintService.findActiveSprintForScope(scopeId);
@@ -121,10 +125,20 @@ export class BatchOrchestrator {
       if (batch.status === 'dispatched') {
         this.sprintService.updateStatus(batch.id, 'in_progress');
       }
+    } else if (newStatus !== batch.target_column) {
+      // Scope diverged from batch target — remove it from the batch
+      this.sprintService.forceRemoveScope(batch.id, scopeId);
+
+      // If batch is now empty, mark it as failed
+      const remaining = this.sprintService.getSprintScopes(batch.id);
+      if (remaining.length === 0 && batch.status !== 'assembling') {
+        this.sprintService.updateStatus(batch.id, 'failed');
+      }
     }
   }
 
-  /** Called when a dispatched session PID dies — second phase of two-phase completion */
+  /** Called when a dispatched session PID dies — second phase of two-phase completion.
+   *  Reverts un-transitioned scopes to their pre-dispatch status. */
   onSessionPidDied(batchId: number): void {
     const batch = this.sprintService.getById(batchId);
     if (!batch || batch.group_type !== 'batch') return;
@@ -138,9 +152,11 @@ export class BatchOrchestrator {
     } else {
       const pending = scopes.filter((ss) => ss.dispatch_status !== 'completed').map((ss) => ss.scope_id);
       this.sprintService.updateStatus(batchId, 'failed');
-      // Mark un-transitioned scopes as failed
+      // Mark un-transitioned scopes as failed and revert their status
       for (const scopeId of pending) {
         this.sprintService.updateScopeStatus(batchId, scopeId, 'failed', 'Session exited before scope transitioned');
+        // Revert scope to pre-dispatch status (the batch's source column)
+        this.scopeService.updateStatus(scopeId, batch.target_column, 'rollback');
       }
     }
   }

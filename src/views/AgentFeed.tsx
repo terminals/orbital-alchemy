@@ -24,7 +24,7 @@ const AGENT_EVENT_TYPES = [
 const SEVERITY_CONFIG: Record<string, { color: string; label: string }> = {
   blocker: { color: 'text-ask-red bg-[#ff174415]', label: 'BLOCKER' },
   warning: { color: 'text-warning-amber bg-[#ffab0015]', label: 'WARNING' },
-  info: { color: 'text-accent-blue bg-[#536dfe15]', label: 'INFO' },
+  info: { color: 'text-accent-blue bg-[#06b6d415]', label: 'INFO' },
   pass: { color: 'text-bid-green bg-[#00c85315]', label: 'PASS' },
 };
 
@@ -35,7 +35,6 @@ const AGENTS = [
   'solana-expert',
   'frontend-designer',
   'architect',
-  'devops-expert',
   'rules-enforcer',
 ] as const;
 
@@ -293,7 +292,6 @@ const AGENT_CHIP_CONFIG: Record<string, { emoji: string; label: string; color: s
   'solana-expert':     { emoji: '\u{26D3}\u{FE0F}', label: 'Solana', color: 'text-agent-solana', activeColor: 'bg-agent-solana/25 ring-1 ring-agent-solana/40', glowClass: 'glow-purple' },
   'frontend-designer': { emoji: '\u{1F3A8}', label: 'Frontend', color: 'text-agent-frontend', activeColor: 'bg-agent-frontend/25 ring-1 ring-agent-frontend/40', glowClass: 'glow-red' },
   'architect':         { emoji: '\u{1F3D7}\u{FE0F}', label: 'Architect', color: 'text-agent-architect', activeColor: 'bg-agent-architect/25 ring-1 ring-agent-architect/40', glowClass: 'glow-blue' },
-  'devops-expert':     { emoji: '\u{1F680}', label: 'DevOps', color: 'text-agent-devops', activeColor: 'bg-agent-devops/25 ring-1 ring-agent-devops/40', glowClass: 'glow-blue' },
   'rules-enforcer':    { emoji: '\u{1F4CB}', label: 'Rules', color: 'text-agent-rules', activeColor: 'bg-agent-rules/25 ring-1 ring-agent-rules/40', glowClass: '' },
 };
 

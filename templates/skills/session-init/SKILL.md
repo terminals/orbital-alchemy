@@ -1,14 +1,14 @@
 ---
 name: session-init
 description: Initializes work session context by loading project state and recent history. Use at session start, when beginning work, or when context needs refreshing.
-user-invocable: false
+user-invocable: true
 ---
 
-# /work init - Re-Initialize Session Context
+# /session-init - Re-Initialize Session Context
 
 ---
 tokens: ~200
-trigger: /work init
+trigger: /session-init
 purpose: Re-display session initialization and reload critical context
 ---
 
@@ -36,10 +36,10 @@ Before writing ANY code, you MUST:
    ┌────────────────────┬─────────────────────┐
    │ Task               │ Invoke First        │
    ├────────────────────┼─────────────────────┤
-   │ Plan feature       │ /scope create       │
-   │ Implement scope    │ /scope implement    │
-   │ Review scope       │ /scope review-gate  │
-   │ Commit work        │ /work save          │
+   │ Plan feature       │ /scope-create       │
+   │ Implement scope    │ /scope-implement    │
+   │ Review scope       │ /scope-verify       │
+   │ Commit work        │ /git-commit         │
    └────────────────────┴─────────────────────┘
 
 2. STATE WHAT YOU READ before proceeding:
@@ -53,7 +53,7 @@ PROJECT RULES:
    and enforcement configuration.
 
 ══════════════════════════════════════════════════════════════════════════════
-BEFORE EVERY COMMIT: Run /test pre-commit
+BEFORE EVERY COMMIT: Run /test-checks
 ══════════════════════════════════════════════════════════════════════════════
 ```
 

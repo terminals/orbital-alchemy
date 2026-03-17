@@ -33,8 +33,9 @@ export function useIdeaActions(
     try {
       const res = await fetch(`/api/orbital/ideas/${id}/approve`, { method: 'POST' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } finally {
       setSelectedIdea(null);
+    } catch (err) {
+      console.error('[Orbital] Failed to approve idea:', err);
     }
   }, [setSelectedIdea]);
 
@@ -42,8 +43,9 @@ export function useIdeaActions(
     try {
       const res = await fetch(`/api/orbital/ideas/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } finally {
       setSelectedIdea(null);
+    } catch (err) {
+      console.error('[Orbital] Failed to reject idea:', err);
     }
   }, [setSelectedIdea]);
 

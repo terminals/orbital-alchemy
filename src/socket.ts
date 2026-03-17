@@ -6,5 +6,6 @@ export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io({
   autoConnect: true,
   reconnection: true,
   reconnectionDelay: 1000,
-  reconnectionAttempts: 10,
+  reconnectionAttempts: Infinity,
+  reconnectionDelayMax: 10000,
 });

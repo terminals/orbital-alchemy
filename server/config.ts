@@ -25,12 +25,8 @@ export interface CommandsConfig {
   checkRules: string | null;
 }
 
-export interface AgentConfig {
-  id: string;
-  label: string;
-  emoji: string;
-  color: string;
-}
+export type { AgentConfig } from '../shared/api-types.js';
+import type { AgentConfig } from '../shared/api-types.js';
 
 export interface OrbitalConfig {
   projectName: string;
@@ -94,7 +90,6 @@ const DEFAULT_CONFIG: Omit<OrbitalConfig, 'projectRoot'> = {
     { id: 'solana-expert', label: 'Solana Expert', emoji: '\u{26D3}\u{FE0F}', color: '#8B5CF6' },
     { id: 'frontend-designer', label: 'Frontend Designer', emoji: '\u{1F3A8}', color: '#EC4899' },
     { id: 'architect', label: 'Architect', emoji: '\u{1F3D7}\u{FE0F}', color: '#536dfe' },
-    { id: 'devops-expert', label: 'DevOps Expert', emoji: '\u{1F680}', color: '#40c4ff' },
     { id: 'rules-enforcer', label: 'Rules Enforcer', emoji: '\u{1F4CB}', color: '#6B7280' },
   ],
 };
@@ -161,8 +156,8 @@ export function loadConfig(projectRoot?: string): OrbitalConfig {
   if (fs.existsSync(configPath)) {
     try {
       userConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    } catch {
-      // Invalid JSON — use defaults
+    } catch (err) {
+      console.warn('[Orbital] Failed to parse orbital.config.json — using defaults:', (err as Error).message);
     }
   }
 

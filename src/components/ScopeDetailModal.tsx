@@ -3,6 +3,7 @@ import { ExternalLink, X as XIcon, Plus } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
@@ -237,10 +238,17 @@ export function ScopeDetailModal({ scope, open, onClose }: ScopeDetailModalProps
           </div>
         </div>
 
-        <div className="px-4 py-2 flex items-center justify-between border-t border-border/50 text-xxs text-muted-foreground">
-          <span>{saving ? 'Saving...' : isDirty ? 'Unsaved changes' : 'All changes saved'}</span>
-          <Button size="sm" variant="ghost" className="h-6" onClick={() => save()} disabled={!isDirty || saving}>Save</Button>
-        </div>
+        {isDirty && (
+          <div className="mx-4 mb-2 flex items-center gap-2 rounded border border-border bg-card px-3 py-2">
+            <Badge variant="outline">Unsaved changes</Badge>
+            <div className="flex-1" />
+            <Button variant="ghost" size="sm" onClick={() => { setFields(saved); setError(null); }}>Discard</Button>
+            <Button size="sm" onClick={() => save()} disabled={saving}>
+              {saving ? 'Saving...' : 'Save'}
+            </Button>
+            {error && <span className="text-xs text-destructive ml-2">{error}</span>}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

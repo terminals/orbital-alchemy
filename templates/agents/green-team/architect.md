@@ -36,7 +36,7 @@ I catch these before they become permanent.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ CONTROLLERS (backend/src/controllers/)                      │
+│ CONTROLLERS (routes / controllers)                          │
 │ - Parse HTTP requests                                       │
 │ - Call services                                            │
 │ - Format HTTP responses                                     │
@@ -45,7 +45,7 @@ I catch these before they become permanent.
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ SERVICES (backend/src/services/)                            │
+│ SERVICES (services / business logic)                        │
 │ - All business logic lives here                            │
 │ - Orchestration, calculations, validations                 │
 │ - Can call other services                                  │
@@ -55,7 +55,7 @@ I catch these before they become permanent.
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ QUEUES (backend/src/queues/)                                │
+│ QUEUES (background jobs / workers)                          │
 │ - Background job processing                                │
 │ - Call services for actual work                            │
 │ - NO business logic in processors                          │

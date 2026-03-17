@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { socket } from '../socket';
 import type { OrbitalEvent, Scope } from '@/types';
+import { useWorkflow } from './useWorkflow';
 
 interface ActiveDispatchContextValue {
   activeScopes: Set<number>;
@@ -13,6 +14,11 @@ export const ActiveDispatchContext = createContext<ActiveDispatchContextValue>(D
 /** Provider hook — call once at ScopeBoard level.
  *  Fetches initial set from REST, then maintains via socket events. */
 export function useActiveDispatchProvider(): ActiveDispatchContextValue {
+  const { engine } = useWorkflow();
+  const terminalStatuses = useMemo(
+    () => new Set(engine.getConfig().terminalStatuses ?? []),
+    [engine],
+  );
   const [activeScopes, setActiveScopes] = useState<Set<number>>(new Set());
   const mountedRef = useRef(true);
 
@@ -58,9 +64,8 @@ export function useActiveDispatchProvider(): ActiveDispatchContextValue {
       });
     }
 
-    const TERMINAL = new Set(['completed', 'dev', 'staging', 'production']);
     function onScopeUpdated(scope: Scope) {
-      if (TERMINAL.has(scope.status)) {
+      if (terminalStatuses.has(scope.status)) {
         const scopeId = scope.id;
         setActiveScopes((prev) => {
           if (!prev.has(scopeId)) return prev;
@@ -86,7 +91,7 @@ export function useActiveDispatchProvider(): ActiveDispatchContextValue {
       socket.off('scope:updated', onScopeUpdated);
       socket.off('connect', onReconnect);
     };
-  }, [fetchActiveScopes]);
+  }, [fetchActiveScopes, terminalStatuses]);
 
   return { activeScopes };
 }

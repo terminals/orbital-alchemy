@@ -1,16 +1,28 @@
 import type Database from 'better-sqlite3';
 import type { Server } from 'socket.io';
+import type { GateStatus } from '../../shared/api-types.js';
 
 export interface GateResult {
   scope_id: number | null;
   gate_name: string;
-  status: 'pass' | 'fail' | 'running' | 'skipped';
+  status: GateStatus;
   details: string | null;
   duration_ms: number | null;
   commit_sha: string | null;
 }
 
-// The 13 quality gates from /test pre-commit
+export interface GateRow {
+  id: number;
+  scope_id: number | null;
+  gate_name: string;
+  status: GateStatus;
+  details: string | null;
+  duration_ms: number | null;
+  run_at: string;
+  commit_sha: string | null;
+}
+
+// The 13 quality gates from /test-checks
 export const GATE_NAMES = [
   'type-check',
   'lint',
@@ -55,7 +67,7 @@ export class GateService {
   }
 
   /** Get latest gate results for a scope */
-  getLatestForScope(scopeId: number): unknown[] {
+  getLatestForScope(scopeId: number): GateRow[] {
     return this.db.prepare(`
       SELECT * FROM quality_gates
       WHERE scope_id = ? AND id IN (
@@ -64,11 +76,11 @@ export class GateService {
         GROUP BY gate_name
       )
       ORDER BY gate_name
-    `).all(scopeId, scopeId);
+    `).all(scopeId, scopeId) as GateRow[];
   }
 
   /** Get latest gate run (all gates from most recent execution) */
-  getLatestRun(): unknown[] {
+  getLatestRun(): GateRow[] {
     // Get the most recent run_at timestamp
     const latest = this.db.prepare(
       'SELECT run_at FROM quality_gates ORDER BY run_at DESC LIMIT 1'
@@ -81,17 +93,17 @@ export class GateService {
       SELECT * FROM quality_gates
       WHERE run_at >= datetime(?, '-60 seconds')
       ORDER BY gate_name
-    `).all(latest.run_at);
+    `).all(latest.run_at) as GateRow[];
   }
 
   /** Get gate history for trend chart */
-  getTrend(limit: number = 30): unknown[] {
+  getTrend(limit: number = 30): GateRow[] {
     return this.db.prepare(`
       SELECT gate_name, status, run_at, duration_ms
       FROM quality_gates
       ORDER BY run_at DESC
       LIMIT ?
-    `).all(limit * GATE_NAMES.length); // Get enough to cover N runs
+    `).all(limit * GATE_NAMES.length) as GateRow[]; // Get enough to cover N runs
   }
 
   /** Get aggregate pass/fail stats */

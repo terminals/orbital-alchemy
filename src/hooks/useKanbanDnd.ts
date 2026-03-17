@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { DragStartEvent, DragOverEvent, DragEndEvent } from '@dnd-kit/core';
 import type { Scope, Sprint } from '@/types';
 import type { WorkflowEdge } from '../../shared/workflow-config';
@@ -81,6 +81,15 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
     pendingDepSprintId: null,
   });
 
+  // Refs to avoid stale closures in async DnD callbacks
+  const activeScopeRef = useRef<Scope | null>(null);
+  const activeSprintRef = useRef<Sprint | null>(null);
+
+  useEffect(() => {
+    activeScopeRef.current = state.activeScope;
+    activeSprintRef.current = state.activeSprint;
+  }, [state.activeScope, state.activeSprint]);
+
   const onDragStart = useCallback((event: DragStartEvent) => {
     const parsed = parseDragId(event.active.id);
     if (!parsed) return;
@@ -124,8 +133,11 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
     const parsed = parseDragId(over);
     if (!parsed) return;
 
+    const currentSprint = activeSprintRef.current;
+    const currentScope = activeScopeRef.current;
+
     // Sprint container hovering over a column
-    if (state.activeSprint) {
+    if (currentSprint) {
       if (parsed.type === 'column' && parsed.status === 'implementing') {
         setState((prev) => ({ ...prev, overId: 'implementing', overIsValid: true, overSprintId: null }));
       } else {
@@ -135,12 +147,12 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
     }
 
     // Scope card hovering
-    if (state.activeScope) {
+    if (currentScope) {
       if (parsed.type === 'sprint-drop') {
         // Scope over a sprint/batch container — valid if scope status matches target_column (B-4)
         const targetSprint = sprints.find((s) => s.id === parsed.sprintId);
         const valid = targetSprint?.status === 'assembling'
-          && state.activeScope.status === targetSprint.target_column;
+          && currentScope.status === targetSprint.target_column;
         setState((prev) => ({
           ...prev,
           overId: null,
@@ -148,18 +160,18 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
           overSprintId: parsed.sprintId,
         }));
       } else if (parsed.type === 'column') {
-        const valid = engine.isValidTransition(state.activeScope.status, parsed.status);
+        const valid = engine.isValidTransition(currentScope.status, parsed.status);
         setState((prev) => ({ ...prev, overId: parsed.status, overIsValid: valid, overSprintId: null }));
       } else {
         setState((prev) => ({ ...prev, overId: null, overIsValid: false, overSprintId: null }));
       }
     }
-  }, [state.activeScope, state.activeSprint, sprints, engine]);
+  }, [sprints, engine]);
 
   const onDragEnd = useCallback(async (event: DragEndEvent) => {
     const over = event.over?.id;
-    const scope = state.activeScope;
-    const sprint = state.activeSprint;
+    const scope = activeScopeRef.current;
+    const sprint = activeSprintRef.current;
 
     // Reset drag state
     setState((prev) => ({
@@ -233,7 +245,7 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
         }));
       }
     }
-  }, [state.activeScope, state.activeSprint, onAddToSprint, engine]);
+  }, [onAddToSprint, engine, sprints]);
 
   const confirmTransition = useCallback(async () => {
     const { pending } = state;
@@ -241,7 +253,7 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
 
     setState((prev) => ({ ...prev, dispatching: true, error: null }));
 
-    const { scope, transition, hasActiveSession } = pending;
+    const { scope, transition } = pending;
     const command = engine.buildCommand(transition, scope.id);
 
     try {
@@ -256,7 +268,7 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
             transition: transition.skipServerTransition
               ? undefined
               : { from: transition.from, to: transition.to },
-            force: hasActiveSession,
+
           }),
         });
 
@@ -283,7 +295,8 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
           });
 
           if (!res.ok) {
-            throw new Error(`Failed to update scope status: HTTP ${res.status}`);
+            const body = await res.json().catch(() => ({ error: 'Request failed' }));
+            throw new Error(body.error ?? `Failed to update scope status: HTTP ${res.status}`);
           }
         }
       }

@@ -34,19 +34,17 @@ These file patterns **ALWAYS** trigger specific agents, no exceptions.
 | File Pattern | Agents Triggered | Reason |
 |--------------|------------------|--------|
 | `frontend/src/**/*` | Frontend Designer | UI components |
-| `migrations/*` | Architect + DevOps Expert | Schema changes |
+| `migrations/*` | Architect | Schema changes |
 | `config/*.ts` | Chaos | Configuration changes |
 | `*.test.ts` | Rules Enforcer | Test quality |
 
-### Infrastructure Files -> DevOps Review
+### Infrastructure Files -> Architecture Review
 
 | File Pattern | Agents Triggered | Reason |
 |--------------|------------------|--------|
-| `Dockerfile` | DevOps Expert + Chaos | Container config |
-| Platform config files | DevOps Expert | Deployment config |
-| `docker-compose.yml` | DevOps Expert | Local dev setup |
-| `.github/workflows/*.yml` | DevOps Expert + Architect | CI/CD pipeline |
-| `.env.example` | DevOps Expert | Environment template |
+| `Dockerfile` | Architect + Chaos | Container config |
+| `.github/workflows/*.yml` | Architect + Chaos | CI/CD pipeline |
+| `docker-compose.yml` | Architect | Local dev setup |
 
 ---
 
@@ -83,7 +81,6 @@ Trigger: Attacker (SECURITY MODE - runs twice)
 | Agent | When | Mode |
 |-------|------|------|
 | Rules Enforcer | Before EVERY commit | Blocking |
-| Frontend Designer | Any user-facing feature | Advisory |
 
 ---
 

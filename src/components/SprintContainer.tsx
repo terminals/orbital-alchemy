@@ -1,9 +1,11 @@
+import { useState, useEffect, useRef } from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { X, Layers, Package, Play } from 'lucide-react';
 import type { Sprint, Scope, CardDisplayConfig } from '@/types';
 import { ScopeCard } from './ScopeCard';
 import { cn, formatScopeId } from '@/lib/utils';
+import { useWorkflow } from '@/hooks/useWorkflow';
 
 interface SprintContainerProps {
   sprint: Sprint;
@@ -11,6 +13,7 @@ interface SprintContainerProps {
   scopeLookup: Map<number, Scope>;
   onDelete?: (id: number) => void;
   onDispatch?: (id: number) => void;
+  onRename?: (id: number, name: string) => void;
   onScopeClick?: (scope: Scope) => void;
   cardDisplay?: CardDisplayConfig;
   dimmedIds?: Set<number>;
@@ -18,6 +21,10 @@ interface SprintContainerProps {
   looseCount?: number;
   /** Bulk-add all loose column scopes into this batch */
   onAddAll?: (sprintId: number) => void;
+  /** Whether this sprint was just created and should start with name editing */
+  editingName?: boolean;
+  /** Called when name editing finishes (committed or cancelled) */
+  onEditingDone?: () => void;
 }
 
 const STATUS_STYLE: Record<string, string> = {
@@ -51,22 +58,40 @@ function totalEffortHours(sprint: Sprint): string {
   return total < 1 ? `${Math.round(total * 60)}M` : `~${total.toFixed(0)}H`;
 }
 
-// Column accent color for batch borders
-const COLUMN_ACCENT: Record<string, string> = {
-  completed: 'border-green-500/50',
-  dev: 'border-blue-500/50',
-  staging: 'border-amber-500/50',
-};
-
-const BATCH_ACTION_LABEL: Record<string, string> = {
-  completed: 'Commit to dev',
-  dev: 'PR to staging',
-  staging: 'PR to production',
-};
-
-export function SprintContainer({ sprint, scopeLookup, onDelete, onDispatch, onScopeClick, cardDisplay, dimmedIds, looseCount, onAddAll }: SprintContainerProps) {
+export function SprintContainer({ sprint, scopeLookup, onDelete, onDispatch, onRename, onScopeClick, cardDisplay, dimmedIds, looseCount, onAddAll, editingName, onEditingDone }: SprintContainerProps) {
+  const { engine } = useWorkflow();
   const isAssembling = sprint.status === 'assembling';
+  const [isEditing, setIsEditing] = useState(editingName ?? false);
+  const [draftName, setDraftName] = useState(sprint.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingName) {
+      setIsEditing(true);
+      setDraftName('');
+    }
+  }, [editingName]);
+
+  useEffect(() => {
+    if (isEditing) inputRef.current?.focus();
+  }, [isEditing]);
+
+  const commitName = () => {
+    const trimmed = draftName.trim();
+    if (trimmed && trimmed !== sprint.name && onRename) {
+      onRename(sprint.id, trimmed);
+    }
+    setIsEditing(false);
+    setDraftName(trimmed || sprint.name);
+    onEditingDone?.();
+  };
   const isBatch = sprint.group_type === 'batch';
+  const batchActionLabel = isBatch
+    ? (() => {
+        const target = engine.getBatchTargetStatus(sprint.target_column);
+        return target ? engine.findEdge(sprint.target_column, target)?.label ?? 'Dispatch' : 'Dispatch';
+      })()
+    : undefined;
 
   // Only sprints are draggable (batches dispatch via header button)
   const {
@@ -95,13 +120,16 @@ export function SprintContainer({ sprint, scopeLookup, onDelete, onDispatch, onS
   const Icon = isBatch ? Package : Layers;
   const iconColor = isBatch ? 'text-amber-400' : 'text-cyan-400';
   const borderStyle = isBatch && isAssembling
-    ? COLUMN_ACCENT[sprint.target_column] ?? 'border-muted-foreground/30'
+    ? 'border-muted-foreground/30'
     : STATUS_STYLE[sprint.status] ?? 'border-muted-foreground/30';
 
   return (
     <div
       ref={setDragRef}
-      style={dragStyle}
+      style={{
+        ...dragStyle,
+        ...(isBatch && isAssembling ? { borderColor: (engine.getList(sprint.target_column)?.hex ?? '') + '80' } : undefined),
+      }}
       className={cn(
         'rounded-lg border bg-card/30 transition-all duration-200',
         borderStyle,
@@ -114,7 +142,28 @@ export function SprintContainer({ sprint, scopeLookup, onDelete, onDispatch, onS
       {/* Header */}
       <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-inherit">
         <Icon className={cn('h-3 w-3 shrink-0', iconColor)} />
-        <span className="text-xs font-medium text-foreground truncate flex-1">{sprint.name}</span>
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            className="min-w-0 flex-1 h-5 rounded bg-muted/50 px-1.5 text-xs font-medium text-foreground border border-cyan-500/30 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
+            placeholder={isBatch ? 'Batch name...' : 'Sprint name...'}
+            value={draftName}
+            onChange={(e) => setDraftName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitName();
+              if (e.key === 'Escape') { setIsEditing(false); setDraftName(sprint.name); onEditingDone?.(); }
+            }}
+            onBlur={commitName}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span
+            className={cn('text-xs font-medium text-foreground truncate flex-1', isAssembling && 'cursor-text')}
+            onDoubleClick={() => { if (isAssembling) { setIsEditing(true); setDraftName(sprint.name); } }}
+          >
+            {sprint.name}
+          </span>
+        )}
         <span className={cn(
           'rounded px-1 py-0.5 text-[10px] uppercase',
           sprint.status === 'dispatched' || sprint.status === 'in_progress'
@@ -139,11 +188,11 @@ export function SprintContainer({ sprint, scopeLookup, onDelete, onDispatch, onS
         {canDispatch && (
           <button
             onClick={(e) => { e.stopPropagation(); onDispatch(sprint.id); }}
-            className="shrink-0 flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] bg-cyan-600/80 text-white hover:bg-cyan-500/80 transition-colors"
-            title={BATCH_ACTION_LABEL[sprint.target_column] ?? 'Dispatch'}
+            className="shrink-0 flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] bg-cyan-600/80 text-black hover:bg-cyan-500/80 transition-colors"
+            title={batchActionLabel ?? 'Dispatch'}
           >
             <Play className="h-2.5 w-2.5" />
-            {BATCH_ACTION_LABEL[sprint.target_column] ?? 'Dispatch'}
+            {batchActionLabel ?? 'Dispatch'}
           </button>
         )}
         {isAssembling && onDelete && (
@@ -181,7 +230,7 @@ export function SprintContainer({ sprint, scopeLookup, onDelete, onDispatch, onS
           );
         })}
         {totalScopes === 0 && isAssembling && isOver && (
-          <p className="py-3 text-center text-[10px] text-cyan-400">
+          <p className="py-3 text-center text-[10px] text-muted-foreground/50">
             Drop to add
           </p>
         )}
@@ -190,7 +239,7 @@ export function SprintContainer({ sprint, scopeLookup, onDelete, onDispatch, onS
       {/* Footer: effort + scope count + progress + dispatch result */}
       <div className="flex items-center justify-between border-t border-inherit px-2.5 py-1">
         <span className="text-[10px] text-muted-foreground">
-          {isBatch ? BATCH_ACTION_LABEL[sprint.target_column] ?? 'Batch' : `Effort: ${totalEffortHours(sprint)}`}
+          {isBatch ? batchActionLabel ?? 'Batch' : `Effort: ${totalEffortHours(sprint)}`}
         </span>
         <span className="text-[10px] text-muted-foreground">
           {totalScopes} scope{totalScopes !== 1 ? 's' : ''}

@@ -78,7 +78,7 @@ export function AddEdgeDialog({ open, onOpenChange, config, onAdd }: AddEdgeDial
           {/* Header */}
           <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
             <Dialog.Title className="flex items-center gap-2 text-sm font-medium text-zinc-100">
-              <Plus className="h-4 w-4 text-blue-400" />
+              <Plus className="h-4 w-4 text-cyan-400" />
               Add Edge
             </Dialog.Title>
             <Dialog.Close className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300">
@@ -151,7 +151,7 @@ export function AddEdgeDialog({ open, onOpenChange, config, onAdd }: AddEdgeDial
                 value={command}
                 onChange={(e) => setCommand(e.target.value)}
                 className="w-full rounded border border-zinc-700 bg-zinc-800 px-2.5 py-2 font-mono text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-zinc-500"
-                placeholder="/scope implement {id}"
+                placeholder="/scope-implement {id}"
               />
             </FieldGroup>
 
@@ -193,7 +193,7 @@ export function AddEdgeDialog({ open, onOpenChange, config, onAdd }: AddEdgeDial
             <button
               onClick={handleSubmit}
               disabled={errors.length > 0}
-              className="flex items-center gap-1.5 rounded bg-blue-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-40"
+              className="flex items-center gap-1.5 rounded bg-cyan-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-cyan-500 disabled:opacity-40"
             >
               <Plus className="h-3.5 w-3.5" />
               Add Edge

@@ -3,6 +3,7 @@
 #
 # Source this file from other scope hooks:
 #   source "$(dirname "$0")/scope-helpers.sh"
+set -e
 
 SCOPE_PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 SCOPE_IMPLEMENTING_DIR="$SCOPE_PROJECT_DIR/scopes/implementing"
@@ -12,29 +13,29 @@ MANIFEST_FILE="$SCOPE_PROJECT_DIR/.claude/config/workflow-manifest.sh"
 if [ -f "$MANIFEST_FILE" ]; then
   source "$MANIFEST_FILE"
 else
-  # Fallback defaults (matches current hardcoded behavior)
-  WORKFLOW_STATUSES="icebox planning backlog implementing review completed dev staging production"
-  WORKFLOW_DIR_STATUSES="icebox planning backlog implementing review completed dev staging production"
+  # Fallback defaults (matches new Default trunk workflow)
+  WORKFLOW_BRANCHING_MODE="trunk"
+  WORKFLOW_STATUSES="icebox planning backlog implementing review completed main"
+  WORKFLOW_DIR_STATUSES="icebox planning backlog implementing review completed main"
   WORKFLOW_ENTRY_STATUS="icebox"
   WORKFLOW_EDGES=(
-    "planning:backlog:backlog"
-    "backlog:implementing:implement"
+    "planning:backlog:reviewScope"
+    "backlog:implementing:implementScope"
     "implementing:review:reviewGate"
-    "review:completed:saveScope"
-    "completed:dev:pushToDev"
-    "dev:staging:pushToStaging"
-    "staging:production:pushToProduction"
+    "review:completed:commit"
+    "completed:main:pushToMain"
   )
   WORKFLOW_BRANCH_MAP=(
-    "staging:dev:staging:pushToStaging"
-    "main:staging:production:pushToProduction"
+    "main:completed:main:pushToMain"
   )
-  WORKFLOW_COMMIT_BRANCHES="^(dev|feat/|fix/|scope/|chore/)"
-  WORKFLOW_DIRECTION_ALIASES=(
-    "to-dev:completed:dev:pushToDev"
-    "to-staging:dev:staging:pushToStaging"
-    "to-production:staging:production:pushToProduction"
-  )
+  WORKFLOW_COMMIT_BRANCHES="^(main|feat/|fix/|scope/|chore/)"
+  WORKFLOW_DIRECTION_ALIASES=()
+fi
+
+# Ensure defaults for variables the manifest may not define
+WORKFLOW_COMMIT_BRANCHES="${WORKFLOW_COMMIT_BRANCHES:-^(main|feat/|fix/|scope/|chore/)}"
+if [ -z "${WORKFLOW_DIRECTION_ALIASES+x}" ]; then
+  WORKFLOW_DIRECTION_ALIASES=()
 fi
 
 # Map status to directory name (manifest-driven)
@@ -68,14 +69,14 @@ find_scopes_by_status() {
   done
 }
 
-# Get the currently active scope (implementing > backlog > exploring)
+# Get the currently active scope (implementing > backlog > planning)
 find_active_scope() {
   local scope
   scope=$(find_scopes_by_status "implementing" "$SCOPE_IMPLEMENTING_DIR" | head -1)
   [ -n "$scope" ] && echo "$scope" && return 0
   scope=$(find_scopes_by_status "backlog" "$SCOPE_PROJECT_DIR/scopes/backlog" | head -1)
   [ -n "$scope" ] && echo "$scope" && return 0
-  scope=$(find_scopes_by_status "exploring" "$SCOPE_PROJECT_DIR/scopes/planning" | head -1)
+  scope=$(find_scopes_by_status "planning" "$SCOPE_PROJECT_DIR/scopes/planning" | head -1)
   [ -n "$scope" ] && echo "$scope" && return 0
   return 1
 }
@@ -89,36 +90,41 @@ get_frontmatter() {
 # Set a simple frontmatter field (top-level only, e.g. status, updated)
 set_frontmatter() {
   local file="$1" field="$2" value="$3"
-  sed -i '' "s/^${field}:.*/${field}: ${value}/" "$file"
+  local tmp="${file}.tmp.$$"
+  sed "s/^${field}:.*/${field}: ${value}/" "$file" > "$tmp" && mv "$tmp" "$file"
 }
 
 # Append a UUID to a sessions array key in frontmatter
 # Handles inline YAML arrays: key: [uuid1, uuid2]
 append_session_uuid() {
   local file="$1" key="$2" uuid="$3"
-
-  # If sessions: block doesn't exist, insert after tags:
-  if ! grep -q '^sessions:' "$file"; then
-    sed -i '' '/^tags:/a\
-sessions:' "$file"
-  fi
-
-  # Check if the key already exists under sessions
-  local key_line
-  key_line=$(grep "^  ${key}:" "$file" || true)
-
-  if [ -z "$key_line" ]; then
-    # Key doesn't exist — add it after sessions:
-    sed -i '' "/^sessions:/a\\
-  ${key}: [${uuid}]" "$file"
-  elif echo "$key_line" | grep -q "$uuid"; then
-    # UUID already present — skip
-    return 0
-  else
-    # Append UUID to existing array: [a, b] → [a, b, uuid]
-    sed -i '' "s/^  ${key}: \[/  ${key}: [/" "$file"
-    sed -i '' "s/^  ${key}: \[\(.*\)\]/  ${key}: [\1, ${uuid}]/" "$file"
-  fi
+  local tmp="${file}.tmp.$$"
+  awk -v key="$key" -v uuid="$uuid" '
+    BEGIN { found_sessions=0; found_key=0; added=0 }
+    /^sessions:/ { found_sessions=1 }
+    found_sessions && $0 ~ "^  " key ":" {
+      found_key=1
+      if (index($0, uuid) > 0) { added=1; print; next }
+      # Append UUID to existing array: [a, b] -> [a, b, uuid]
+      sub(/\]$/, ", " uuid "]")
+      added=1
+    }
+    # After sessions: block ends (next top-level key), insert key if not found
+    found_sessions && !found_key && /^[^ ]/ && !/^sessions:/ {
+      print "  " key ": [" uuid "]"
+      found_key=1; added=1
+    }
+    { print }
+    END {
+      # If sessions: block was never found, or key never added
+      if (!found_sessions) {
+        print "sessions:"
+        print "  " key ": [" uuid "]"
+      } else if (!added) {
+        print "  " key ": [" uuid "]"
+      }
+    }
+  ' "$file" > "$tmp" && mv "$tmp" "$file"
 }
 
 # Find scope file by numeric ID across all directories

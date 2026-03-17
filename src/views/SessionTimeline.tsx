@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Clock, FileText, Terminal } from 'lucide-react';
+import { Clock, ExternalLink, FileText, Terminal } from 'lucide-react';
 import { format } from 'date-fns';
 import { socket } from '@/socket';
 import { useTheme } from '@/hooks/useTheme';
@@ -26,11 +26,50 @@ interface SessionMeta {
   lastActiveAt: string;
 }
 
+interface SessionStatsUser {
+  totalMessages: number;
+  metaMessages: number;
+  toolResults: number;
+  commands: string[];
+  permissionModes: string[];
+  cwd: string | null;
+  version: string | null;
+}
+
+interface SessionStatsAssistant {
+  totalMessages: number;
+  models: string[];
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheReadTokens: number;
+  totalCacheCreationTokens: number;
+  toolsUsed: Record<string, number>;
+}
+
+interface SessionStatsSystem {
+  totalMessages: number;
+  subtypes: string[];
+  stopReasons: string[];
+  totalDurationMs: number;
+  hookCount: number;
+  hookErrors: number;
+}
+
+interface SessionStats {
+  typeCounts: Record<string, number>;
+  user: SessionStatsUser;
+  assistant: SessionStatsAssistant;
+  system: SessionStatsSystem;
+  progress: { totalLines: number };
+  timing: { firstTimestamp: string | null; lastTimestamp: string | null; durationMs: number };
+}
+
 interface SessionDetail {
   id: string;
   content: string;
   claude_session_id: string | null;
   meta: SessionMeta | null;
+  stats: SessionStats | null;
 }
 
 /** Session with aggregated scope_ids and actions from deduplicated backend response */
@@ -126,7 +165,7 @@ export function SessionTimeline() {
     <div className="flex flex-1 min-h-0 flex-col">
       <div className="mb-4 flex items-center gap-3">
         <Clock className="h-4 w-4 text-primary" />
-        <h1 className="text-xl font-light">Session Timeline</h1>
+        <h1 className="text-xl font-light">Sessions</h1>
         <Badge variant="secondary">{sessions.length} sessions</Badge>
       </div>
 
@@ -242,8 +281,8 @@ function DetailPane({ session, detail, loading, resuming, onResume }: {
   const canResume = !!detail?.claude_session_id;
   const displayName = meta?.summary ?? session.summary ?? null;
 
-  // Build metadata rows as [label, value, className?] tuples
-  const rows: [string, string, string?][] = [];
+  // Build metadata rows as [label, value, className?, actionUrl?] tuples
+  const rows: [string, string, string?, string?][] = [];
   if (scopeIds.length > 0) rows.push(['Scopes', scopeIds.map((id) => formatScopeId(id)).join(', ')]);
   if (session.actions?.length > 0) rows.push(['Actions', session.actions.map(actionLabel).join(', ')]);
   if (session.summary) rows.push(['Summary', truncate(session.summary, 200)]);
@@ -251,7 +290,7 @@ function DetailPane({ session, detail, loading, resuming, onResume }: {
   rows.push(['Ended', session.ended_at ? format(new Date(session.ended_at), 'MMM d, h:mm a') : '—']);
   if (meta?.branch && meta.branch !== 'unknown') rows.push(['Branch', meta.branch, 'font-mono text-xxs']);
   if (meta && meta.fileSize > 0) rows.push(['File size', formatFileSize(meta.fileSize)]);
-  if (meta) rows.push(['Plan', meta.slug, 'text-muted-foreground']);
+  if (meta) rows.push(['Plan', meta.slug, 'text-muted-foreground', `/api/orbital/open-file?path=scopes/${meta.slug}.md`]);
   if (session.handoff_file) rows.push(['Handoff', session.handoff_file, 'font-mono text-xxs']);
   if (detail?.claude_session_id) rows.push(['Session ID', detail.claude_session_id, 'font-mono text-xxs text-muted-foreground']);
 
@@ -281,12 +320,23 @@ function DetailPane({ session, detail, loading, resuming, onResume }: {
           ) : (
             <>
               <table className="w-full table-fixed text-xs">
-                <colgroup><col className="w-24" /><col /></colgroup>
+                <colgroup><col className="w-28" /><col /></colgroup>
                 <tbody className="[&_td]:border-b [&_td]:border-border/30 [&_td]:py-2 [&_td]:align-top [&_td:first-child]:pr-3 [&_td:first-child]:text-muted-foreground [&_td:first-child]:whitespace-nowrap [&_td:last-child]:break-all">
-                  {rows.map(([label, value, cls]) => (
+                  {rows.map(([label, value, cls, action]) => (
                     <tr key={label}>
                       <td>{label}</td>
-                      <td className={cls}>{value}</td>
+                      <td className={cls}>
+                        {action ? (
+                          <button
+                            onClick={() => { fetch(action, { method: 'POST' }); }}
+                            className="inline-flex items-center gap-1.5 hover:text-accent-blue transition-colors"
+                            title="Open file"
+                          >
+                            {value}
+                            <ExternalLink className="h-3 w-3 opacity-50" />
+                          </button>
+                        ) : value}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -294,6 +344,8 @@ function DetailPane({ session, detail, loading, resuming, onResume }: {
 
               <BulletSection title="Completed" items={discoveries} color="text-bid-green" />
               <BulletSection title="Next Steps" items={nextSteps} color="text-accent-blue" />
+
+              {detail?.stats && <StatsSection stats={detail.stats} />}
 
               {session.handoff_file && (
                 <div className="mt-4 flex items-center gap-1.5 text-xxs text-muted-foreground/60">
@@ -320,13 +372,107 @@ function DetailPane({ session, detail, loading, resuming, onResume }: {
   );
 }
 
+// ─── Stats Section ─────────────────────────────────────────
+
+function StatsSection({ stats }: { stats: SessionStats }) {
+  const { user, assistant, system, timing } = stats;
+  const toolEntries = Object.entries(assistant.toolsUsed).sort((a, b) => b[1] - a[1]);
+
+  return (
+    <div className="mt-5 space-y-4">
+      <Separator />
+
+      {/* Timing */}
+      <StatsGroup title="Timing">
+        {timing.durationMs > 0 && <StatsRow label="Duration" value={formatDuration(timing.durationMs)} />}
+        {timing.firstTimestamp && <StatsRow label="First event" value={format(new Date(timing.firstTimestamp), 'MMM d, h:mm:ss a')} />}
+        {timing.lastTimestamp && <StatsRow label="Last event" value={format(new Date(timing.lastTimestamp), 'MMM d, h:mm:ss a')} />}
+      </StatsGroup>
+
+      {/* User */}
+      <StatsGroup title="User">
+        <StatsRow label="Messages" value={`${user.totalMessages - user.metaMessages - user.toolResults} direct, ${user.metaMessages} meta, ${user.toolResults} tool results`} />
+        {user.commands.length > 0 && <StatsRow label="Commands" value={user.commands.join(', ')} cls="font-mono" />}
+        {user.permissionModes.length > 0 && <StatsRow label="Permission modes" value={user.permissionModes.join(', ')} />}
+        {user.version && <StatsRow label="Claude Code version" value={user.version} cls="font-mono" />}
+        {user.cwd && <StatsRow label="Working directory" value={user.cwd} cls="font-mono text-xxs" />}
+      </StatsGroup>
+
+      {/* Assistant */}
+      <StatsGroup title="Assistant">
+        <StatsRow label="Responses" value={String(assistant.totalMessages)} />
+        {assistant.models.length > 0 && <StatsRow label="Models" value={assistant.models.join(', ')} cls="font-mono" />}
+        <StatsRow label="Input tokens" value={formatNumber(assistant.totalInputTokens)} />
+        <StatsRow label="Output tokens" value={formatNumber(assistant.totalOutputTokens)} />
+        {assistant.totalCacheReadTokens > 0 && <StatsRow label="Cache read tokens" value={formatNumber(assistant.totalCacheReadTokens)} />}
+        {assistant.totalCacheCreationTokens > 0 && <StatsRow label="Cache creation tokens" value={formatNumber(assistant.totalCacheCreationTokens)} />}
+        {toolEntries.length > 0 && (
+          <tr>
+            <td className="pr-3 text-muted-foreground whitespace-nowrap align-top">Tools used</td>
+            <td>
+              <div className="flex flex-wrap gap-1">
+                {toolEntries.map(([name, count]) => (
+                  <Badge key={name} variant="outline" className="font-mono text-xxs px-1.5 py-0">
+                    {name} <span className="ml-1 text-muted-foreground">{count}</span>
+                  </Badge>
+                ))}
+              </div>
+            </td>
+          </tr>
+        )}
+      </StatsGroup>
+
+      {/* System */}
+      {system.totalMessages > 0 && (
+        <StatsGroup title="System">
+          <StatsRow label="Events" value={String(system.totalMessages)} />
+          {system.subtypes.length > 0 && <StatsRow label="Subtypes" value={system.subtypes.join(', ')} />}
+          {system.stopReasons.length > 0 && <StatsRow label="Stop reasons" value={system.stopReasons.join(', ')} />}
+          {system.totalDurationMs > 0 && <StatsRow label="Total processing" value={formatDuration(system.totalDurationMs)} />}
+          {system.hookCount > 0 && <StatsRow label="Hooks fired" value={`${system.hookCount}${system.hookErrors > 0 ? ` (${system.hookErrors} errors)` : ''}`} />}
+        </StatsGroup>
+      )}
+
+      {/* Line counts */}
+      <StatsGroup title="Raw Counts">
+        {Object.entries(stats.typeCounts).sort((a, b) => b[1] - a[1]).map(([type, count]) => (
+          <StatsRow key={type} label={type} value={String(count)} />
+        ))}
+      </StatsGroup>
+    </div>
+  );
+}
+
+function StatsGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h4 className="mb-2 text-xxs font-medium uppercase tracking-wider text-foreground">{title}</h4>
+      <table className="w-full table-fixed text-xs">
+        <colgroup><col className="w-40" /><col /></colgroup>
+        <tbody className="[&_td]:border-b [&_td]:border-border/20 [&_td]:py-1.5 [&_td]:align-top [&_td:first-child]:pr-3 [&_td:first-child]:text-muted-foreground [&_td:first-child]:whitespace-nowrap">
+          {children}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function StatsRow({ label, value, cls }: { label: string; value: string; cls?: string }) {
+  return (
+    <tr>
+      <td>{label}</td>
+      <td className={cls}>{value}</td>
+    </tr>
+  );
+}
+
 // ─── Shared Helpers ────────────────────────────────────────
 
 function BulletSection({ title, items, color }: { title: string; items: string[]; color: string }) {
   if (items.length === 0) return null;
   return (
     <div className="mt-5">
-      <h4 className="mb-2 text-xxs font-medium uppercase tracking-wider text-muted-foreground">{title}</h4>
+      <h4 className="mb-2 text-xxs font-medium uppercase tracking-wider text-foreground">{title}</h4>
       <ul className="space-y-1.5">
         {items.map((item, idx) => (
           <li key={idx} className="flex items-start gap-2 text-xs">
@@ -347,4 +493,20 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const secs = Math.floor(ms / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  const remSecs = secs % 60;
+  if (mins < 60) return `${mins}m ${remSecs}s`;
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return `${hrs}h ${remMins}m`;
+}
+
+function formatNumber(n: number): string {
+  return n.toLocaleString();
 }

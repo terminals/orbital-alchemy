@@ -17,6 +17,7 @@ export function ConfigSettingsPanel({ config, onUpdate, onClose }: ConfigSetting
   const [name, setName] = useState(config.name);
   const [description, setDescription] = useState(config.description ?? '');
   const [commitPatterns, setCommitPatterns] = useState(config.commitBranchPatterns ?? '');
+  const [branchingMode, setBranchingMode] = useState<'trunk' | 'worktree'>(config.branchingMode ?? 'trunk');
 
   const allListIds = useMemo(() => config.lists.map((l) => l.id), [config.lists]);
   const [terminalStatuses, setTerminalStatuses] = useState<Set<string>>(
@@ -51,10 +52,11 @@ export function ConfigSettingsPanel({ config, onUpdate, onClose }: ConfigSetting
       ...config,
       name: name.trim() || config.name,
       description: description.trim() || undefined,
+      branchingMode,
       terminalStatuses: [...terminalStatuses],
       commitBranchPatterns: commitPatterns || undefined,
     });
-  }, [config, name, description, terminalStatuses, commitPatterns, onUpdate]);
+  }, [config, name, description, branchingMode, terminalStatuses, commitPatterns, onUpdate]);
 
   return (
     <div className="flex h-full w-80 shrink-0 flex-col rounded-lg border border-zinc-700 bg-zinc-900/95 backdrop-blur">
@@ -91,6 +93,28 @@ export function ConfigSettingsPanel({ config, onUpdate, onClose }: ConfigSetting
           />
         </FieldGroup>
 
+        {/* Branching Mode */}
+        <FieldGroup label="Branching Mode">
+          <div className="flex gap-2">
+            {(['trunk', 'worktree'] as const).map((mode) => (
+              <label key={mode} className="flex flex-1 cursor-pointer items-center gap-2 rounded border border-zinc-800 bg-zinc-950/30 px-2 py-1.5">
+                <input
+                  type="radio"
+                  name="branchingMode"
+                  value={mode}
+                  checked={branchingMode === mode}
+                  onChange={() => setBranchingMode(mode)}
+                  className="h-3.5 w-3.5 border-zinc-600 bg-zinc-800 text-cyan-500 focus:ring-0 focus:ring-offset-0"
+                />
+                <span className="text-zinc-300 capitalize">{mode}</span>
+              </label>
+            ))}
+          </div>
+          <p className="mt-1 text-[9px] text-zinc-600">
+            Trunk: all work on current branch. Worktree: git worktree per scope for isolation.
+          </p>
+        </FieldGroup>
+
         {/* Command Prefixes */}
         <FieldGroup label="Allowed Command Prefixes">
           <CommandPrefixManager
@@ -109,7 +133,7 @@ export function ConfigSettingsPanel({ config, onUpdate, onClose }: ConfigSetting
                   type="checkbox"
                   checked={terminalStatuses.has(id)}
                   onChange={() => toggleTerminal(id)}
-                  className="h-3.5 w-3.5 rounded border-zinc-600 bg-zinc-800 text-blue-500 focus:ring-0 focus:ring-offset-0"
+                  className="h-3.5 w-3.5 rounded border-zinc-600 bg-zinc-800 text-cyan-500 focus:ring-0 focus:ring-offset-0"
                 />
                 <span className="text-zinc-300">{id}</span>
               </label>
@@ -144,7 +168,7 @@ export function ConfigSettingsPanel({ config, onUpdate, onClose }: ConfigSetting
       <div className="flex items-center justify-end border-t border-zinc-800 px-4 py-3">
         <button
           onClick={handleApply}
-          className="rounded bg-blue-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-blue-500"
+          className="rounded bg-cyan-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-cyan-500"
         >
           Apply
         </button>

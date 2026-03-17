@@ -2,6 +2,7 @@
 # exploration-logger.sh — Remind to log exploration findings periodically
 # Trigger: PostToolUse:Grep|Glob (search operations)
 # Nudge-style: always exits 0
+set -e
 
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)

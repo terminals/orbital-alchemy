@@ -7,6 +7,7 @@
 # Exit codes:
 #   0 — Allow the edit
 #   2 — Block (no verdict, failed verdict, or session separation violation)
+set -euo pipefail
 
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
@@ -42,7 +43,7 @@ VERDICT_FILE="$VERDICTS_DIR/${PADDED}.json"
 if [ ! -f "$VERDICT_FILE" ]; then
   echo ""
   echo "MUST_BLOCK: No review verdict found for scope $PADDED."
-  echo "   Run: /scope review-gate $PADDED"
+  echo "   Run: /scope-post-review $PADDED"
   echo "   The review gate must pass before a scope can be completed."
   echo ""
   exit 2
@@ -53,7 +54,7 @@ VERDICT=$(jq -r '.verdict // empty' "$VERDICT_FILE" 2>/dev/null)
 if [ "$VERDICT" != "PASS" ]; then
   echo ""
   echo "MUST_BLOCK: Review verdict for scope $PADDED is '$VERDICT', not PASS."
-  echo "   Fix the failing criteria and re-run: /scope review-gate $PADDED"
+  echo "   Fix the failing criteria and re-run: /scope-post-review $PADDED"
   echo ""
   exit 2
 fi

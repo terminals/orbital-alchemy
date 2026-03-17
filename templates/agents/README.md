@@ -80,7 +80,6 @@ Every enforcement rule exists because a past mistake taught us it matters. Bypas
 │  "Deep knowledge, consulted on demand"                                     │
 │                                                                             │
 │     🎨 Frontend Designer - Components, UX, style consistency               │
-│     🚀 DevOps Expert   - Deployment, Docker, CI/CD, migrations            │
 │     (Add domain experts for your project)                                 │
 │                                                                             │
 │  🟢 GREEN TEAM (Guardians)                                                  │
@@ -147,7 +146,7 @@ Before any commit:
 - Only 📋 Rules Enforcer runs
 - Request with: "quick mode: [task]"
 - Use for: Typos, comments, tiny fixes
-- **Cannot use for**: Funding files, security files, new endpoints
+- **Cannot use for**: Security files, new endpoints
 
 ### Security Mode (Automatic)
 - 🗡️ Attacker runs twice (before AND after implementation)

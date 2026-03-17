@@ -69,7 +69,7 @@ export function SwimlaneBoardView({
               neonGlass && 'border-b-white/[0.08]',
             )}
           >
-            <div className={cn('h-2 w-2 rounded-full shrink-0', col.color, neonGlass && 'animate-glow-pulse')} />
+            <div className={cn('h-2 w-2 rounded-full shrink-0', neonGlass && 'animate-glow-pulse')} style={{ backgroundColor: `hsl(${col.color})` }} />
             <span className="text-xxs uppercase tracking-wider font-normal text-muted-foreground truncate">
               {col.label}
             </span>

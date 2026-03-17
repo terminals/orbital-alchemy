@@ -2,6 +2,7 @@
 #
 # Claude Code SessionStart Hook: Session Initialization
 #
+set -e
 
 INPUT=$(cat)
 SOURCE=$(echo "$INPUT" | jq -r '.source // "startup"' 2>/dev/null)
@@ -14,9 +15,14 @@ SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 if [ -n "$SESSION_ID" ]; then
   SESSION_DIR="$PROJECT_DIR/.claude/metrics/.session-ids"
   mkdir -p "$SESSION_DIR"
-  printf '%s' "$SESSION_ID" > "$SESSION_DIR/$PPID"
-  # Clean up stale session files older than 24h
-  find "$SESSION_DIR" -type f -mtime +1 -delete 2>/dev/null
+  printf '%s' "$SESSION_ID" > "$SESSION_DIR/${PPID}-${SESSION_ID}"
+  # Clean up stale session files older than 4h with PID liveness check
+  find "$SESSION_DIR" -type f -mmin +240 2>/dev/null | while IFS= read -r f; do
+    STALE_PID=$(basename "$f" | cut -d'-' -f1)
+    if [ -n "$STALE_PID" ] && ! kill -0 "$STALE_PID" 2>/dev/null; then
+      rm -f "$f"
+    fi
+  done
 fi
 
 # Clean stale scope-create marker from previous sessions
@@ -33,7 +39,7 @@ if [ "$SOURCE" = "resume" ] || [ "$SOURCE" = "compact" ]; then
 ${PROJECT_NAME} SESSION RESUMED
 ══════════════════════════════════════════════════════════════════════════════
 
-  Rules: .claude/quick/rules.md | Git: /work save | Test: /test pre-commit
+  Rules: .claude/quick/rules.md | Git: /git-commit | Test: /test-checks
 
 ══════════════════════════════════════════════════════════════════════════════
 
@@ -54,11 +60,10 @@ KEY REFERENCES:
    All rules:      .claude/quick/rules.md
    Anti-patterns:  .claude/anti-patterns/dangerous-shortcuts.md
 
-GIT WORKFLOW (NEVER push directly to main):
+GIT WORKFLOW:
 
-   /work save             → Routes to correct workflow
-   /git pr-staging        → PR from feature branch to staging
-   /git pr-production     → Release from staging to main
+   /git-commit   → Commit work
+   /git-main     → Push to main (or /git-staging, /git-production for Gitflow)
 
 ══════════════════════════════════════════════════════════════════════════════
 

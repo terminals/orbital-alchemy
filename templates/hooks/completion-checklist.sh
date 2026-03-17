@@ -2,6 +2,7 @@
 # completion-checklist.sh — Block completion when Definition of Done items are unchecked
 # Trigger: PreToolUse:Edit (scope status → complete)
 # Blocking: exits 2 when unchecked DoD items found
+set -e
 
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)

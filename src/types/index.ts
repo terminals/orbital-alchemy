@@ -1,3 +1,11 @@
+import type {
+  SprintStatus, SprintScopeStatus, GroupType,
+  GateStatus, DeployStatus, DeployEnvironment, AgentConfig,
+} from '../../shared/api-types.js';
+
+// Re-export shared types so existing imports from '@/types' keep working
+export type { SprintStatus, SprintScopeStatus, GroupType, GateStatus, DeployStatus, DeployEnvironment, AgentConfig };
+
 // ─── Scope Types ───────────────────────────────────────────
 
 // ScopeStatus is a dynamic string — runtime validation via engine.isValidStatus()
@@ -8,7 +16,7 @@ export type ScopePriority = 'critical' | 'high' | 'medium' | 'low';
 export interface Scope {
   id: number;
   title: string;
-  status: string;
+  status: ScopeStatus;
   is_ghost?: boolean;
   priority: ScopePriority | null;
   effort_estimate: string | null;
@@ -103,8 +111,6 @@ export interface OrbitalEvent {
 
 // ─── Quality Gate Types ────────────────────────────────────
 
-export type GateStatus = 'pass' | 'fail' | 'running' | 'skipped';
-
 export interface QualityGate {
   id: number;
   scope_id: number | null;
@@ -116,10 +122,69 @@ export interface QualityGate {
   commit_sha: string | null;
 }
 
-// ─── Deployment Types ──────────────────────────────────────
+// ─── Transition Readiness Types ───────────────────────────
 
-export type DeployEnvironment = 'staging' | 'production';
-export type DeployStatus = 'deploying' | 'healthy' | 'failed' | 'rolled-back';
+export type HookReadiness = 'pass' | 'fail' | 'unknown';
+
+export interface HookStatus {
+  id: string;
+  label: string;
+  category: import('../../shared/workflow-config').HookCategory;
+  enforcement: import('../../shared/workflow-config').HookEnforcement;
+  status: HookReadiness;
+  reason: string | null;
+}
+
+export interface TransitionReadiness {
+  from: string;
+  to: string;
+  edge: import('../../shared/workflow-config').WorkflowEdge;
+  hooks: HookStatus[];
+  gates: Array<{
+    gate_name: string;
+    status: GateStatus;
+    details: string | null;
+    duration_ms: number | null;
+    run_at: string;
+  }>;
+  ready: boolean;
+  blockers: string[];
+}
+
+export interface ScopeReadiness {
+  scope_id: number;
+  current_status: string;
+  transitions: TransitionReadiness[];
+}
+
+// ─── Enforcement Rules Types ─────────────────────────────
+
+export interface EnforcementRuleStats {
+  violations: number;
+  overrides: number;
+  last_triggered: string | null;
+}
+
+export interface EnforcementRule {
+  hook: import('../../shared/workflow-config').WorkflowHook;
+  enforcement: import('../../shared/workflow-config').HookEnforcement;
+  edges: Array<{ from: string; to: string; label: string }>;
+  stats: EnforcementRuleStats;
+}
+
+export interface EnforcementRulesData {
+  summary: { guards: number; gates: number; lifecycle: number; observers: number };
+  rules: EnforcementRule[];
+  totalEdges: number;
+}
+
+export interface ViolationTrendPoint {
+  day: string;
+  rule: string;
+  count: number;
+}
+
+// ─── Deployment Types ──────────────────────────────────────
 
 export interface Deployment {
   id: number;
@@ -179,25 +244,13 @@ export interface Session {
 
 // ─── Agent Types ───────────────────────────────────────────
 
-// Agent configuration — loaded dynamically from /api/orbital/config
-export interface AgentConfig {
-  id: string;
-  label: string;
-  emoji: string;
-  color: string;
-}
-
 // AgentName is now a dynamic string — validated at runtime against config
 export type AgentName = string;
 
 // Default agents — overridden at runtime by /api/orbital/config
 const DEFAULT_AGENTS: AgentConfig[] = [
-  { id: 'attacker', label: 'Attacker', emoji: '\u{1F5E1}\u{FE0F}', color: '#ff1744' },
-  { id: 'chaos', label: 'Chaos', emoji: '\u{1F4A5}', color: '#F97316' },
-  { id: 'solana-expert', label: 'Solana Expert', emoji: '\u{26D3}\u{FE0F}', color: '#8B5CF6' },
   { id: 'frontend-designer', label: 'Frontend Designer', emoji: '\u{1F3A8}', color: '#EC4899' },
   { id: 'architect', label: 'Architect', emoji: '\u{1F3D7}\u{FE0F}', color: '#536dfe' },
-  { id: 'devops-expert', label: 'DevOps Expert', emoji: '\u{1F680}', color: '#40c4ff' },
   { id: 'rules-enforcer', label: 'Rules Enforcer', emoji: '\u{1F4CB}', color: '#6B7280' },
 ];
 
@@ -227,9 +280,6 @@ export interface BoardColumn {
 
 // ─── Sprint / Batch Types ─────────────────────────────────
 
-export type SprintStatus = 'assembling' | 'dispatched' | 'in_progress' | 'completed' | 'failed' | 'cancelled';
-export type SprintScopeStatus = 'pending' | 'queued' | 'dispatched' | 'in_progress' | 'completed' | 'failed' | 'skipped';
-export type GroupType = 'sprint' | 'batch';
 
 export interface BatchDispatchResult {
   commit_sha?: string;
@@ -287,9 +337,158 @@ export interface ServerToClientEvents {
   'sprint:deleted': (payload: { id: number }) => void;
   'sprint:completed': (sprint: Sprint) => void;
   'workflow:changed': () => void;
+  'git:status:changed': () => void;
+  'config:agents:changed': (payload: { action: string; path: string }) => void;
+  'config:skills:changed': (payload: { action: string; path: string }) => void;
+  'config:hooks:changed': (payload: { action: string; path: string }) => void;
 }
 
 export interface ClientToServerEvents {
   'subscribe': (channel: string) => void;
   'unsubscribe': (channel: string) => void;
+}
+
+// ─── Config Primitives Types ──────────────────────────────
+
+export type ConfigPrimitiveType = 'agents' | 'skills' | 'hooks';
+
+export interface ConfigFileNode {
+  name: string;
+  path: string;
+  type: 'file' | 'folder';
+  children?: ConfigFileNode[];
+  frontmatter?: Record<string, unknown>;
+}
+
+// ─── Source Control Types ─────────────────────────────────
+
+export interface GitOverview {
+  branchingMode: 'trunk' | 'worktree';
+  currentBranch: string;
+  dirty: boolean;
+  detached: boolean;
+  mainHead: { sha: string; message: string; date: string } | null;
+  aheadBehind: { ahead: number; behind: number } | null;
+  worktreeCount: number;
+  featureBranchCount: number;
+}
+
+export interface CommitEntry {
+  sha: string;
+  shortSha: string;
+  message: string;
+  author: string;
+  date: string;
+  branch: string;
+  scopeId: number | null;
+  refs: string[];
+}
+
+export interface BranchInfoData {
+  name: string;
+  isRemote: boolean;
+  isCurrent: boolean;
+  headSha: string;
+  headMessage: string;
+  headDate: string;
+  aheadBehind: { ahead: number; behind: number } | null;
+  scopeId: number | null;
+  isStale: boolean;
+}
+
+export interface WorktreeDetail {
+  path: string;
+  branch: string;
+  head: string;
+  scopeId: number | null;
+  scopeTitle: string | null;
+  scopeStatus: string | null;
+  dirty: boolean;
+  aheadBehind: { ahead: number; behind: number } | null;
+}
+
+export interface GitHubStatus {
+  connected: boolean;
+  authUser: string | null;
+  repo: {
+    owner: string;
+    name: string;
+    fullName: string;
+    defaultBranch: string;
+    visibility: string;
+    url: string;
+  } | null;
+  openPRs: number;
+  error: string | null;
+}
+
+export interface PullRequestInfo {
+  number: number;
+  title: string;
+  author: string;
+  branch: string;
+  baseBranch: string;
+  state: string;
+  url: string;
+  createdAt: string;
+  scopeIds: number[];
+}
+
+export interface DriftPair {
+  from: string;
+  to: string;
+  count: number;
+  commits: Array<{ sha: string; message: string; author: string; date: string }>;
+}
+
+// ─── Pipeline Display Types ──────────────────────────────
+
+export interface ResolvedHook {
+  id: string;
+  label: string;
+  category: import('../../shared/workflow-config').HookCategory;
+  enforcement: import('../../shared/workflow-config').HookEnforcement;
+  filePath: string | null;
+  timing: 'before' | 'after';
+  blocking: boolean;
+  description?: string;
+}
+
+export interface ResolvedAgent {
+  id: string;
+  label: string;
+  emoji: string;
+  color: string;
+  team?: string;
+  filePath: string | null;
+}
+
+export interface ReviewTeam {
+  skillCommand: string;
+  skillPath: string | null;
+  agents: ResolvedAgent[];
+}
+
+export interface EdgeData {
+  edge: import('../../shared/workflow-config').WorkflowEdge;
+  skillPath: string | null;
+  edgeHooks: ResolvedHook[];
+}
+
+export interface StageData {
+  list: import('../../shared/workflow-config').WorkflowList;
+  stageHooks: ResolvedHook[];
+  alwaysOnAgents: ResolvedAgent[];
+  reviewTeams: ReviewTeam[];
+  forwardEdges: EdgeData[];
+  backwardEdges: import('../../shared/workflow-config').WorkflowEdge[];
+}
+
+export interface PipelineData {
+  globalHooks: ResolvedHook[];
+  stages: StageData[];
+  skillPathMap: Map<string, string>;
+  hookPathMap: Map<string, string>;
+  agentPathMap: Map<string, string>;
+  orchestratesMap: Map<string, string[]>;
 }

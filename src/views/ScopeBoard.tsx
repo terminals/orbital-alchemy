@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   DndContext,
   PointerSensor,
@@ -13,11 +13,13 @@ import { ActiveDispatchContext, useActiveDispatchProvider } from '@/hooks/useAct
 import { useScopeFilters } from '@/hooks/useScopeFilters';
 import { useBoardSettings, sortScopes } from '@/hooks/useBoardSettings';
 import { useSwimlaneBoardSettings } from '@/hooks/useSwimlaneBoardSettings';
+import { useZoomModifier } from '@/hooks/useZoomModifier';
 import { useKanbanDnd } from '@/hooks/useKanbanDnd';
 import { useSprints } from '@/hooks/useSprints';
 import { useSprintPreflight } from '@/hooks/useSprintPreflight';
 import { useIdeaActions } from '@/hooks/useIdeaActions';
 import { useSearch } from '@/hooks/useSearch';
+import { useStatusBarHighlight } from '@/hooks/useStatusBarHighlight';
 import { useWorkflow } from '@/hooks/useWorkflow';
 import { KanbanColumn } from '@/components/KanbanColumn';
 import { CardDisplayToggle } from '@/components/CardDisplayToggle';
@@ -57,12 +59,15 @@ export function ScopeBoard() {
   const {
     sprints,
     createSprint,
+    renameSprint,
     deleteSprint,
     addScopes: addScopesToSprint,
     removeScopes: removeScopesFromSprint,
     dispatchSprint,
     getGraph,
   } = useSprints();
+
+  const [editingSprintId, setEditingSprintId] = useState<number | null>(null);
 
   const {
     filters,
@@ -75,6 +80,29 @@ export function ScopeBoard() {
   } = useScopeFilters(scopes);
 
   const search = useSearch(filteredScopes);
+  const { highlightedScopeId, clearHighlight } = useStatusBarHighlight();
+
+  // Merge search dimming with statusbar highlight dimming
+  const mergedDimmedIds = useMemo(() => {
+    if (highlightedScopeId == null) return search.dimmedIds;
+    const dimmed = new Set<number>();
+    for (const scope of search.displayScopes) {
+      if (scope.id !== highlightedScopeId) dimmed.add(scope.id);
+    }
+    return dimmed;
+  }, [highlightedScopeId, search.dimmedIds, search.displayScopes]);
+
+  // Click anywhere to clear highlight
+  useEffect(() => {
+    if (highlightedScopeId == null) return;
+    const timer = setTimeout(() => {
+      document.addEventListener('click', clearHighlight, { once: true });
+    }, 100);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('click', clearHighlight);
+    };
+  }, [highlightedScopeId, clearHighlight]);
 
   const {
     state: dndState,
@@ -104,6 +132,7 @@ export function ScopeBoard() {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor),
   );
+  const modifiers = useZoomModifier();
 
   // Build scope lookup from full set so sprint containers always resolve
   const scopeLookup = useMemo(() => {
@@ -148,6 +177,20 @@ export function ScopeBoard() {
     return map;
   }, [sprints]);
 
+  // Global set of scope IDs in active sprint/batch groups across ALL columns.
+  // Used for cross-column deduplication so a scope never renders as both
+  // a loose card in one column and inside a group container in another.
+  const globalSprintScopeIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const group of sprints) {
+      if (group.group_type === 'batch' && group.status === 'completed') continue;
+      for (const scopeId of group.scope_ids) {
+        ids.add(scopeId);
+      }
+    }
+    return ids;
+  }, [sprints]);
+
   // Swimlane computation (only when in swimlane mode)
   const swimLanes = useMemo(() => {
     if (viewMode !== 'swimlane') return [];
@@ -189,6 +232,7 @@ export function ScopeBoard() {
     <ActiveDispatchContext.Provider value={activeDispatchCtx}>
     <DndContext
       sensors={sensors}
+      modifiers={modifiers}
       collisionDetection={sprintAwareCollision}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
@@ -199,7 +243,7 @@ export function ScopeBoard() {
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <LayoutDashboard className="h-4 w-4 text-primary" />
-            <h1 className="text-xl font-light">Scope Board</h1>
+            <h1 className="text-xl font-light">Kanban</h1>
             <Badge variant="secondary" className="ml-2">
               {search.hasSearch
                 ? `${search.matchCount} / ${scopes.length} scopes`
@@ -255,7 +299,7 @@ export function ScopeBoard() {
             onToggleCollapse={toggleCollapse}
             onScopeClick={(scope) => scope.status === engine.getEntryPoint().id ? setSelectedIdea(scope) : setSelectedScopeId(scope.id)}
             cardDisplay={cardDisplay}
-            dimmedIds={search.dimmedIds}
+            dimmedIds={mergedDimmedIds}
             isDragActive={!!(dndState.activeScope || dndState.activeSprint)}
             validTargets={validTargets}
             sprints={sprints}
@@ -268,13 +312,17 @@ export function ScopeBoard() {
                   key={col.id}
                   id={col.id}
                   label={col.label}
-                  color={`bg-[hsl(${col.color})]`}
+                  color={col.color}
                   scopes={scopesByStatus[col.id] ?? []}
                   sprints={sprintsByColumn[col.id]}
                   scopeLookup={scopeLookup}
+                  globalSprintScopeIds={globalSprintScopeIds}
                   onScopeClick={(scope) => scope.status === engine.getEntryPoint().id ? setSelectedIdea(scope) : setSelectedScopeId(scope.id)}
                   onDeleteSprint={deleteSprint}
                   onDispatchSprint={(id) => setPendingBatchDispatch(id)}
+                  onRenameSprint={(id, name) => renameSprint(id, name)}
+                  editingSprintId={editingSprintId}
+                  onSprintEditingDone={() => setEditingSprintId(null)}
                   onAddAllToSprint={async (sprintId, scopeIds) => {
                     const result = await addScopesToSprint(sprintId, scopeIds);
                     if (result && result.unmet_dependencies.length > 0) {
@@ -289,13 +337,17 @@ export function ScopeBoard() {
                   collapsed={collapsed.has(col.id)}
                   onToggleCollapse={() => toggleCollapse(col.id)}
                   cardDisplay={cardDisplay}
-                  dimmedIds={search.dimmedIds}
+                  dimmedIds={mergedDimmedIds}
                   headerExtra={
                     <ColumnHeaderActions
                       columnId={col.id}
                       dispatching={dndState.dispatching}
                       onOpenIdeaForm={openIdeaForm}
-                      onCreateGroup={createSprint}
+                      onCreateGroup={async (name, options) => {
+                        const sprint = await createSprint(name, options);
+                        if (sprint) setEditingSprintId(sprint.id);
+                        return sprint;
+                      }}
                     />
                   }
                 />

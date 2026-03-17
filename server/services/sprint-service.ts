@@ -4,9 +4,8 @@ import type { ScopeService } from './scope-service.js';
 
 // ─── Types ──────────────────────────────────────────────────
 
-export type SprintStatus = 'assembling' | 'dispatched' | 'in_progress' | 'completed' | 'failed' | 'cancelled';
-export type SprintScopeStatus = 'pending' | 'queued' | 'dispatched' | 'in_progress' | 'completed' | 'failed' | 'skipped';
-export type GroupType = 'sprint' | 'batch';
+export type { SprintStatus, SprintScopeStatus, GroupType } from '../../shared/api-types.js';
+import type { SprintStatus, SprintScopeStatus, GroupType } from '../../shared/api-types.js';
 export type GroupTargetColumn = 'backlog' | 'implementing' | 'review' | 'completed' | 'dev' | 'staging';
 
 export interface BatchDispatchResult {
@@ -99,6 +98,18 @@ export class SprintService {
     const sprint = this.getById(Number(result.lastInsertRowid))!;
     this.io.emit('sprint:created', sprint);
     return sprint;
+  }
+
+  /** Rename a sprint/batch (only while assembling) */
+  rename(id: number, name: string): boolean {
+    const result = this.db.prepare(
+      `UPDATE sprints SET name = ?, updated_at = ? WHERE id = ? AND status = 'assembling'`,
+    ).run(name, new Date().toISOString(), id);
+    if (result.changes > 0) {
+      this.emitUpdate(id);
+      return true;
+    }
+    return false;
   }
 
   /** List sprints, optionally filtered by status and/or target column */
@@ -285,6 +296,26 @@ export class SprintService {
        WHERE ss.scope_id = ? AND s.status IN ('dispatched', 'in_progress')
        LIMIT 1`,
     ).get(scopeId) as { sprint_id: number } | null;
+  }
+
+  /** Find any active group (assembling/dispatched/in_progress) containing a scope.
+   *  Used to guard against moving scopes that are part of an active batch/sprint. */
+  getActiveGroupForScope(scopeId: number): { sprint_id: number; group_type: GroupType } | null {
+    return this.db.prepare(
+      `SELECT ss.sprint_id, s.group_type FROM sprint_scopes ss
+       JOIN sprints s ON s.id = ss.sprint_id
+       WHERE ss.scope_id = ? AND s.status IN ('assembling', 'dispatched', 'in_progress')
+       LIMIT 1`,
+    ).get(scopeId) as { sprint_id: number; group_type: GroupType } | null;
+  }
+
+  /** Force-remove a scope from a sprint regardless of sprint status.
+   *  Used for cleanup when a scope's status diverges from the batch target. */
+  forceRemoveScope(sprintId: number, scopeId: number): void {
+    this.db.prepare('DELETE FROM sprint_scopes WHERE sprint_id = ? AND scope_id = ?')
+      .run(sprintId, scopeId);
+    this.touchUpdatedAt(sprintId);
+    this.emitUpdate(sprintId);
   }
 
   /** Get all sprint scopes for a sprint */

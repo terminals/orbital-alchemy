@@ -16,7 +16,7 @@ description: One-page overview of the agent system. Quick reference for agent tr
 | `encrypt*.ts`, `auth*.ts` | 🗡️ | SECURITY |
 | `controllers/*.ts` (new routes) | 🗡️ 🏗️ | SECURITY |
 | `frontend/src/**/*` | 🎨 | FULL |
-| `migrations/*` | 🏗️ 🚀 | FULL |
+| `migrations/*` | 🏗️ | FULL |
 | `config/*.ts` | 💥 | FULL |
 | `middleware/*.ts` | 🗡️ 🏗️ | SECURITY |
 
@@ -89,7 +89,6 @@ Before committing:
 | Attacker | "How would I exploit this?" |
 | Chaos | "What breaks when things go wrong?" |
 | Frontend Designer | "What does the user see/experience?" |
-| DevOps Expert | "Is deployment safe and reversible?" |
 | Architect | "Does this fit our patterns?" |
 | Rules Enforcer | "Do all project rules pass?" |
 
@@ -109,7 +108,7 @@ Before committing:
 - **Agent not activating?** Check trigger patterns in AUTO-INVOKE.md
 - **Agents disagree?** Use priority order above, escalate majors to user
 - **Rule violation?** See fix guide in rules-enforcer.md
-- **Pattern unclear?** Check domain docs in `.claude/domain/`
+- **Pattern unclear?** Check agent docs in `.claude/agents/`
 
 ---
 

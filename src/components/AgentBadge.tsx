@@ -7,7 +7,6 @@ const AGENT_CONFIG: Record<string, { emoji: string; label: string; color: string
   'solana-expert': { emoji: '\u{26D3}\u{FE0F}', label: 'Solana', color: 'bg-agent-solana/20 text-agent-solana', glow: 'agent-glow-solana' },
   'frontend-designer': { emoji: '\u{1F3A8}', label: 'Frontend', color: 'bg-agent-frontend/20 text-agent-frontend', glow: 'agent-glow-frontend' },
   'architect': { emoji: '\u{1F3D7}\u{FE0F}', label: 'Architect', color: 'bg-agent-architect/20 text-agent-architect', glow: 'agent-glow-architect' },
-  'devops-expert': { emoji: '\u{1F680}', label: 'DevOps', color: 'bg-agent-devops/20 text-agent-devops', glow: 'agent-glow-devops' },
   'rules-enforcer': { emoji: '\u{1F4CB}', label: 'Rules', color: 'bg-agent-rules/20 text-agent-rules', glow: 'agent-glow-rules' },
 };
 

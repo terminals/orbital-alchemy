@@ -10,7 +10,7 @@
 #   git push to main / gh pr --base main → transitions staging → production (with BATCH_SCOPE_IDS)
 #
 # NOTE: completed → dev auto-transition removed (2026-03-04).
-# Use /git pr-dev to explicitly merge feature→dev.
+# Use /git-dev to explicitly merge feature→dev.
 #
 # BATCH_SCOPE_IDS must be set (e.g. BATCH_SCOPE_IDS=093,094) for any
 # transition to occur. Without it, a warning is printed and no files move.
@@ -18,6 +18,7 @@
 # Exit codes:
 #   0 — Allow the command to proceed
 #   2 — Block (never used here; transitions are advisory)
+set -euo pipefail
 
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
@@ -43,7 +44,7 @@ BRANCH=$(cd "$PROJECT_DIR" && git branch --show-current 2>/dev/null || true)
 if echo "$COMMAND" | grep -qE '^git commit'; then
   # Only on branches matching commit pattern from manifest
   if [[ "$BRANCH" =~ $WORKFLOW_COMMIT_BRANCHES ]]; then
-    # Record session on the ACTIVE scope (implementing/backlog/exploring)
+    # Record session on the ACTIVE scope (implementing/backlog/planning)
     # Note: scopes are gitignored, so no git add needed
     if [ -n "$SESSION_UUID" ]; then
       ACTIVE_SCOPE=$(find_active_scope 2>/dev/null || true)
@@ -53,7 +54,7 @@ if echo "$COMMAND" | grep -qE '^git commit'; then
     fi
 
     # NOTE: completed → dev auto-transition removed.
-    # Use /git pr-dev to explicitly merge feature→dev and transition scopes.
+    # Use /git-dev to explicitly merge feature→dev and transition scopes.
   fi
   exit 0
 fi

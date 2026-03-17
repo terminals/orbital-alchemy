@@ -10,6 +10,7 @@
 #                 testing, gates, code-review, pr-ci, staging, production, done
 #
 # Falls back to file-based event if Orbital server isn't reachable.
+set -e
 
 SCOPE_IDS="${1:?Usage: orbital-scope-update SCOPE_ID[,SCOPE_ID,...] STATUS}"
 STATUS="${2:?Usage: orbital-scope-update SCOPE_ID STATUS}"
@@ -34,12 +35,12 @@ if command -v curl &>/dev/null; then
     HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH \
       -H 'Content-Type: application/json' \
       -d "{\"scopes\":$SCOPES_JSON}" \
-      "$ORBITAL_API/scopes/bulk/status" 2>/dev/null)
+      "$ORBITAL_API/scopes/bulk/status" 2>/dev/null) || true
   else
     HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH \
       -H 'Content-Type: application/json' \
       -d "{\"status\":\"$STATUS\"}" \
-      "$ORBITAL_API/scopes/$SCOPE_IDS" 2>/dev/null)
+      "$ORBITAL_API/scopes/$SCOPE_IDS" 2>/dev/null) || true
   fi
 
   if [ "$HTTP_CODE" = "200" ]; then

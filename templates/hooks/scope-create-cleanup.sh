@@ -5,6 +5,7 @@
 # After a successful Write, checks if the written file is a scope document.
 # If so, removes the .scope-create-session marker to lift the write gate.
 #
+set -e
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 MARKER="$PROJECT_DIR/.claude/metrics/.scope-create-session"
@@ -26,7 +27,7 @@ case "$FILE_PATH" in
     echo ""
     echo "Scope document written. Write gate lifted."
     echo "Remember: STOP here. Implementation is a separate session:"
-    echo "  /scope implement NNN"
+    echo "  /scope-implement NNN"
     ;;
 esac
 

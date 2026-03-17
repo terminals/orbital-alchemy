@@ -18,17 +18,18 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/migueln/orbital-command.git"
+    "url": "https://github.com/terminals/orbital-command.git"
   },
-  "homepage": "https://github.com/migueln/orbital-command#readme",
+  "homepage": "https://github.com/terminals/orbital-command#readme",
   "bugs": {
-    "url": "https://github.com/migueln/orbital-command/issues"
+    "url": "https://github.com/terminals/orbital-command/issues"
   },
   "bin": {
     "orbital": "bin/orbital.js"
   },
   "files": [
     "bin/",
+    "dist/",
     "server/",
     "shared/",
     "src/",
@@ -53,7 +54,8 @@
     "build": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
-    "prepublishOnly": "npm run typecheck && npm run build",
+    "prepare": "npm run typecheck && npm run build && npm run build:server",
+    "prepublishOnly": "npm run typecheck && npm run build && npm run build:server",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -152,7 +152,7 @@ export function HooksDashboard({ hooks, edges, onHookClick }: HooksDashboardProp
 
           {/* AFTER label */}
           <div className="flex items-center">
-            <span className="rounded-l bg-blue-500/10 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-blue-500 [writing-mode:vertical-lr] rotate-180">
+            <span className="rounded-l bg-cyan-500/10 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-cyan-500 [writing-mode:vertical-lr] rotate-180">
               After
             </span>
           </div>

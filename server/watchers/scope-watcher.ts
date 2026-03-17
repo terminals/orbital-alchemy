@@ -31,7 +31,8 @@ export function startScopeWatcher(
       // eslint-disable-next-line no-console
       console.log(`[Orbital] Scope removed: ${path.basename(filePath)}`);
       scopeService.removeByFilePath(filePath);
-    });
+    })
+    .on('error', (err: unknown) => console.error('[Orbital] Scope watcher error:', err));
 
   return watcher;
 }

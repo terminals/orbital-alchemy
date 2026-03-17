@@ -62,7 +62,7 @@ export function CommandPrefixManager({ prefixes, edges, onChange }: CommandPrefi
               <div key={prefix} className="group flex items-start gap-2 rounded border border-zinc-800 bg-zinc-950/30 px-2.5 py-1.5">
                 <Terminal className="mt-0.5 h-3 w-3 shrink-0 text-zinc-600" />
                 <div className="flex-1 min-w-0">
-                  <code className="text-xs font-mono text-blue-400">{prefix.trim()}</code>
+                  <code className="text-xs font-mono text-cyan-400">{prefix.trim()}</code>
                   {usage.length > 0 ? (
                     <p className="mt-0.5 text-[9px] text-zinc-600">
                       Used by: {usage.join(', ')}

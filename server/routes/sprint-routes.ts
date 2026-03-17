@@ -43,6 +43,20 @@ export function createSprintRoutes({ sprintService, sprintOrchestrator, batchOrc
     res.json(sprint);
   });
 
+  router.patch('/sprints/:id', (req, res) => {
+    const { name } = req.body as { name?: string };
+    if (!name || !name.trim()) {
+      res.status(400).json({ error: 'name is required' });
+      return;
+    }
+    const renamed = sprintService.rename(Number(req.params.id), name.trim());
+    if (!renamed) {
+      res.status(400).json({ error: 'Sprint not found or not in assembling state' });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
   router.delete('/sprints/:id', (req, res) => {
     const deleted = sprintService.delete(Number(req.params.id));
     if (!deleted) {
@@ -89,7 +103,8 @@ export function createSprintRoutes({ sprintService, sprintOrchestrator, batchOrc
     }
 
     if (sprint.group_type === 'batch') {
-      const result = await batchOrchestrator.dispatch(id);
+      const { mergeMode } = req.body as { mergeMode?: string };
+      const result = await batchOrchestrator.dispatch(id, mergeMode);
       if (!result.ok) {
         res.status(400).json({ error: result.error });
         return;

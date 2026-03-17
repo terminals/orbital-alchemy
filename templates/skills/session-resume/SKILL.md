@@ -1,10 +1,10 @@
 ---
 name: session-resume
 description: Resumes previous work session by loading saved context and progress. Use when continuing previous work, picking up where left off, or restoring session state.
-user-invocable: false
+user-invocable: true
 ---
 
-# /work resume - Session Resumption
+# /session-resume - Session Resumption
 
 Reconstruct context and pick up where you left off.
 
@@ -148,7 +148,7 @@ Last activity was **2 hours ago**.
 
 After presenting the resume report, offer:
 - "Continue with [next phase]?"
-- "Should I run `/test pre-commit` first to verify state?"
+- "Should I run `/test-checks` first to verify state?"
 - "Would you like me to explain what was being worked on?"
 
 ---

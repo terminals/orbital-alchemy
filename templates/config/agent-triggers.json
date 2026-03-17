@@ -43,7 +43,7 @@
     },
     {
       "pattern": "migrations/.*\\.(ts|sql)$",
-      "agents": ["architect", "devops-expert"],
+      "agents": ["architect"],
       "mode": "FULL",
       "keyPoints": [
         "Backward compatible or versioned?",
@@ -87,7 +87,6 @@
     "chaos": "\ud83d\udca5",
     "frontend-designer": "\ud83c\udfa8",
     "architect": "\ud83c\udfd7\ufe0f",
-    "devops-expert": "\ud83d\ude80",
     "rules-enforcer": "\ud83d\udccb"
   }
 }

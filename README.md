@@ -18,19 +18,32 @@ Orbital Command is a real-time project management dashboard purpose-built for [C
 - :memo: **Enforcement View** -- Monitor rule violations across the project, grouped by category and severity.
 - :zap: **File-Based Event Bus** -- No daemon required. Hooks write JSON events to `.claude/orbital-events/`; the server picks them up on next start. Events queue naturally when the server is offline.
 
+## Installation
+
+```bash
+npm install -g github:terminals/orbital-command
+```
+
 ## Quick Start
 
 ```bash
 # Scaffold Orbital Command into your project
-npx orbital-command init
+orbital init
 
 # Launch the dashboard
-npx orbital-command dev
+orbital dev
 ```
 
 Then open [http://localhost:4445](http://localhost:4445) in your browser.
 
 The `init` command is non-destructive -- it will skip files that already exist. Pass `--force` to overwrite.
+
+### Requirements
+
+- **Node.js >= 18**
+- **C++ compiler** for the `better-sqlite3` native module:
+  - macOS: Xcode Command Line Tools (`xcode-select --install`)
+  - Linux: `build-essential` (`apt install build-essential`)
 
 ## What Gets Installed
 
@@ -115,7 +128,6 @@ All configuration lives in `.claude/orbital.config.json`. Resolution order: **co
     { "id": "chaos", "label": "Chaos", "emoji": "💥", "color": "#F97316" },
     { "id": "frontend-designer", "label": "Frontend Designer", "emoji": "🎨", "color": "#EC4899" },
     { "id": "architect", "label": "Architect", "emoji": "🏗️", "color": "#536dfe" },
-    { "id": "devops-expert", "label": "DevOps Expert", "emoji": "🚀", "color": "#40c4ff" },
     { "id": "rules-enforcer", "label": "Rules Enforcer", "emoji": "📋", "color": "#6B7280" }
   ]
 }

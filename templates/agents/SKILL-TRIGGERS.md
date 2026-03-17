@@ -1,78 +1,62 @@
 ---
 name: skill-triggers
 description: Defines when to suggest or auto-invoke skills based on user phrases and context.
-tokens: ~2K
+tokens: ~1.5K
 load-when: Loaded alongside AUTO-INVOKE.md during task triage
-last-verified: 2026-01-14
+last-verified: 2026-03-17
 ---
 
 # Skill Auto-Triggers
 
-Skills should be suggested proactively based on user language patterns and session context. This supplements agent auto-invocation with skill suggestions.
+Skills should be suggested proactively based on user language patterns and session context.
 
 ---
 
 ## Phrase-Based Triggers
 
-### Understanding & Investigation
+### Scope Lifecycle
 
 | User Says | Suggest Skill | Why |
 |-----------|---------------|-----|
-| "How does X work?" | `/explain code` | Deep-dive explanation |
-| "What happens when X?" | `/explain trace` | Follow data flow |
-| "Explain X to me" | `/explain code` | Deep-dive explanation |
-| "Show me the architecture of X" | `/explain architecture` | System structure |
-| "What's the flow for X?" | `/explain trace` | Data flow tracing |
-| "Something is wrong with X" | `/dev investigate` | Root cause analysis |
-| "X is failing but I don't know why" | `/dev investigate` | Root cause analysis |
-| "X isn't working" | `/dev investigate` | Root cause analysis |
-| "Can you figure out why X?" | `/dev investigate` | Root cause analysis |
+| "Create a scope for X" | `/scope-create` | New scope document |
+| "Let's plan X" | `/scope-create` | Planning phase |
+| "Implement scope NNN" | `/scope-implement` | Execute scope end-to-end |
+| "Work on scope NNN" | `/scope-implement` | Execute scope |
+| "Review scope NNN" | `/scope-pre-review` | Agent team review |
+| "Is scope NNN ready?" | `/scope-verify` | Formal review gate |
+| "Run post-review on NNN" | `/scope-post-review` | Post-implementation review |
+
+### Git & Deployment
+
+| User Says | Suggest Skill | Why |
+|-----------|---------------|-----|
+| "Commit this" | `/git-commit` | Commit to feature branch |
+| "Save our progress" | `/git-commit` | Mid-task checkpoint |
+| "Push to main" | `/git-main` | Push/PR to main |
+| "Merge to dev" | `/git-dev` | Merge into dev branch |
+| "PR to staging" | `/git-staging` | Create staging PR |
+| "Deploy to production" | `/git-production` | Create release PR |
+| "Emergency fix" | `/git-hotfix` | Hotfix workflow |
 
 ### Testing & Quality
 
 | User Says | Suggest Skill | Why |
 |-----------|---------------|-----|
-| "Add tests for X" | `/test add` | Add test coverage |
-| "Write tests for X" | `/test add` | Add test coverage |
-| "X needs tests" | `/test add` | Add test coverage |
-| "What's not tested?" | `/test coverage` | Coverage analysis |
-| "What's our test coverage?" | `/test coverage` | Coverage analysis |
-| "Show coverage gaps" | `/test coverage` | Coverage analysis |
-
-### Database & Migrations
-
-| User Says | Suggest Skill | Why |
-|-----------|---------------|-----|
-| "Add a column to X" | `/dev migrate-db` | Schema migration |
-| "Create a new table" | `/dev migrate-db` | Schema migration |
-| "Schema change" | `/dev migrate-db` | Schema migration |
-| "I need to add a field" | `/dev migrate-db` | Schema migration |
-
-### Documentation
-
-| User Says | Suggest Skill | Why |
-|-----------|---------------|-----|
-| "Document X" | `/info document` | Generate documentation |
-| "Add documentation to X" | `/info document` | Generate documentation |
-| "X needs docs" | `/info document` | Generate documentation |
-| "What changed since X?" | `/info changelog` | Generate changelog |
-| "Generate changelog" | `/info changelog` | Generate changelog |
-| "Release notes" | `/info changelog` | Generate changelog |
+| "Run checks" | `/test-checks` | Quality gates |
+| "Run quality gates" | `/test-checks` | Quality gates |
+| "Code review" | `/test-code-review` | Full code review |
+| "Review the code" | `/test-code-review` | Full code review |
 
 ### Session Management
 
 | User Says | Suggest Skill | Why |
 |-----------|---------------|-----|
-| "Where were we?" | `/work resume` | Resume from interruption |
-| "What was I working on?" | `/work resume` | Resume from interruption |
-| "Continue where we left off" | `/work resume` | Resume from interruption |
-| "Save our progress" | `/work checkpoint` | Mid-task checkpoint |
-| "Let's save where we are" | `/work checkpoint` | Mid-task checkpoint |
-| "Before we try this..." | `/work checkpoint` | Pre-risk checkpoint |
-| "I'm done for now" | `/work handoff` | Session wrap-up |
-| "That's all for today" | `/work handoff` | Session wrap-up |
-| "Wrap up" | `/work handoff` | Session wrap-up |
-| "bye", "done", "that's all" | `/work handoff` | Session wrap-up |
+| "Where were we?" | `/session-resume` | Resume from interruption |
+| "What was I working on?" | `/session-resume` | Resume from interruption |
+| "Continue where we left off" | `/session-resume` | Resume from interruption |
+| "I'm done for now" | `/git-commit` | Session wrap-up |
+| "That's all for today" | `/git-commit` | Session wrap-up |
+| "Wrap up" | `/git-commit` | Session wrap-up |
 
 ---
 
@@ -82,49 +66,22 @@ These are **automatic** suggestions based on session state, not user phrases.
 
 | Context | Auto-Suggest | Rationale |
 |---------|--------------|-----------|
-| Session starts with uncommitted changes | `/work resume` | User likely continuing previous work |
-| After context compaction | `/work resume` | Rebuild context efficiently |
-| Before risky/destructive operation | `/work checkpoint` | Create recovery point |
-| User exploring unfamiliar code area | `/explain code` | Build understanding first |
-| User says "bye/done/that's all" | `/work handoff` | Clean session closure |
+| Session starts with uncommitted changes | `/session-resume` | User likely continuing previous work |
+| After context compaction | `/session-resume` | Rebuild context efficiently |
+| Before risky/destructive operation | `/git-commit` | Create recovery point |
+| User says "bye/done/that's all" | `/git-commit` | Clean session closure |
 
 ---
 
 ## Smart Triggers by Task Pattern
 
-These combine with agent triggers for comprehensive coverage.
-
 | Task Pattern | Skills to Consider |
 |--------------|-------------------|
-| Bug with unknown cause | `/dev investigate` → then `/dev fix-bug` |
-| Adding test coverage | `/test coverage` (find gaps) → `/test add` (fill gaps) |
-| Schema changes | `/dev migrate-db` |
-| Documentation request | `/info document` |
-| Release prep | `/info changelog` |
-| Understanding before modifying | `/explain code` or `/explain trace` |
-| New feature in unfamiliar area | `/explain architecture` → then `/dev add-feature` |
-
----
-
-## Integration with Task Triage
-
-When triaging tasks, include skill suggestions alongside agent triggers:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ 🎯 TASK TRIAGE                                                  │
-├─────────────────────────────────────────────────────────────────┤
-│ Task: [description]                                             │
-│                                                                 │
-│ Suggested Skills:                                               │
-│ 💡 /explain code → Unfamiliar code area detected          │
-│ 💡 /dev investigate → Symptoms described, cause unclear         │
-│                                                                 │
-│ Agents triggered:                                               │
-│ ✅ 🗡️ Attacker (hard trigger: auth*.ts)                         │
-│ ✅ 💥 Chaos (feature development)                               │
-└─────────────────────────────────────────────────────────────────┘
-```
+| Scope implementation | `/scope-implement` → `/test-checks` → `/git-commit` |
+| Post-implementation review | `/scope-post-review` (chains: `/test-checks` → `/scope-verify` → `/test-code-review`) |
+| Release to staging | `/git-staging` |
+| Release to production | `/git-production` |
+| Emergency fix | `/git-hotfix` |
 
 ---
 
@@ -132,15 +89,12 @@ When triaging tasks, include skill suggestions alongside agent triggers:
 
 When multiple skills could apply, prioritize:
 
-1. **Understanding first**: `/explain code` or `/explain trace` before modifying unfamiliar code
-2. **Investigation before fixing**: `/dev investigate` before `/dev fix-bug` when cause unclear
-3. **Coverage before adding**: `/test coverage` before `/test add` for systematic approach
-4. **Checkpoint before risk**: `/work checkpoint` before destructive or complex operations
-5. **Handoff at session end**: `/work handoff` when user indicates they're done
+1. **Checkpoint before risk**: `/git-commit` before destructive or complex operations
+2. **Quality before merge**: `/test-checks` before `/git-main` or `/git-staging`
+3. **Handoff at session end**: `/git-commit` when user indicates they're done
 
 ---
 
 ## Related
 
 - [AUTO-INVOKE.md](./AUTO-INVOKE.md) - Agent auto-invocation rules
-- [skills/README.md](../skills/README.md) - Full skills reference

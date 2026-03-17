@@ -8,6 +8,7 @@
 # Events are written as JSON files to .claude/orbital-events/
 # The Orbital server watches this directory and ingests them.
 # If the server isn't running, events queue up and are processed on startup.
+set -e
 
 EVENT_TYPE="${1:?Usage: orbital-emit EVENT_TYPE '{\"key\": \"value\"}' [--scope N] [--agent NAME] [--session ID]}"
 EVENT_DATA="${2:-'{}'}"
@@ -28,7 +29,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-EVENT_ID=$(uuidgen | tr '[:upper:]' '[:lower:]')
+EVENT_ID=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' \
+  || cat /proc/sys/kernel/random/uuid 2>/dev/null \
+  || python3 -c 'import uuid; print(uuid.uuid4())' 2>/dev/null \
+  || echo "$(date +%s)-$$-$RANDOM")
 
 # Find project root
 if [ -n "$CLAUDE_PROJECT_DIR" ]; then
@@ -39,6 +43,11 @@ fi
 
 EVENTS_DIR="${PROJECT_ROOT}/.claude/orbital-events"
 mkdir -p "$EVENTS_DIR"
+
+# Validate and sanitize inputs for JSON safety
+[[ -n "$SCOPE_ID" && ! "$SCOPE_ID" =~ ^[0-9]+$ ]] && SCOPE_ID=""
+AGENT=$(printf '%s' "$AGENT" | sed 's/["\\]/\\&/g')
+SESSION_ID=$(printf '%s' "$SESSION_ID" | sed 's/["\\]/\\&/g')
 
 # Build JSON with optional top-level fields
 EVENT_FILE="${EVENTS_DIR}/${EVENT_ID}.json"

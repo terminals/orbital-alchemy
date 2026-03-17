@@ -16,10 +16,17 @@
     ],
     "PreToolUse": [
       {
+        "matcher": "Skill",
+        "hooks": [
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/git-commit-guard.sh", "_orbital": true },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/agent-team-gate.sh", "_orbital": true }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/block-workarounds.sh", "_orbital": true },
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/scope-file-sync.sh", "_orbital": true },
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/block-push.sh", "_orbital": true },
+{ "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/scope-file-sync.sh", "_orbital": true },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/scope-lifecycle-gate.sh", "_orbital": true }
         ]
       },
@@ -28,7 +35,7 @@
         "hooks": [
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/scope-create-gate.sh", "_orbital": true },
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/agent-trigger.sh", "_orbital": true },
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-id-enforcer.sh", "_orbital": true }
+          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-enforcer.sh", "_orbital": true }
         ]
       },
       {

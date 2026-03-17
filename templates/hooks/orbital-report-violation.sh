@@ -10,6 +10,7 @@
 #   orbital-report-violation.sh "no-console" "" "3 console.log found"
 #
 # Delegates to orbital-emit.sh for file-based event delivery.
+set -e
 
 RULE="${1:?Usage: orbital-report-violation.sh <rule_name> [file] [details]}"
 FILE="${2:-}"

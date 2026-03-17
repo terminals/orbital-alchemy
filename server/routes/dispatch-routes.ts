@@ -13,7 +13,6 @@ interface DispatchBody {
   command: string;
   prompt?: string;
   transition?: { from: string; to: string };
-  force?: boolean;
 }
 
 interface DispatchRouteDeps {
@@ -49,21 +48,21 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
   });
 
   router.post('/dispatch', async (req, res) => {
-    const { scope_id, command, prompt, transition, force } = req.body as DispatchBody;
+    const { scope_id, command, prompt, transition } = req.body as DispatchBody;
 
     if (!command || !engine.isAllowedCommand(command)) {
-      res.status(400).json({ error: 'Command must start with /scope, /work, /git, or /test' });
+      res.status(400).json({ error: 'Command must start with /scope-, /git-, /test-, or /session-' });
       return;
     }
 
     // W-11: Validate prompt field against allowed command prefixes
     if (prompt && !engine.isAllowedCommand(prompt)) {
-      res.status(400).json({ error: 'Prompt must start with /scope, /work, /git, or /test' });
+      res.status(400).json({ error: 'Prompt must start with /scope-, /git-, /test-, or /session-' });
       return;
     }
 
     // Active session guard
-    if (scope_id != null && !force) {
+    if (scope_id != null) {
       const active = db.prepare(
         `SELECT id FROM events
          WHERE type = 'DISPATCH' AND scope_id = ? AND JSON_EXTRACT(data, '$.resolved') IS NULL
@@ -107,7 +106,7 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
     // Launch in iTerm — interactive TUI mode (no -p) for full visibility
     const promptText = prompt ?? command;
     const escaped = escapeForAnsiC(promptText);
-    const fullCmd = `cd ${projectRoot} && claude --dangerously-skip-permissions $'${escaped}'`;
+    const fullCmd = `cd '${projectRoot}' && claude --dangerously-skip-permissions $'${escaped}'`;
     try {
       await launchInCategorizedTerminal(command, fullCmd, sessionName);
       res.json({ ok: true, dispatch_id: eventId, scope_id: scope_id ?? null });
@@ -119,7 +118,7 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
           linkPidToDispatch(db, eventId, session.pid);
           if (sessionName) renameSession(projectRoot, session.sessionId, sessionName);
         })
-        .catch(() => {});
+        .catch(err => console.error('[Orbital] PID discovery failed:', err.message));
     } catch (err) {
       if (scope_id != null && transition?.from) {
         scopeService.updateStatus(scope_id, transition.from, 'rollback');
@@ -151,7 +150,7 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
     };
 
     if (!command || !engine.isAllowedCommand(command)) {
-      res.status(400).json({ error: 'Command must start with /scope, /work, /git, or /test' });
+      res.status(400).json({ error: 'Command must start with /scope-, /git-, /test-, or /session-' });
       return;
     }
 
@@ -197,7 +196,7 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
 
     // Launch single CLI session
     const batchEscaped = escapeForAnsiC(command);
-    const fullCmd = `cd ${projectRoot} && claude --dangerously-skip-permissions -p $'${batchEscaped}'`;
+    const fullCmd = `cd '${projectRoot}' && claude --dangerously-skip-permissions -p $'${batchEscaped}'`;
     try {
       await launchInCategorizedTerminal(command, fullCmd);
       res.json({ ok: true, dispatch_id: eventId, scope_ids });

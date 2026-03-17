@@ -1,18 +1,23 @@
 {
   "name": "Minimal",
   "version": 1,
+  "branchingMode": "trunk",
   "lists": [
-    { "id": "todo", "label": "To Do", "order": 0, "color": "230 99% 67%", "hex": "#536dfe", "hasDirectory": true, "isEntryPoint": true },
-    { "id": "in-progress", "label": "In Progress", "order": 1, "color": "40 100% 50%", "hex": "#ffaa00", "hasDirectory": true },
-    { "id": "done", "label": "Done", "order": 2, "color": "153 100% 39%", "hex": "#00c76d", "hasDirectory": true }
+    { "id": "todo", "label": "To Do", "order": 0, "group": "planning", "color": "230 99% 67%", "hex": "#536dfe", "hasDirectory": true, "isEntryPoint": true },
+    { "id": "in-progress", "label": "In Progress", "order": 1, "group": "active", "color": "40 100% 50%", "hex": "#ffaa00", "hasDirectory": true },
+    { "id": "done", "label": "Done", "order": 2, "group": "active", "color": "153 100% 39%", "hex": "#00c76d", "hasDirectory": true }
   ],
   "edges": [
     { "from": "todo", "to": "in-progress", "direction": "forward", "command": null, "confirmLevel": "quick", "label": "Start", "description": "Move to in progress.", "dispatchOnly": false },
     { "from": "in-progress", "to": "done", "direction": "forward", "command": null, "confirmLevel": "quick", "label": "Complete", "description": "Mark as done.", "dispatchOnly": false }
   ],
   "hooks": [],
+  "groups": [
+    { "id": "planning", "label": "Planning", "order": 0 },
+    { "id": "active", "label": "Active", "order": 1 }
+  ],
   "eventInference": [],
-  "allowedCommandPrefixes": ["/scope ", "/work ", "/git "],
+  "allowedCommandPrefixes": ["/scope-", "/git-", "/test-", "/session-"],
   "terminalStatuses": ["done"],
   "commitBranchPatterns": "^(main|feat/|fix/|chore/)"
 }

@@ -61,7 +61,7 @@ export default {
         // Hunter accent tokens
         'bid-green': '#00c853',
         'ask-red': '#ff1744',
-        'accent-blue': '#536dfe',
+        'accent-blue': '#06b6d4',
         'warning-amber': '#ffab00',
         'info-cyan': '#40c4ff',
         // Status colors — dynamic CSS variables injected by WorkflowProvider
@@ -101,8 +101,8 @@ export default {
         sm: '0.125rem',
       },
       fontFamily: {
-        sans: ['JetBrains Mono', 'SF Mono', 'Fira Code', 'monospace'],
-        mono: ['JetBrains Mono', 'SF Mono', 'Fira Code', 'monospace'],
+        sans: ['var(--font-family)', 'monospace'],
+        mono: ['var(--font-family)', 'monospace'],
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-in-out',
@@ -133,8 +133,8 @@ export default {
           '50%': { opacity: '0.3' },
         },
         pulseBorder: {
-          '0%, 100%': { borderColor: 'rgba(83, 109, 254, 0.3)' },
-          '50%': { borderColor: 'rgba(83, 109, 254, 0.8)' },
+          '0%, 100%': { borderColor: 'rgba(0, 188, 212, 0.3)' },
+          '50%': { borderColor: 'rgba(0, 188, 212, 0.8)' },
         },
         'accordion-down': {
           from: { height: '0' },
@@ -145,8 +145,8 @@ export default {
           to: { height: '0' },
         },
         glowPulse: {
-          '0%, 100%': { boxShadow: '0 0 8px rgba(83,109,254,0.25)' },
-          '50%': { boxShadow: '0 0 18px rgba(83,109,254,0.5)' },
+          '0%, 100%': { boxShadow: '0 0 8px rgba(0,188,212,0.25)' },
+          '50%': { boxShadow: '0 0 18px rgba(0,188,212,0.5)' },
         },
         breathe: {
           '0%, 100%': { opacity: '1', transform: 'scale(1)' },

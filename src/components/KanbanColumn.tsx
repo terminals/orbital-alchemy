@@ -15,9 +15,15 @@ interface KanbanColumnProps {
   /** Sprints to render in this column (assembling in Ready, active in Implementing) */
   sprints?: Sprint[];
   scopeLookup?: Map<number, Scope>;
+  /** Global set of scope IDs in active groups across ALL columns (cross-column dedup) */
+  globalSprintScopeIds?: Set<number>;
   onScopeClick?: (scope: Scope) => void;
   onDeleteSprint?: (id: number) => void;
   onDispatchSprint?: (id: number) => void;
+  onRenameSprint?: (id: number, name: string) => void;
+  /** ID of a sprint that was just created and should start with name editing */
+  editingSprintId?: number | null;
+  onSprintEditingDone?: () => void;
   isValidDrop?: boolean;
   isDragActive?: boolean;
   headerExtra?: React.ReactNode;
@@ -38,9 +44,13 @@ export function KanbanColumn({
   scopes,
   sprints = [],
   scopeLookup = new Map(),
+  globalSprintScopeIds,
   onScopeClick,
   onDeleteSprint,
   onDispatchSprint,
+  onRenameSprint,
+  editingSprintId,
+  onSprintEditingDone,
   isValidDrop,
   isDragActive,
   headerExtra,
@@ -56,8 +66,9 @@ export function KanbanColumn({
   const { neonGlass } = useTheme();
   const { setNodeRef, isOver } = useDroppable({ id });
 
-  // Scopes that are in a sprint should not appear as loose cards
-  const sprintScopeIds = new Set(sprints.flatMap((s) => s.scope_ids));
+  // Scopes that are in a sprint/batch should not appear as loose cards.
+  // Use the global set (cross-column dedup) if available, otherwise fall back to local.
+  const sprintScopeIds = globalSprintScopeIds ?? new Set(sprints.flatMap((s) => s.scope_ids));
   const looseScopes = scopes.filter((s) => !sprintScopeIds.has(s.id));
   const looseScopeIds = looseScopes.filter((s) => !s.is_ghost).map((s) => s.id);
   const totalCount = scopes.length;
@@ -96,7 +107,7 @@ export function KanbanColumn({
           {/* Rotated label */}
           <div className="flex items-start justify-center overflow-hidden pt-2">
             <div className="flex items-center gap-2 [writing-mode:vertical-lr]">
-              <div className={cn('h-2.5 w-2.5 rounded-full shrink-0', color, neonGlass && 'animate-glow-pulse')} />
+              <div className={cn('h-2.5 w-2.5 rounded-full shrink-0', neonGlass && 'animate-glow-pulse')} style={{ backgroundColor: `hsl(${color})` }} />
               <span className="text-xxs uppercase tracking-wider font-normal text-muted-foreground whitespace-nowrap">
                 {label}
               </span>
@@ -112,7 +123,7 @@ export function KanbanColumn({
         <>
           {/* Column header — click to collapse */}
           <div className="flex items-center gap-2 border-b px-2.5 py-1.5 cursor-pointer" onClick={onToggleCollapse}>
-            <div className={cn('h-2.5 w-2.5 rounded-full', color, neonGlass && 'animate-glow-pulse')} />
+            <div className={cn('h-2.5 w-2.5 rounded-full', neonGlass && 'animate-glow-pulse')} style={{ backgroundColor: `hsl(${color})` }} />
             <h2 className="text-xxs uppercase tracking-wider font-normal text-muted-foreground">{label}</h2>
             <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
               {totalCount}
@@ -141,9 +152,12 @@ export function KanbanColumn({
                   scopeLookup={scopeLookup}
                   onDelete={onDeleteSprint}
                   onDispatch={onDispatchSprint}
+                  onRename={onRenameSprint}
                   onScopeClick={onScopeClick}
                   cardDisplay={cardDisplay}
                   dimmedIds={dimmedIds}
+                  editingName={sprint.id === editingSprintId}
+                  onEditingDone={onSprintEditingDone}
                   looseCount={sprint.status === 'assembling' ? looseScopeIds.length : 0}
                   onAddAll={sprint.status === 'assembling' && onAddAllToSprint
                     ? (sprintId) => onAddAllToSprint(sprintId, looseScopeIds)
@@ -174,7 +188,7 @@ export function KanbanColumn({
                 />
               ))}
               {totalCount === 0 && isDragActive && isOver && isValidDrop && (
-                <p className="py-8 text-center text-xs text-green-400">
+                <p className="py-8 text-center text-xs text-muted-foreground/50">
                   Drop here
                 </p>
               )}

@@ -2,6 +2,7 @@
 # phase-verify-reminder.sh — Remind to verify before marking phase done
 # Trigger: PreToolUse:Edit (scope file with completion marker)
 # Nudge-style: always exits 0
+set -e
 
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)

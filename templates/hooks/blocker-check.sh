@@ -2,6 +2,7 @@
 # blocker-check.sh — Note unresolved blockers when advancing scope status
 # Trigger: PreToolUse:Edit (scope file with status change)
 # Nudge-style: always exits 0
+set -e
 
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)

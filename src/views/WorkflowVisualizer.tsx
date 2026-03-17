@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
@@ -116,8 +116,12 @@ export default function WorkflowVisualizer() {
     [displayEdges, displayLists, displayHooks],
   );
 
-  const [nodes, , onNodesChange] = useNodesState(graphNodes);
-  const [edges, , onEdgesChange] = useEdgesState(graphEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(graphNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(graphEdges);
+
+  // Sync React Flow state when the computed graph data changes (e.g. preset switch)
+  useEffect(() => { setNodes(graphNodes); }, [graphNodes, setNodes]);
+  useEffect(() => { setEdges(graphEdges); }, [graphEdges, setEdges]);
 
   // Detail panel (graph tab)
   const [detail, setDetail] = useState<DetailState>({ type: 'none' });
@@ -168,7 +172,7 @@ export default function WorkflowVisualizer() {
           <Workflow className="h-4 w-4 text-primary" />
           <h1 className="text-xl font-light">Workflow</h1>
           {editor.editMode && (
-            <span className="rounded bg-blue-500/20 px-2 py-0.5 text-[10px] font-semibold text-blue-400">
+            <span className="rounded bg-cyan-500/20 px-2 py-0.5 text-[10px] font-semibold text-cyan-400">
               EDIT MODE
             </span>
           )}
@@ -196,7 +200,7 @@ export default function WorkflowVisualizer() {
           {!editor.editMode && (
             <button
               onClick={editor.enterEditMode}
-              className="flex items-center gap-1.5 rounded border border-zinc-800 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-blue-500/40 hover:text-blue-400"
+              className="flex items-center gap-1.5 rounded border border-zinc-800 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-cyan-500/40 hover:text-cyan-400"
             >
               <Pencil className="h-3.5 w-3.5" />
               Edit
@@ -232,7 +236,7 @@ export default function WorkflowVisualizer() {
         <div className="flex min-h-0 flex-1 gap-3">
           {/* React Flow Canvas */}
           <div
-            className="min-h-0 flex-1 rounded-lg border bg-zinc-950"
+            className="min-h-0 flex-1 rounded-lg border bg-transparent"
             style={{ borderColor: editor.editMode ? '#3b82f640' : '#27272a' }}
           >
             <ReactFlow

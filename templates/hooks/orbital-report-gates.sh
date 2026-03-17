@@ -10,6 +10,7 @@
 #   ORBITAL_URL              — base URL (default: http://localhost:4444)
 #
 # Fails silently if the Orbital server is not running.
+set -e
 
 GATE_NAME="${1:?Usage: orbital-report-gates.sh <gate_name> <pass|fail> [duration_ms] [details]}"
 STATUS="${2:?Usage: orbital-report-gates.sh <gate_name> <pass|fail> [duration_ms] [details]}"

@@ -2,6 +2,7 @@
 # time-tracker.sh — Emit scope status transition events to Orbital dashboard
 # Trigger: PostToolUse:Edit (scope status changes)
 # Nudge-style: always exits 0
+set -e
 
 INPUT=$(cat)
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
@@ -11,7 +12,7 @@ NEW_STRING=$(echo "$INPUT" | jq -r '.tool_input.new_string // empty' 2>/dev/null
 
 # Detect status transitions
 STATUS=""
-echo "$NEW_STRING" | grep -qiE "status:.*exploring" && STATUS="exploring"
+echo "$NEW_STRING" | grep -qiE "status:.*planning" && STATUS="planning"
 echo "$NEW_STRING" | grep -qiE "status:.*backlog" && STATUS="backlog"
 echo "$NEW_STRING" | grep -qiE "status:.*implementing" && STATUS="implementing"
 echo "$NEW_STRING" | grep -qiE "status:.*complete" && STATUS="complete"

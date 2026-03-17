@@ -19,6 +19,10 @@ export function validateConfig(config: WorkflowConfig): ConfigValidationResult {
     return { valid: false, errors };
   }
 
+  if (config.branchingMode !== undefined && config.branchingMode !== 'trunk' && config.branchingMode !== 'worktree') {
+    errors.push(`Invalid branchingMode: "${config.branchingMode}" (must be "trunk" or "worktree")`);
+  }
+
   // Unique list IDs
   const listIds = new Set<string>();
   for (const list of config.lists) {

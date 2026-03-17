@@ -72,15 +72,17 @@ function profileNameForCategory(category: string): string {
 
 export type WindowCategory = 'Scoping' | 'Planning' | 'Implementing' | 'Reviewing' | 'Deploying';
 
-/** Ordered array — longer prefixes first so "/scope review-gate" doesn't match "/scope review" */
+/** Ordered array — maps command prefixes to window categories */
 const COMMAND_WINDOW_MAP: Array<[string, WindowCategory]> = [
-  ['/scope review-gate', 'Reviewing'],
-  ['/scope review', 'Planning'],
-  ['/scope create', 'Scoping'],
-  ['/scope implement', 'Implementing'],
-  ['/work save', 'Deploying'],
-  ['/git pr-staging', 'Deploying'],
-  ['/git pr-production', 'Deploying'],
+  ['/scope-post-review', 'Reviewing'],
+  ['/scope-pre-review', 'Planning'],
+  ['/scope-verify', 'Reviewing'],
+  ['/scope-create', 'Scoping'],
+  ['/scope-implement', 'Implementing'],
+  ['/git-commit', 'Deploying'],
+  ['/git-staging', 'Deploying'],
+  ['/git-production', 'Deploying'],
+  ['/git-main', 'Deploying'],
 ];
 
 export function commandToWindowCategory(command: string): WindowCategory | null {
@@ -101,7 +103,15 @@ export function escapeForAnsiC(text: string): string {
   return text
     .replace(/\\/g, '\\\\')
     .replace(/'/g, "\\'")
-    .replace(/\n/g, '\\n');
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t')
+    .replace(/\0/g, '\\0')
+    .replace(/\x07/g, '\\a')
+    .replace(/\x08/g, '\\b')
+    .replace(/\x0C/g, '\\f')
+    .replace(/\x1B/g, '\\e')
+    .replace(/\x0B/g, '\\v');
 }
 
 /**
@@ -229,14 +239,16 @@ export async function launchInCategorizedTerminal(command: string, fullCmd: stri
 // ─── Session Naming ──────────────────────────────────────────
 
 const COMMAND_STEP_MAP: Record<string, string> = {
-  '/scope implement': 'Implementation',
-  '/scope review-gate': 'Review-Gate',
-  '/scope review': 'Review',
-  '/scope create': 'Creation',
-  '/work save': 'Save',
-  '/git pr-dev': 'Merge-Dev',
-  '/git pr-staging': 'PR-Staging',
-  '/git pr-production': 'PR-Production',
+  '/scope-implement': 'Implementation',
+  '/scope-post-review': 'Post-Review',
+  '/scope-pre-review': 'Pre-Review',
+  '/scope-verify': 'Verify',
+  '/scope-create': 'Creation',
+  '/git-commit': 'Commit',
+  '/git-dev': 'Merge-Dev',
+  '/git-staging': 'PR-Staging',
+  '/git-production': 'PR-Production',
+  '/git-main': 'Push-Main',
 };
 
 /** Title-Case slug: "Hook & Event Foundation" → "Hook-Event-Foundation" */
@@ -328,7 +340,7 @@ function getSessionPidDir(projectRoot: string): string {
 export function snapshotSessionPids(projectRoot: string): Set<string> {
   const dir = getSessionPidDir(projectRoot);
   try {
-    return new Set(fsSync.readdirSync(dir));
+    return new Set(fsSync.readdirSync(dir).map((f) => f.split('-')[0]));
   } catch {
     return new Set();
   }
@@ -343,7 +355,7 @@ export interface DiscoveredSession {
  *  Returns the PID and session UUID, or null if no new session appeared. */
 export async function discoverNewSession(
   projectRoot: string,
-  beforePids: Set<string>,
+  beforePidSet: Set<string>,
 ): Promise<DiscoveredSession | null> {
   const dir = getSessionPidDir(projectRoot);
   const pollInterval = 500;
@@ -354,8 +366,9 @@ export async function discoverNewSession(
     try {
       const current = fsSync.readdirSync(dir);
       for (const entry of current) {
-        if (!beforePids.has(entry) && /^\d+$/.test(entry)) {
-          const pid = parseInt(entry, 10);
+        const pidStr = entry.split('-')[0];
+        if (/^\d+$/.test(pidStr) && !beforePidSet.has(pidStr)) {
+          const pid = parseInt(pidStr, 10);
           // Verify the PID is alive (not a stale leftover)
           try {
             process.kill(pid, 0);

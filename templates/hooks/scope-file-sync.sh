@@ -2,6 +2,7 @@
 # scope-file-sync.sh — Flag out-of-scope files before commits
 # Trigger: PreToolUse:Bash (git commit detected)
 # Nudge-style: always exits 0
+set -e
 
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)

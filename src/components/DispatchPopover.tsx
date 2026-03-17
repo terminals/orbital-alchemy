@@ -45,7 +45,7 @@ export function DispatchPopover({
   const command = transition.command?.replace('{id}', String(scope.id)) ?? null;
   const entryPointPromotion = transition.direction === 'forward' && !transition.command && transition.from !== transition.to;
   const isIdeaPromotion = scope.status === transition.from && entryPointPromotion;
-  const displayCommand = isIdeaPromotion ? '/scope create' : command;
+  const displayCommand = isIdeaPromotion ? '/scope-create' : command;
   const actionLabel = isIdeaPromotion ? 'Launch' : command ? 'Launch' : 'Move';
 
   function handleConfirm() {
@@ -60,7 +60,7 @@ export function DispatchPopover({
         <div className="mb-2.5 flex items-center gap-2">
           <Badge variant="outline" className="text-xxs capitalize">{transition.from}</Badge>
           <ArrowRight className="h-3 w-3 text-muted-foreground" />
-          <Badge variant="default" className="text-xxs capitalize">{transition.to}</Badge>
+          <Badge variant="default" className="text-xxs capitalize [color:#000]">{transition.to}</Badge>
         </div>
 
         {/* Scope preview */}

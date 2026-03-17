@@ -18,11 +18,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/terminals/orbital-command.git"
+    "url": "https://github.com/SakaraLabs/orbital-command.git"
   },
-  "homepage": "https://github.com/terminals/orbital-command#readme",
+  "homepage": "https://github.com/SakaraLabs/orbital-command#readme",
   "bugs": {
-    "url": "https://github.com/terminals/orbital-command/issues"
+    "url": "https://github.com/SakaraLabs/orbital-command/issues"
   },
   "bin": {
     "orbital": "bin/orbital.js"

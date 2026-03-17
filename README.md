@@ -33,7 +33,7 @@ Think of it as the control tower that turns a collection of AI-assisted coding s
 **Global install (recommended for regular use):**
 
 ```bash
-npm install -g github:terminals/orbital-command
+npm install -g github:SakaraLabs/orbital-command
 ```
 
 This registers the `orbital` command globally. Then in any project:
@@ -46,8 +46,8 @@ orbital dev
 **Without global install:**
 
 ```bash
-npx github:terminals/orbital-command init
-npx github:terminals/orbital-command dev
+npx github:SakaraLabs/orbital-command init
+npx github:SakaraLabs/orbital-command dev
 ```
 
 ## Quick Start

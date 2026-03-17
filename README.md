@@ -4,46 +4,68 @@
 
 ---
 
-Orbital Command is a real-time project management dashboard purpose-built for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). It gives you a visual Kanban board, sprint orchestration, a workflow DAG editor, quality gates, and a deploy pipeline -- all driven by file-based events that work even when the server is offline. Think of it as the control tower that turns a collection of AI-assisted coding sessions into a coordinated engineering operation.
+Orbital Command is a real-time project management dashboard purpose-built for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). It gives you a visual Kanban board, sprint orchestration, a workflow DAG editor, quality gates, source control integration, and a session timeline — all driven by a file-based event bus that works even when the server is offline.
+
+Think of it as the control tower that turns a collection of AI-assisted coding sessions into a coordinated engineering operation.
 
 ## Features
 
-- :satellite: **Kanban Board** -- Drag-and-drop scope cards across a fully customizable column layout (icebox, planning, backlog, implementing, review, completed, dev, staging, production).
-- :rocket: **Sprint Orchestration** -- Batch-dispatch multiple scopes to parallel Claude Code sessions with preflight checks and progress tracking.
-- :wrench: **Workflow Engine** -- Visual DAG editor to define your own columns, transitions, hooks, checklists, and confirmation levels. Ships with three presets.
-- :shield: **Quality Gates** -- Track build, test, and lint results in real-time. Gate verdicts block or allow scope transitions automatically.
-- :robot: **Agent System** -- 9 AI agent definitions organized in Red/Blue/Green teams. See which agents are reviewing which files in the live Agent Feed.
-- :ship: **Deploy Pipeline** -- Track deployments from dev through staging to production with health checks and rollback indicators.
-- :clock1: **Session Timeline** -- Browse all Claude Code sessions with start/end times, scope associations, and outcome metadata.
-- :memo: **Enforcement View** -- Monitor rule violations across the project, grouped by category and severity.
-- :zap: **File-Based Event Bus** -- No daemon required. Hooks write JSON events to `.claude/orbital-events/`; the server picks them up on next start. Events queue naturally when the server is offline.
+- **Kanban Board** — Drag-and-drop scope cards across customizable columns. Supports swim-lane grouping, filters, sprints, and batch dispatch.
+- **Sprint Orchestration** — Group scopes into sprints, resolve dependencies via topological sort, and batch-dispatch to parallel Claude Code sessions with preflight checks.
+- **Workflow Engine** — Visual DAG editor to define columns, transitions, hooks, checklists, and confirmation levels. Ships with 4 presets (default, gitflow, development, minimal).
+- **Quality Gates** — 13 automated checks (type-check, lint, build, tests, rule enforcement, placeholder detection, and more). Gate verdicts block or allow scope transitions automatically.
+- **Agent System** — 5 AI agent definitions organized in Red/Blue/Green teams with 3 review modes (quick, full, security). Dispatch reviews from the dashboard and see findings in real time.
+- **Source Control** — Git overview, commit history, branch tracking, worktree management, GitHub PR integration, and deployment drift analysis.
+- **Session Timeline** — Browse Claude Code sessions with token counts, tool usage stats, scope associations, and one-click session resumption.
+- **Primitives Editor** — Browse and edit agents, skills, and hooks directly from the dashboard with a built-in file editor and workflow pipeline visualization.
+- **File-Based Event Bus** — No daemon required. Hooks write JSON events to `.claude/orbital-events/`; the server picks them up on next start. Events queue naturally when the server is offline.
+
+## Requirements
+
+- **Node.js >= 18**
+- **Claude Code** installed and available as `claude` on your PATH
+- **C++ compiler** for the `better-sqlite3` native module:
+  - macOS: Xcode Command Line Tools (`xcode-select --install`)
+  - Linux: `build-essential` (`apt install build-essential`)
 
 ## Installation
+
+**Global install (recommended for regular use):**
 
 ```bash
 npm install -g github:terminals/orbital-command
 ```
 
-## Quick Start
+This registers the `orbital` command globally. Then in any project:
 
 ```bash
-# Scaffold Orbital Command into your project
 orbital init
-
-# Launch the dashboard
 orbital dev
 ```
 
-Then open [http://localhost:4445](http://localhost:4445) in your browser.
+**Without global install:**
 
-The `init` command is non-destructive -- it will skip files that already exist. Pass `--force` to overwrite.
+```bash
+npx github:terminals/orbital-command init
+npx github:terminals/orbital-command dev
+```
 
-### Requirements
+## Quick Start
 
-- **Node.js >= 18**
-- **C++ compiler** for the `better-sqlite3` native module:
-  - macOS: Xcode Command Line Tools (`xcode-select --install`)
-  - Linux: `build-essential` (`apt install build-essential`)
+```bash
+# 1. Navigate to your project
+cd my-project
+
+# 2. Scaffold Orbital Command (hooks, skills, agents, config)
+orbital init
+
+# 3. Launch the dashboard
+orbital dev
+```
+
+Open [http://localhost:4445](http://localhost:4445) in your browser. The API server runs on port 4444.
+
+The `init` command is non-destructive — it skips files that already exist. Pass `--force` to overwrite everything with the latest templates.
 
 ## What Gets Installed
 
@@ -51,78 +73,202 @@ After `orbital init`, your project receives:
 
 ```
 .claude/
-  orbital.config.json          # Project configuration
-  settings.local.json          # Hook registrations (merged, not overwritten)
-  hooks/                       # 29 lifecycle hook scripts
-  skills/                      # 16 skill definitions (4 routers + 12 sub-skills)
-  agents/                      # Agent team definitions + workflow docs
+  orbital.config.json           # Project configuration
+  settings.local.json           # Hook registrations (merged, not overwritten)
+  hooks/                        # 32 lifecycle hook scripts
+  skills/                       # 16 skill definitions
+  agents/                       # Agent team definitions + workflow docs
   config/
-    workflows/                 # Workflow presets (default, development, minimal)
-    agent-triggers.json        # Auto-invoke rules for agents
+    workflow.json               # Active workflow configuration
+    workflows/                  # Workflow presets (default, gitflow, development, minimal)
+    agent-triggers.json         # Auto-invoke rules for agents
 scopes/
-  icebox/                      # Starting directory for scope documents
-.gitignore                     # Orbital patterns appended
+  _template.md                  # Scope document template
+  icebox/                       # Starting directory for scope documents
+  planning/                     # (directories created per workflow preset)
+  ...
+.gitignore                      # Orbital patterns appended
 ```
 
 | Category | Count | Description |
 |----------|-------|-------------|
-| Hooks | 29 | Shell scripts triggered by Claude Code lifecycle events |
-| Skills | 16 | 4 routers (`/scope`, `/work`, `/git`, `/test`) + 12 workflow sub-skills |
-| Agents | 7 (+3 optional) | Red, Blue, and Green team agent definitions; 3 domain-specific examples |
-| Presets | 3 | `default` (9 columns), `development` (5 columns), `minimal` (3 columns) |
+| Hooks | 32 | Shell scripts triggered by Claude Code lifecycle events |
+| Skills | 16 | Scope lifecycle, git operations, testing, and session management |
+| Agents | 5 | Red, Blue, and Green team agent definitions |
+| Presets | 4 | `default` (7 columns), `gitflow` (9 columns), `development` (5 columns), `minimal` (3 columns) |
+
+## Dashboard Views
+
+| View | Path | Description |
+|------|------|-------------|
+| **Kanban** | `/` | Scope board with drag-and-drop, swim lanes, sprint containers, batch dispatch |
+| **Primitives** | `/primitives` | Browse and edit agents, skills, and hooks with a directory tree and file editor |
+| **Safeguards** | `/gates` | Quality gate status, violation trends, enforcement rules, override audit trail |
+| **Repo** | `/repo` | Git overview, commit log, branches, worktrees, GitHub PRs, deployment history |
+| **Sessions** | `/sessions` | Claude Code session timeline with token stats, tool usage, and resume capability |
+| **Workflow** | `/workflow` | Visual DAG editor for columns, transitions, hooks, and presets |
+| **Settings** | `/settings` | Theme toggle, font selection, and UI scale adjustment |
+
+## CLI Reference
+
+| Command | Description |
+|---------|-------------|
+| `orbital init` | Scaffold hooks, skills, agents, and config into the current project |
+| `orbital init --force` | Re-scaffold, overwriting all existing files with latest templates |
+| `orbital dev` | Start the API server and Vite dev server concurrently |
+| `orbital build` | Production build of the dashboard frontend |
+| `orbital emit <TYPE> [JSON]` | Emit an event to the file-based event bus |
+| `orbital update` | Re-copy hooks, skills, agents, and presets (overwrites). Pass `--include-examples` to include domain-specific example agents |
+| `orbital uninstall` | Remove all Orbital artifacts from the project. Preserves `scopes/` and event history |
+
+## Workflow Presets
+
+Orbital ships with 4 workflow presets. Switch between them at any time via the Workflow Visualizer in the dashboard.
+
+### Default (7 columns, trunk-based)
+
+**Icebox** → **Planning** → **Backlog** → **Implementing** → **Review** → **Completed** → **Main**
+
+The standard trunk-based workflow. 13 transition edges including shortcuts (planning → implementing), backward transitions for rework, and forward paths. 30 hooks for session management, scope lifecycle, quality gates, and event reporting. Best for most projects.
+
+### Gitflow (9 columns, worktree isolation)
+
+**Icebox** → **Planning** → **Backlog** → **Implementing** → **Review** → **Completed** → **Dev** → **Staging** → **Production**
+
+Full gitflow with branch-per-scope worktree isolation. 16 transition edges, feature branches merged to dev, PRs to staging, and production releases. 30 hooks. Best for teams with formal release processes.
+
+### Development (5 columns, trunk-based)
+
+**Backlog** → **Implementing** → **Review** → **Completed** → **Dev**
+
+Streamlined flow that drops planning and deploy stages. 6 transition edges, no hooks. Good for active development before you have a staging/production pipeline.
+
+### Minimal (3 columns, trunk-based)
+
+**To Do** → **In Progress** → **Done**
+
+Simplest possible board. 2 transition edges, no hooks, no event inference. Good for experiments, hackathons, or projects that just need a task board.
+
+## Skills
+
+Skills are slash commands that Claude Code agents use to navigate your workflow. They're installed as markdown files in `.claude/skills/`.
+
+### Scope Lifecycle
+| Skill | Command | Purpose |
+|-------|---------|---------|
+| Create | `/scope-create` | Create a structured scope document with phases and success criteria |
+| Implement | `/scope-implement` | Execute a scope end-to-end following defined phases |
+| Pre-Review | `/scope-pre-review` | Run full agent team analysis before implementation |
+| Post-Review | `/scope-post-review` | Orchestrate post-implementation quality gates and code review |
+| Verify | `/scope-verify` | Formal review gate checking spec compliance and test results |
+| Fix Review | `/scope-fix-review` | Execute all code review findings from agent team |
+
+### Git Operations
+| Skill | Command | Purpose |
+|-------|---------|---------|
+| Commit | `/git-commit` | Routes to proper git workflow (trunk/worktree aware) |
+| Main | `/git-main` | Push or PR scope work to main branch |
+| Dev | `/git-dev` | Merge feature branch into dev |
+| Staging | `/git-staging` | Create PR from dev to staging |
+| Production | `/git-production` | Create release PR from staging to main |
+| Hotfix | `/git-hotfix` | Emergency fix branching from main |
+
+### Testing & Sessions
+| Skill | Command | Purpose |
+|-------|---------|---------|
+| Checks | `/test-checks` | Run 13 quality gates (lint, typecheck, rules, etc.) |
+| Code Review | `/test-code-review` | Full validation suite with agent code review |
+| Session Init | `/session-init` | Initialize work session with project context |
+| Session Resume | `/session-resume` | Resume a previous session with saved context |
+
+## Agent System
+
+Agents are AI-powered review sessions with specialized perspectives. They run as parallel Claude Code sessions and report findings back to the dashboard.
+
+### Red Team — Adversarial
+
+| Agent | Trigger | Focus |
+|-------|---------|-------|
+| **Attacker** 🗡️ | Security-sensitive changes | Credential extraction, injection vectors, API over-exposure, resource exhaustion, state corruption |
+| **Chaos** 💥 | New features, state changes, external calls | Partial completion, concurrent access conflicts, stale data, orphaned locks, queue backups |
+
+### Blue Team — Domain Experts
+
+| Agent | Trigger | Focus |
+|-------|---------|-------|
+| **Frontend Designer** 🎨 | Frontend changes, user-facing features | React components, UX patterns, style consistency, data accuracy, real-time updates |
+
+### Green Team — Guardians
+
+| Agent | Trigger | Focus |
+|-------|---------|-------|
+| **Architect** 🏗️ | New features, structural changes | Layer separation, module boundaries, pattern consistency, database integrity |
+| **Rules Enforcer** 📋 | Every commit (blocking) | No `any` types, no console.log, file size limits, import ordering, project rules |
+
+### Review Modes
+
+Agents can run in three modes, configured per-transition in the workflow:
+
+- **Quick** — Fast feedback from relevant agents only
+- **Full** — Complete analysis from all agents
+- **Security** — Enhanced scrutiny with red team focus
+
+## Quality Gates
+
+Orbital tracks 13 automated quality checks that can block or allow scope transitions:
+
+| Gate | What it checks |
+|------|---------------|
+| `type-check` | TypeScript compilation |
+| `lint` | Linter rules |
+| `build` | Build succeeds |
+| `tests` | Test suite passes |
+| `rule-enforcement` | Project-specific rules |
+| `template-validation` | Template compliance |
+| `doc-links` | Documentation links valid |
+| `doc-freshness` | Docs not stale |
+| `no-placeholders` | No TODO/FIXME left behind |
+| `no-mock-data` | No hardcoded test data |
+| `no-shortcuts` | No workaround hacks |
+| `no-default-secrets` | No hardcoded credentials |
+| `no-stale-scopes` | Scopes aren't abandoned |
+
+Gates are reported by hooks and displayed in the Safeguards view with trend charts and override tracking.
 
 ## Configuration
 
-All configuration lives in `.claude/orbital.config.json`. Resolution order: **config file > CLI flags > defaults**.
+All configuration lives in `.claude/orbital.config.json`:
 
 ```jsonc
 {
-  // Display name shown in the dashboard header
   "projectName": "My Project",
-
-  // Where scope markdown files live (relative to project root)
   "scopesDir": "scopes",
-
-  // Directory for the file-based event bus
   "eventsDir": ".claude/orbital-events",
-
-  // SQLite database storage
   "dbDir": ".claude/orbital",
-
-  // Workflow presets, agent triggers, and other config
   "configDir": ".claude/config",
-
-  // Server (API + Socket.io) and client (Vite) ports
   "serverPort": 4444,
   "clientPort": 4445,
 
-  // Terminal adapter for dispatching Claude Code sessions
   "terminal": {
-    "adapter": "auto",       // "auto" | "iterm2" | "subprocess" | "none"
+    "adapter": "auto",           // "auto" | "iterm2" | "subprocess" | "none"
     "profilePrefix": "Orbital"
   },
 
-  // Claude Code CLI configuration
   "claude": {
     "executable": "claude",
     "flags": ["--dangerously-skip-permissions"]
   },
 
-  // Project-specific build/test commands (null = disabled)
+  // Project-specific commands (null = disabled)
   "commands": {
-    "typeCheck": null,       // e.g. "npx tsc --noEmit"
-    "lint": null,            // e.g. "npx eslint ."
-    "build": null,           // e.g. "npm run build"
-    "test": null,            // e.g. "npm test"
-    "validateTemplates": null,
-    "validateDocs": null,
-    "checkRules": null
+    "typeCheck": null,           // e.g. "npx tsc --noEmit"
+    "lint": null,                // e.g. "npx eslint ."
+    "build": null,               // e.g. "npm run build"
+    "test": null                 // e.g. "npm test"
   },
 
-  // Scope categorization labels
   "categories": ["feature", "bugfix", "refactor", "infrastructure", "docs"],
 
-  // Agent definitions displayed in the dashboard
   "agents": [
     { "id": "attacker", "label": "Attacker", "emoji": "🗡️", "color": "#ff1744" },
     { "id": "chaos", "label": "Chaos", "emoji": "💥", "color": "#F97316" },
@@ -137,98 +283,113 @@ All configuration lives in `.claude/orbital.config.json`. Resolution order: **co
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Browser (React)                         │
-│  Kanban · Sprint · Workflow · Gates · Agents · Pipeline     │
+│                     Browser (React 18)                       │
+│  Kanban · Primitives · Safeguards · Repo · Sessions · DAG   │
 └──────────────────────┬──────────────────────────────────────┘
-                       │ Socket.io + REST
+                       │ Socket.io + REST (/api/orbital/*)
 ┌──────────────────────▼──────────────────────────────────────┐
-│                  Express Server (:4444)                      │
-│  Scope Service · Sprint Orchestrator · Workflow Engine       │
-│  Gate Service · Deploy Service · Event Watcher               │
+│                  Express Server (:4444)                       │
+│  ScopeService · SprintOrchestrator · BatchOrchestrator       │
+│  WorkflowService · GateService · GitService · ConfigService  │
 └──────┬───────────────┬──────────────────────────────────────┘
        │               │
   ┌────▼────┐   ┌──────▼───────┐
   │ SQLite  │   │  Filesystem  │
-  │ (db)    │   │  (events +   │
-  │         │   │   scopes)    │
+  │ (WAL)   │   │  (scopes +   │
+  │         │   │   events)    │
   └─────────┘   └──────────────┘
 ```
 
 | Layer | Technology | Role |
 |-------|-----------|------|
-| **Frontend** | React 18 + Vite + Tailwind CSS + Radix UI | Dashboard UI with drag-and-drop Kanban, charts, and workflow DAG editor |
-| **Server** | Express + Socket.io | REST API, real-time push, file watchers for scopes and events |
-| **Database** | SQLite via better-sqlite3 | Zero-setup persistent storage for sessions, events, gates, and deploys |
-| **Event Bus** | Filesystem (`.claude/orbital-events/`) | JSON event files written by hooks; server ingests on startup and via chokidar watcher |
-| **Workflow Engine** | Pure TypeScript, config-driven | Column definitions, transition edges, hook bindings, and checklist rules -- all in JSON |
-| **Hooks** | Shell scripts (`.claude/hooks/`) | Triggered by Claude Code lifecycle events (session start, tool use, etc.) |
-| **Skills** | Markdown (`.claude/skills/`) | Claude Code skill definitions that teach the AI how to navigate your workflow |
-| **Agents** | Markdown (`.claude/agents/`) | Team-based agent definitions that run as parallel review sessions |
+| **Frontend** | React 18 + Vite + Tailwind CSS + Radix UI | Dashboard with drag-and-drop Kanban, Recharts visualizations, React Flow DAG editor |
+| **Server** | Express + Socket.io | REST API under `/api/orbital/*`, real-time push, file watchers via chokidar |
+| **Database** | SQLite via better-sqlite3 (WAL mode) | Zero-setup storage for sessions, events, gates, deploys, and sprints |
+| **Event Bus** | Filesystem (`.claude/orbital-events/`) | JSON event files written by hooks; ingested on startup and watched in real time |
+| **Workflow Engine** | Pure TypeScript (shared) | Config-driven transitions, validation, event inference, shell manifest generation |
+| **Hooks** | Shell scripts (`.claude/hooks/`) | 32 scripts triggered by Claude Code lifecycle events (SessionStart, SessionEnd, PreToolUse, PostToolUse) |
+| **Skills** | Markdown (`.claude/skills/`) | 16 skill definitions that teach Claude Code how to navigate your workflow |
+| **Agents** | Markdown (`.claude/agents/`) | Team-based agent definitions dispatched as parallel Claude Code sessions |
 
-## CLI Reference
+## How It Works
 
-| Command | Description |
-|---------|-------------|
-| `orbital init` | Scaffold hooks, skills, agents, and config into the current project. Pass `--force` to overwrite existing files. |
-| `orbital dev` | Start the API server and Vite dev server concurrently. |
-| `orbital build` | Production build of the dashboard frontend. |
-| `orbital emit <TYPE> <JSON>` | Emit an event to the file-based event bus. Useful for testing and CI integration. |
-| `orbital update` | Re-copy hooks, skills, and agents from the latest package templates (overwrites). Pass `--include-examples` to include domain-specific example agents. |
-| `orbital uninstall` | Remove all Orbital artifacts (hooks, skills, agents, settings registrations) from the project. Preserves `scopes/` and event history. |
+### Scopes
+Scopes are the unit of work in Orbital Command. Each scope is a markdown file with YAML frontmatter stored in `scopes/<column>/`. Moving a scope between columns on the board physically moves the file between directories.
 
-## Workflow Presets
+```markdown
+---
+id: "042"
+title: Add user authentication
+status: implementing
+category: feature
+priority: high
+blocked_by: ["041"]
+---
 
-Orbital ships with three workflow presets. Select one during init or switch at any time via the Workflow Visualizer in the dashboard.
+## Specification
+...
+```
 
-### Default (9 columns)
+### Event Flow
+1. Claude Code hooks fire during sessions (tool use, session start/end)
+2. Hooks write JSON event files to `.claude/orbital-events/`
+3. The server's file watcher picks them up and ingests into SQLite
+4. Socket.io pushes updates to the dashboard in real time
+5. If the server is offline, events queue as files and get ingested on next start
 
-The full lifecycle: **Icebox** :arrow_right: **Planning** :arrow_right: **Backlog** :arrow_right: **Implementing** :arrow_right: **Review** :arrow_right: **Completed** :arrow_right: **Dev** :arrow_right: **Staging** :arrow_right: **Production**. Includes 15 transition edges, confirmation checklists, shortcut paths (fast-track, skip-review), and backward transitions for rework. Best for production projects with CI/CD pipelines.
+### Dispatch
+When you dispatch a scope from the dashboard, Orbital:
+1. Validates the transition is allowed by the workflow
+2. Resolves the skill command for the edge (e.g., `/scope-implement`)
+3. Spawns a Claude Code session in a terminal (iTerm2 tabs or subprocess)
+4. Tracks the session lifecycle via hooks
+5. Updates scope status as events flow back
 
-### Development (5 columns)
+## FAQ
 
-A streamlined dev-focused flow: **Backlog** :arrow_right: **Implementing** :arrow_right: **Review** :arrow_right: **Completed** :arrow_right: **Dev**. Drops the planning and deploy stages. Good for active development before you have a staging/production pipeline.
+### Can I use this without Claude Code?
+No. Orbital Command is purpose-built for Claude Code. The hooks, skills, agents, and session tracking all depend on Claude Code's lifecycle events and CLI.
 
-### Minimal (3 columns)
+### Do I need to keep the dashboard running?
+No. The file-based event bus means hooks write events as JSON files regardless of whether the server is running. Events queue up and get ingested when you next run `orbital dev`.
 
-The simplest possible board: **To Do** :arrow_right: **In Progress** :arrow_right: **Done**. No hooks, no event inference, no deploy tracking. Good for experiments, hackathons, or projects that just need a task board.
+### How do I customize the workflow columns?
+Open the Workflow Visualizer (`/workflow` in the dashboard). You can add/remove columns, create transitions, attach hooks, and set confirmation levels. Or edit `.claude/config/workflow.json` directly. Changes take effect immediately.
 
-## Agent System
+### How do I add my own agents?
+Create a markdown file in `.claude/agents/<team>/` following the structure of existing agents. Add the agent to the `agents` array in `orbital.config.json` to show it in the dashboard. Agents are dispatched as independent Claude Code sessions with the markdown file as their system prompt.
 
-Agents are AI-powered review sessions that run in parallel, each with a specialized perspective defined in markdown. They are organized into three teams:
+### What's the difference between trunk and worktree branching modes?
+**Trunk mode** (default, development, minimal presets): All work happens on a single branch. Scopes commit directly. Simpler, good for solo or small teams.
 
-### :red_circle: Red Team (Adversarial)
-- **Attacker** -- Probes for security vulnerabilities, injection vectors, and unsafe patterns.
-- **Chaos** -- Tests edge cases, race conditions, error handling, and failure modes.
+**Worktree mode** (gitflow preset): Each scope gets its own git worktree and feature branch. Merges happen through PRs. Better for teams with formal review processes.
 
-### :blue_circle: Blue Team (Quality)
-- **Frontend Designer** -- Reviews UI/UX patterns, accessibility, component structure, and visual consistency.
-- **DevOps Expert** -- Evaluates infrastructure, deployment readiness, performance, and operational concerns.
+### How do sprints work?
+Sprints group multiple scopes for batch execution. The orchestrator resolves dependencies using topological sort (Kahn's algorithm), organizes scopes into execution layers, then dispatches them in parallel with staggered 2-second intervals. One active batch per workflow column.
 
-### :green_circle: Green Team (Architecture)
-- **Architect** -- Assesses system design, abstraction boundaries, coupling, and scalability.
-- **Rules Enforcer** -- Validates compliance with project-specific rules, conventions, and documentation standards.
+### How do I reset everything?
+```bash
+orbital uninstall    # Remove all Orbital artifacts
+orbital init --force # Re-scaffold from scratch
+```
 
-Additionally, 3 **domain-specific example agents** are included (installed with `orbital init` or `orbital update --include-examples`) to demonstrate how to create agents tailored to your project's domain.
+This preserves your `scopes/` directory and event history.
 
-Agent reviews are dispatched from the dashboard and their findings appear in the **Agent Feed** view in real time.
+### Can I use a different terminal than iTerm2?
+Yes. Set `terminal.adapter` in your config:
+- `"auto"` — Detects iTerm2 on macOS, falls back to subprocess
+- `"iterm2"` — macOS iTerm2 with categorized tab groups
+- `"subprocess"` — Generic subprocess spawning (works everywhere)
+- `"none"` — Disable terminal dispatch
 
 ## Contributing
 
-Contributions are welcome. To get started:
+1. Fork the repository and clone locally
+2. Install dependencies: `npm install`
+3. Start development: `npm run dev:local`
+4. Typecheck: `npm run typecheck`
 
-1. Fork the repository and clone it locally.
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Start the development server:
-   ```bash
-   npm run dev
-   ```
-   This launches both the Express API server and the Vite dev server with hot reload.
-4. Make your changes, ensure TypeScript compiles cleanly (`npm run build`), and open a pull request.
-
-Please open an issue first for large changes or new features so we can discuss the approach.
+Open an issue first for large changes or new features.
 
 ## License
 

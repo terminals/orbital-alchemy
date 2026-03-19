@@ -923,6 +923,7 @@ function cmdUpdate(args) {
   const scopeTemplateSrc = path.join(TEMPLATES_DIR, 'scopes', '_template.md');
   const scopeTemplateDest = path.join(projectRoot, 'scopes', '_template.md');
   if (fs.existsSync(scopeTemplateSrc)) {
+    ensureDir(path.join(projectRoot, 'scopes'));
     fs.copyFileSync(scopeTemplateSrc, scopeTemplateDest);
     console.log(`  Updated  scopes/_template.md`);
   }

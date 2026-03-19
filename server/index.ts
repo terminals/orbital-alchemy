@@ -98,9 +98,8 @@ scopeService.setActiveGroupCheck((scopeId) => sprintService.getActiveGroupForSco
 
 eventService.onIngest((eventType, scopeId, data) => {
   // Handle SESSION_END: resolve all dispatches linked to the exiting PID
-  // and revert scopes that didn't complete their transition
   if (eventType === 'SESSION_END' && typeof data.pid === 'number') {
-    const count = resolveDispatchesByPid(db, io, data.pid, scopeService);
+    const count = resolveDispatchesByPid(db, io, data.pid);
     if (count > 0) {
       // eslint-disable-next-line no-console
       console.log(`[Orbital] SESSION_END: resolved ${count} dispatch(es) for PID ${data.pid}`);

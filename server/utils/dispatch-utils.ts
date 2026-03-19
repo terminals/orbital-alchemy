@@ -68,34 +68,24 @@ export function linkPidToDispatch(
 /** Resolve all unresolved DISPATCH events linked to a specific PID.
  *  Called when a SESSION_END event is received, indicating the Claude session
  *  process has exited and its dispatches should be cleared.
- *  If a scopeService is provided, reverts scopes that didn't reach their target status. */
+ *
+ *  NOTE: Does NOT revert scope status. Skills like /scope-implement intentionally
+ *  keep scopes at the transition target (e.g. "implementing") after completion.
+ *  Reverting on session end was destroying completed work and deleting scope files. */
 export function resolveDispatchesByPid(
   db: Database.Database,
   io: Server,
   pid: number,
-  scopeService?: ScopeService,
 ): number {
   const rows = db.prepare(
-    `SELECT id, scope_id, data FROM events
+    `SELECT id FROM events
      WHERE type = 'DISPATCH'
        AND JSON_EXTRACT(data, '$.resolved') IS NULL
        AND JSON_EXTRACT(data, '$.pid') = ?`,
-  ).all(pid) as Array<{ id: string; scope_id: number | null; data: string }>;
+  ).all(pid) as Array<{ id: string }>;
 
   for (const row of rows) {
     resolveDispatchEvent(db, io, row.id, 'completed');
-
-    // Revert scope to pre-dispatch status if it didn't move beyond the transition target
-    if (scopeService && row.scope_id != null) {
-      const data = JSON.parse(row.data);
-      const transition = data.transition as { from: string; to: string } | null;
-      if (transition?.from) {
-        const scope = scopeService.getById(row.scope_id);
-        if (scope && scope.status === transition.to) {
-          scopeService.updateStatus(row.scope_id, transition.from, 'rollback');
-        }
-      }
-    }
   }
 
   return rows.length;
@@ -151,8 +141,12 @@ export function getActiveScopeIds(db: Database.Database, scopeService: ScopeServ
  *  1. Scope already in a terminal state (completed/dev/staging/production)
  *  2. Linked PID is no longer running (session ended/crashed)
  *  3. No linked PID and dispatch older than STALE_AGE_MS (fallback)
- *  Called once at startup to clean up pre-existing unresolved dispatches.
- *  When a stale dispatch had a transition, reverts the scope to its pre-dispatch status. */
+ *  Called once at startup and periodically to clean up unresolved dispatches.
+ *
+ *  NOTE: Does NOT revert scope status. Skills like /scope-implement intentionally
+ *  keep scopes at the transition target after completion. Auto-reverting was
+ *  destroying completed work and deleting scope files. Users can manually
+ *  move scopes back from the dashboard if needed. */
 export function resolveStaleDispatches(db: Database.Database, io: Server, scopeService: ScopeService, engine: WorkflowEngine): number {
   const cutoff = new Date(Date.now() - STALE_AGE_MS).toISOString();
 
@@ -190,12 +184,6 @@ export function resolveStaleDispatches(db: Database.Database, io: Server, scopeS
     if (isStale) {
       resolveDispatchEvent(db, io, row.id, 'completed');
       resolved++;
-
-      // Revert scope to pre-dispatch status if the session didn't complete the transition
-      const transition = data.transition as { from: string; to: string } | null;
-      if (transition?.from && scopeStatus === transition.to) {
-        scopeService.updateStatus(row.scope_id, transition.from, 'rollback');
-      }
     }
   }
 

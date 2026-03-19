@@ -296,11 +296,11 @@ export class ScopeService {
     ].join('\n');
 
     fs.writeFileSync(newPath, newContent, 'utf-8');
-    fs.unlinkSync(oldPath);
 
-    // Sync cache: remove old icebox entry, ingest new scope with proper ID
-    this.removeByFilePath(oldPath);
+    // Sync cache before deleting old file (avoids window where scope is missing)
     this.updateFromFile(newPath);
+    fs.unlinkSync(oldPath);
+    this.removeByFilePath(oldPath);
 
     const relPath = path.relative(path.resolve(this.scopesDir, '..'), newPath);
     return { id: newId, filePath: relPath, title, description };
@@ -390,7 +390,7 @@ export class ScopeService {
       return { ok: true };
     }
 
-    // Status change → move file to new directory (pattern: promoteIdea)
+    // Status change → move file to new directory
     const targetDir = path.join(this.scopesDir, newStatus!);
     if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
 
@@ -398,10 +398,10 @@ export class ScopeService {
     const newPath = path.join(targetDir, fileName);
     const newContent = matter.stringify(parsed.content, parsed.data);
 
-    // Write new → sync cache → delete old (avoids delete flash)
-    fs.writeFileSync(newPath, newContent, 'utf-8');
+    // Update content in-place, then atomic rename (no window where file is missing)
+    fs.writeFileSync(filePath, newContent, 'utf-8');
+    fs.renameSync(filePath, newPath);
     this.updateFromFile(newPath);
-    fs.unlinkSync(filePath);
     this.removeByFilePath(filePath);
 
     return { ok: true, moved: true };

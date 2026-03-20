@@ -9,7 +9,15 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const PACKAGE_ROOT = path.resolve(__dirname, '..');
+
+// Resolve the package root and templates directory.
+// In dev mode (server/): ../ is the project root.
+// In compiled mode (dist/electron/server/): need to go up 3 levels.
+const rootCandidates = [
+  path.resolve(__dirname, '..'),          // dev: server/ → root
+  path.resolve(__dirname, '../../..'),    // compiled: dist/electron/server/ → root
+];
+const PACKAGE_ROOT = rootCandidates.find(d => fs.existsSync(path.join(d, 'templates'))) ?? rootCandidates[0];
 const TEMPLATES_DIR = path.join(PACKAGE_ROOT, 'templates');
 
 // ─── Helpers ─────────────────────────────────────────────────

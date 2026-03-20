@@ -18,7 +18,7 @@ interface SwimCellProps {
 export function SwimCell({
   laneValue,
   status,
-  scopes,
+  scopes = [],
   onScopeClick,
   cardDisplay,
   dimmedIds,

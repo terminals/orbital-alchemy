@@ -67,17 +67,14 @@ function laneLabel(field: SwimGroupField, value: string): string {
 // ─── Empty cells factory ────────────────────────────────────
 
 function emptyCells(): Record<ScopeStatus, Scope[]> {
-  return {
-    icebox: [],
-    planning: [],
-    backlog: [],
-    implementing: [],
-    review: [],
-    completed: [],
-    dev: [],
-    staging: [],
-    production: [],
-  };
+  // Use a Proxy so any dynamic status key returns [] without needing a hardcoded list.
+  // ScopeStatus is a runtime string — workflow configs define arbitrary statuses.
+  return new Proxy({} as Record<ScopeStatus, Scope[]>, {
+    get(target, prop: string) {
+      if (!(prop in target)) target[prop as ScopeStatus] = [];
+      return target[prop as ScopeStatus];
+    },
+  });
 }
 
 // ─── Main computation ───────────────────────────────────────

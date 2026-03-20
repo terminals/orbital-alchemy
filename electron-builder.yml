@@ -1,0 +1,41 @@
+appId: com.sakaralabs.orbital-command
+productName: Orbital Command
+
+directories:
+  buildResources: assets
+  output: release
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - universal
+  icon: assets/icon.icns
+  hardenedRuntime: true
+  darkModeSupport: true
+  entitlements: null
+  entitlementsInherit: null
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+  window:
+    width: 540
+    height: 380
+
+files:
+  - dist/**/*
+  - templates/**/*
+  - schemas/**/*
+  - shared/default-workflow.json
+  - node_modules/**/*
+  - package.json
+
+extraMetadata:
+  main: dist/electron/electron/main.js

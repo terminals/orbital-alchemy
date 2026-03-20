@@ -14,6 +14,22 @@ const __dirname = path.dirname(__filename);
 const PACKAGE_ROOT = path.resolve(__dirname, '..');
 const TEMPLATES_DIR = path.join(PACKAGE_ROOT, 'templates');
 
+/**
+ * Resolve a package binary (e.g. 'tsx', 'vite') to an absolute path.
+ * Checks PACKAGE_ROOT/node_modules/.bin first (global installs, non-hoisted),
+ * then the parent node_modules/.bin (hoisted local installs where deps are
+ * lifted to <project>/node_modules/.bin/). Returns null to fall back to npx.
+ */
+function resolveBin(name) {
+  // Package-local (global installs, or deps nested under this package)
+  const local = path.join(PACKAGE_ROOT, 'node_modules', '.bin', name);
+  if (fs.existsSync(local)) return local;
+  // Hoisted (local dep installs: PACKAGE_ROOT is <project>/node_modules/orbital-command/)
+  const hoisted = path.join(PACKAGE_ROOT, '..', '.bin', name);
+  if (fs.existsSync(hoisted)) return path.resolve(hoisted);
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -545,7 +561,23 @@ ${stages.map((s) => `+-- ${s}/`).join('\n')}
 // Commands
 // ---------------------------------------------------------------------------
 
-function cmdInit(args) {
+async function cmdInit(args) {
+  const force = args.includes('--force');
+  const projectRoot = detectProjectRoot();
+
+  // Use the shared init module (TypeScript compiled to JS, or loaded via tsx at dev time)
+  try {
+    const { runInit } = await import('../server/init.js');
+    runInit(projectRoot, { force });
+  } catch {
+    // Fallback: if server/init.js isn't compiled yet, use inline init logic
+    cmdInitFallback(args);
+  }
+
+  console.log(`Run \`orbital dev\` to start the development server.\n`);
+}
+
+function cmdInitFallback(args) {
   const force = args.includes('--force');
   const projectRoot = detectProjectRoot();
   const claudeDir = path.join(projectRoot, '.claude');
@@ -743,7 +775,6 @@ function cmdInit(args) {
   const totalCreated = hooksResult.created.length + skillsResult.created.length + agentsResult.created.length;
   const totalSkipped = hooksResult.skipped.length + skillsResult.skipped.length + agentsResult.skipped.length;
   console.log(`\nDone. ${totalCreated} files installed, ${totalSkipped} skipped (use --force to overwrite).`);
-  console.log(`Run \`orbital dev\` to start the development server.\n`);
 }
 
 function cmdDev() {
@@ -764,18 +795,20 @@ function cmdDev() {
   };
 
   // Start the API server
-  const serverProcess = spawn(
-    'npx',
-    ['tsx', 'watch', path.join(PACKAGE_ROOT, 'server', 'index.ts')],
-    { stdio: 'inherit', env, cwd: PACKAGE_ROOT }
-  );
+  const tsxBin = resolveBin('tsx');
+  const serverProcess = tsxBin
+    ? spawn(tsxBin, ['watch', path.join(PACKAGE_ROOT, 'server', 'index.ts')],
+        { stdio: 'inherit', env, cwd: PACKAGE_ROOT })
+    : spawn('npx', ['tsx', 'watch', path.join(PACKAGE_ROOT, 'server', 'index.ts')],
+        { stdio: 'inherit', env, cwd: PACKAGE_ROOT });
 
   // Start the Vite dev server
-  const viteProcess = spawn(
-    'npx',
-    ['vite', '--config', path.join(PACKAGE_ROOT, 'vite.config.ts'), '--port', String(clientPort)],
-    { stdio: 'inherit', env, cwd: PACKAGE_ROOT }
-  );
+  const viteBin = resolveBin('vite');
+  const viteProcess = viteBin
+    ? spawn(viteBin, ['--config', path.join(PACKAGE_ROOT, 'vite.config.ts'), '--port', String(clientPort)],
+        { stdio: 'inherit', env, cwd: PACKAGE_ROOT })
+    : spawn('npx', ['vite', '--config', path.join(PACKAGE_ROOT, 'vite.config.ts'), '--port', String(clientPort)],
+        { stdio: 'inherit', env, cwd: PACKAGE_ROOT });
 
   let exiting = false;
 
@@ -810,11 +843,12 @@ function cmdDev() {
 function cmdBuild() {
   console.log(`\nOrbital Command — build\n`);
 
-  const buildProcess = spawn(
-    'npx',
-    ['vite', 'build', '--config', path.join(PACKAGE_ROOT, 'vite.config.ts')],
-    { stdio: 'inherit', cwd: PACKAGE_ROOT }
-  );
+  const viteBin = resolveBin('vite');
+  const buildProcess = viteBin
+    ? spawn(viteBin, ['build', '--config', path.join(PACKAGE_ROOT, 'vite.config.ts')],
+        { stdio: 'inherit', cwd: PACKAGE_ROOT })
+    : spawn('npx', ['vite', 'build', '--config', path.join(PACKAGE_ROOT, 'vite.config.ts')],
+        { stdio: 'inherit', cwd: PACKAGE_ROOT });
 
   buildProcess.on('exit', (code) => {
     process.exit(code || 0);

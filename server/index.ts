@@ -3,8 +3,9 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { getDatabase, closeDatabase } from './database.js';
-import { getConfig } from './config.js';
+import { getConfig, resetConfig } from './config.js';
 import { ScopeCache } from './services/scope-cache.js';
 import { ScopeService } from './services/scope-service.js';
 import { EventService } from './services/event-service.js';
@@ -33,206 +34,258 @@ import { WorkflowEngine } from '../shared/workflow-engine.js';
 import defaultWorkflow from '../shared/default-workflow.json' with { type: 'json' };
 import type { WorkflowConfig } from '../shared/workflow-config.js';
 
-// Load configuration
-const config = getConfig();
+import type http from 'http';
+import type Database from 'better-sqlite3';
 
-const workflowEngine = new WorkflowEngine(defaultWorkflow as WorkflowConfig);
+// ─── Types ──────────────────────────────────────────────────
 
-// Generate shell manifest for bash hooks (config-driven lifecycle)
-const MANIFEST_PATH = path.join(config.configDir, 'workflow-manifest.sh');
-if (!fs.existsSync(config.configDir)) fs.mkdirSync(config.configDir, { recursive: true });
-fs.writeFileSync(MANIFEST_PATH, workflowEngine.generateShellManifest(), 'utf-8');
+export interface ServerOverrides {
+  port?: number;
+  projectRoot?: string;
+}
 
-const ICEBOX_DIR = path.join(config.scopesDir, 'icebox');
-const DEFAULT_CONFIG_PATH = path.resolve(import.meta.dirname, '../shared/default-workflow.json');
+export interface ServerInstance {
+  app: express.Application;
+  io: Server;
+  db: Database.Database;
+  workflowEngine: WorkflowEngine;
+  httpServer: http.Server;
+  shutdown: () => Promise<void>;
+}
 
-// Ensure icebox directory exists for idea files
-if (!fs.existsSync(ICEBOX_DIR)) fs.mkdirSync(ICEBOX_DIR, { recursive: true });
+// ─── Server Factory ─────────────────────────────────────────
 
-const app = express();
-const httpServer = createServer(app);
+export async function startServer(overrides?: ServerOverrides): Promise<ServerInstance> {
+  // Apply project root override before config loads
+  if (overrides?.projectRoot) {
+    process.env.ORBITAL_PROJECT_ROOT = overrides.projectRoot;
+    resetConfig();
+  }
 
-const io = new Server(httpServer, {
-  cors: {
-    origin: (origin, callback) => {
-      // Allow all localhost origins (dev tool, not production)
-      if (!origin || origin.startsWith('http://localhost:')) {
-        callback(null, true);
-      } else {
-        callback(new Error('CORS not allowed'));
-      }
+  const config = getConfig();
+  const port = overrides?.port ?? config.serverPort;
+
+  const workflowEngine = new WorkflowEngine(defaultWorkflow as WorkflowConfig);
+
+  // Generate shell manifest for bash hooks (config-driven lifecycle)
+  const MANIFEST_PATH = path.join(config.configDir, 'workflow-manifest.sh');
+  if (!fs.existsSync(config.configDir)) fs.mkdirSync(config.configDir, { recursive: true });
+  fs.writeFileSync(MANIFEST_PATH, workflowEngine.generateShellManifest(), 'utf-8');
+
+  const ICEBOX_DIR = path.join(config.scopesDir, 'icebox');
+  // Resolve path to the bundled default workflow config.
+  // Works in both dev (server/) and compiled (dist/electron/server/) modes.
+  const __selfDir2 = path.dirname(fileURLToPath(import.meta.url));
+  const configCandidates = [
+    path.resolve(__selfDir2, '../shared/default-workflow.json'),
+    path.resolve(__selfDir2, '../../..', 'shared/default-workflow.json'),
+  ];
+  const DEFAULT_CONFIG_PATH = configCandidates.find(p => fs.existsSync(p)) ?? configCandidates[0];
+
+  // Ensure icebox directory exists for idea files
+  if (!fs.existsSync(ICEBOX_DIR)) fs.mkdirSync(ICEBOX_DIR, { recursive: true });
+
+  const app = express();
+  const httpServer = createServer(app);
+
+  const io = new Server(httpServer, {
+    cors: {
+      origin: (origin, callback) => {
+        // Allow all localhost origins (dev tool, not production)
+        if (!origin || origin.startsWith('http://localhost:')) {
+          callback(null, true);
+        } else {
+          callback(new Error('CORS not allowed'));
+        }
+      },
+      methods: ['GET', 'POST'],
     },
-    methods: ['GET', 'POST'],
-  },
-});
-
-// Middleware
-app.use(express.json());
-
-// Initialize database
-const db = getDatabase();
-
-// Initialize services
-const scopeCache = new ScopeCache();
-const scopeService = new ScopeService(scopeCache, io, config.scopesDir, workflowEngine);
-const eventService = new EventService(db, io);
-const gateService = new GateService(db, io);
-const deployService = new DeployService(db, io);
-const sprintService = new SprintService(db, io, scopeService);
-const sprintOrchestrator = new SprintOrchestrator(db, io, sprintService, scopeService, workflowEngine);
-const batchOrchestrator = new BatchOrchestrator(db, io, sprintService, scopeService, workflowEngine);
-const readinessService = new ReadinessService(scopeService, gateService, workflowEngine, config.projectRoot);
-const workflowService = new WorkflowService(config.configDir, workflowEngine, config.scopesDir, DEFAULT_CONFIG_PATH);
-workflowService.setSocketServer(io);
-
-// Ensure in-memory engine reflects the actual active config (may differ from bundled default
-// if the user applied a custom preset)
-workflowEngine.reload(workflowService.getActive());
-const gitService = new GitService(config.projectRoot, scopeCache);
-const githubService = new GitHubService(config.projectRoot);
-
-// Wire active-group guard into scope service (blocks manual moves for scopes in active batches/sprints)
-scopeService.setActiveGroupCheck((scopeId) => sprintService.getActiveGroupForScope(scopeId));
-
-// ─── Event Wiring ──────────────────────────────────────────
-
-eventService.onIngest((eventType, scopeId, data) => {
-  // Handle SESSION_END: resolve all dispatches linked to the exiting PID
-  if (eventType === 'SESSION_END' && typeof data.pid === 'number') {
-    const count = resolveDispatchesByPid(db, io, data.pid);
-    if (count > 0) {
-      // eslint-disable-next-line no-console
-      console.log(`[Orbital] SESSION_END: resolved ${count} dispatch(es) for PID ${data.pid}`);
-    }
-    return;
-  }
-
-  inferScopeStatus(eventType, scopeId, data);
-});
-
-scopeService.onStatusChange((scopeId, newStatus) => {
-  if (newStatus === 'dev') {
-    sprintOrchestrator.onScopeReachedDev(scopeId);
-  }
-  // Batch orchestrator tracks all status transitions (dev, staging, production)
-  batchOrchestrator.onScopeStatusChanged(scopeId, newStatus);
-});
-
-scopeService.onStatusChange((scopeId, newStatus) => {
-  if (workflowEngine.isTerminalStatus(newStatus)) {
-    resolveActiveDispatchesForScope(db, io, scopeId, 'completed');
-  }
-});
-
-// ─── Routes ────────────────────────────────────────────────
-
-app.get('/', (_req, res) => res.redirect(`http://localhost:${config.clientPort}`));
-
-app.get('/api/orbital/health', (_req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
-});
-
-// Serve dynamic config to the frontend
-app.get('/api/orbital/config', (_req, res) => {
-  res.json({
-    projectName: config.projectName,
-    categories: config.categories,
-    agents: config.agents,
-    serverPort: config.serverPort,
-    clientPort: config.clientPort,
   });
-});
 
-app.use('/api/orbital', createScopeRoutes({ db, io, scopeService, readinessService, projectRoot: config.projectRoot, engine: workflowEngine }));
-app.use('/api/orbital', createDataRoutes({ db, io, gateService, deployService, engine: workflowEngine, projectRoot: config.projectRoot, inferScopeStatus }));
-app.use('/api/orbital', createDispatchRoutes({ db, io, scopeService, projectRoot: config.projectRoot, engine: workflowEngine }));
-app.use('/api/orbital', createSprintRoutes({ sprintService, sprintOrchestrator, batchOrchestrator }));
-app.use('/api/orbital', createWorkflowRoutes({ workflowService, projectRoot: config.projectRoot }));
-app.use('/api/orbital', createConfigRoutes({ projectRoot: config.projectRoot, workflowService, io }));
-app.use('/api/orbital', createGitRoutes({ gitService, githubService, engine: workflowEngine }));
+  // Middleware
+  app.use(express.json());
 
-// ─── Socket.io ──────────────────────────────────────────────
+  // Initialize database
+  const db = getDatabase();
 
-io.on('connection', (socket) => {
-  // eslint-disable-next-line no-console
-  console.log(`[Orbital] Client connected: ${socket.id}`);
+  // Initialize services
+  const scopeCache = new ScopeCache();
+  const scopeService = new ScopeService(scopeCache, io, config.scopesDir, workflowEngine);
+  const eventService = new EventService(db, io);
+  const gateService = new GateService(db, io);
+  const deployService = new DeployService(db, io);
+  const sprintService = new SprintService(db, io, scopeService);
+  const sprintOrchestrator = new SprintOrchestrator(db, io, sprintService, scopeService, workflowEngine);
+  const batchOrchestrator = new BatchOrchestrator(db, io, sprintService, scopeService, workflowEngine);
+  const readinessService = new ReadinessService(scopeService, gateService, workflowEngine, config.projectRoot);
+  const workflowService = new WorkflowService(config.configDir, workflowEngine, config.scopesDir, DEFAULT_CONFIG_PATH);
+  workflowService.setSocketServer(io);
 
-  socket.on('disconnect', () => {
+  // Ensure in-memory engine reflects the actual active config (may differ from bundled default
+  // if the user applied a custom preset)
+  workflowEngine.reload(workflowService.getActive());
+  const gitService = new GitService(config.projectRoot, scopeCache);
+  const githubService = new GitHubService(config.projectRoot);
+
+  // Wire active-group guard into scope service (blocks manual moves for scopes in active batches/sprints)
+  scopeService.setActiveGroupCheck((scopeId) => sprintService.getActiveGroupForScope(scopeId));
+
+  // ─── Event Wiring ──────────────────────────────────────────
+
+  function inferScopeStatus(
+    eventType: string,
+    scopeId: unknown,
+    data: Record<string, unknown>
+  ): void {
+    if (scopeId == null) return;
+    const id = Number(scopeId);
+    if (isNaN(id) || id <= 0) return;
+
+    // Don't infer status for icebox idea cards
+    const current = scopeService.getById(id);
+    if (current?.status === 'icebox') return;
+
+    const currentStatus = current?.status ?? '';
+    const result = workflowEngine.inferStatus(eventType, currentStatus, data);
+    if (result === null) return;
+
+    // Handle dispatch resolution (AGENT_COMPLETED with outcome)
+    if (typeof result === 'object' && 'dispatchResolution' in result) {
+      resolveActiveDispatchesForScope(
+        db, io, id,
+        result.resolution as 'completed' | 'failed',
+      );
+      return;
+    }
+
+    scopeService.updateStatus(id, result, 'event');
+  }
+
+  eventService.onIngest((eventType, scopeId, data) => {
+    // Handle SESSION_END: resolve all dispatches linked to the exiting PID
+    // and revert scopes that didn't complete their transition
+    if (eventType === 'SESSION_END' && typeof data.pid === 'number') {
+      const count = resolveDispatchesByPid(db, io, data.pid);
+      if (count > 0) {
+        // eslint-disable-next-line no-console
+        console.log(`[Orbital] SESSION_END: resolved ${count} dispatch(es) for PID ${data.pid}`);
+      }
+      return;
+    }
+
+    inferScopeStatus(eventType, scopeId, data);
+  });
+
+  scopeService.onStatusChange((scopeId, newStatus) => {
+    if (newStatus === 'dev') {
+      sprintOrchestrator.onScopeReachedDev(scopeId);
+    }
+    // Batch orchestrator tracks all status transitions (dev, staging, production)
+    batchOrchestrator.onScopeStatusChanged(scopeId, newStatus);
+  });
+
+  scopeService.onStatusChange((scopeId, newStatus) => {
+    if (workflowEngine.isTerminalStatus(newStatus)) {
+      resolveActiveDispatchesForScope(db, io, scopeId, 'completed');
+    }
+  });
+
+  // ─── Routes ────────────────────────────────────────────────
+
+  app.get('/api/orbital/health', (_req, res) => {
+    res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+  });
+
+  // Serve dynamic config to the frontend
+  app.get('/api/orbital/config', (_req, res) => {
+    res.json({
+      projectName: config.projectName,
+      categories: config.categories,
+      agents: config.agents,
+      serverPort: config.serverPort,
+      clientPort: config.clientPort,
+    });
+  });
+
+  app.use('/api/orbital', createScopeRoutes({ db, io, scopeService, readinessService, projectRoot: config.projectRoot, engine: workflowEngine }));
+  app.use('/api/orbital', createDataRoutes({ db, io, gateService, deployService, engine: workflowEngine, projectRoot: config.projectRoot, inferScopeStatus }));
+  app.use('/api/orbital', createDispatchRoutes({ db, io, scopeService, projectRoot: config.projectRoot, engine: workflowEngine }));
+  app.use('/api/orbital', createSprintRoutes({ sprintService, sprintOrchestrator, batchOrchestrator }));
+  app.use('/api/orbital', createWorkflowRoutes({ workflowService, projectRoot: config.projectRoot }));
+  app.use('/api/orbital', createConfigRoutes({ projectRoot: config.projectRoot, workflowService, io }));
+  app.use('/api/orbital', createGitRoutes({ gitService, githubService, engine: workflowEngine }));
+
+  // ─── Static File Serving (Electron / production) ───────────
+
+  // Resolve the Vite-built frontend dist directory.
+  // In dev mode (tsx): __dirname is server/, so ../dist works.
+  // In compiled mode (tsc output in dist/electron/server/): walk up to find dist/index.html.
+  const __selfDir = path.dirname(fileURLToPath(import.meta.url));
+  const distCandidates = [
+    path.resolve(__selfDir, '../dist'),         // dev: server/ → dist/
+    path.resolve(__selfDir, '../../..', 'dist'), // compiled: dist/electron/server/ → dist/
+  ];
+  const distDir = distCandidates.find(d => fs.existsSync(path.join(d, 'index.html'))) ?? distCandidates[0];
+  if (fs.existsSync(path.join(distDir, 'index.html'))) {
+    app.use(express.static(distDir));
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/') || req.path.startsWith('/socket.io')) return next();
+      res.sendFile(path.join(distDir, 'index.html'));
+    });
+  } else {
+    // Dev mode: redirect root to Vite dev server
+    app.get('/', (_req, res) => res.redirect(`http://localhost:${config.clientPort}`));
+  }
+
+  // ─── Socket.io ──────────────────────────────────────────────
+
+  io.on('connection', (socket) => {
     // eslint-disable-next-line no-console
-    console.log(`[Orbital] Client disconnected: ${socket.id}`);
-  });
-});
+    console.log(`[Orbital] Client connected: ${socket.id}`);
 
-// ─── Event-Driven Status Inference ────────────────────────
-
-function inferScopeStatus(
-  eventType: string,
-  scopeId: unknown,
-  data: Record<string, unknown>
-): void {
-  if (scopeId == null) return;
-  const id = Number(scopeId);
-  if (isNaN(id) || id <= 0) return;
-
-  // Don't infer status for icebox idea cards
-  const current = scopeService.getById(id);
-  if (current?.status === 'icebox') return;
-
-  const currentStatus = current?.status ?? '';
-  const result = workflowEngine.inferStatus(eventType, currentStatus, data);
-  if (result === null) return;
-
-  // Handle dispatch resolution (AGENT_COMPLETED with outcome)
-  if (typeof result === 'object' && 'dispatchResolution' in result) {
-    resolveActiveDispatchesForScope(
-      db, io, id,
-      result.resolution as 'completed' | 'failed',
-    );
-    return;
-  }
-
-  scopeService.updateStatus(id, result, 'event');
-}
-
-// ─── Startup ───────────────────────────────────────────────
-
-/**
- * Try to listen on the configured port. If EADDRINUSE, increment and retry
- * (up to 10 attempts), matching Vite's port-conflict behavior.
- */
-function startListening(port: number, maxAttempts = 10): void {
-  let attempt = 0;
-
-  httpServer.on('error', (err: NodeJS.ErrnoException) => {
-    if (err.code === 'EADDRINUSE' && attempt < maxAttempts) {
-      attempt++;
-      const nextPort = port + attempt;
+    socket.on('disconnect', () => {
       // eslint-disable-next-line no-console
-      console.log(`[Orbital] Port ${port + attempt - 1} is in use, trying ${nextPort}...`);
-      httpServer.listen(nextPort);
-    } else {
-      // eslint-disable-next-line no-console
-      console.error(`[Orbital] Failed to start server:`, err.message);
-      process.exit(1);
-    }
+      console.log(`[Orbital] Client disconnected: ${socket.id}`);
+    });
   });
 
-  httpServer.listen(port);
-}
+  // ─── Startup ───────────────────────────────────────────────
 
-// Module-level references for graceful shutdown
-let scopeWatcher: ReturnType<typeof startScopeWatcher>;
-let eventWatcher: ReturnType<typeof startEventWatcher>;
-let batchRecoveryInterval: ReturnType<typeof setInterval>;
-let staleCleanupInterval: ReturnType<typeof setInterval>;
-let sessionSyncInterval: ReturnType<typeof setInterval>;
-let gitPollInterval: ReturnType<typeof setInterval>;
+  // References for graceful shutdown
+  let scopeWatcher: ReturnType<typeof startScopeWatcher>;
+  let eventWatcher: ReturnType<typeof startEventWatcher>;
+  let batchRecoveryInterval: ReturnType<typeof setInterval>;
+  let staleCleanupInterval: ReturnType<typeof setInterval>;
+  let sessionSyncInterval: ReturnType<typeof setInterval>;
+  let gitPollInterval: ReturnType<typeof setInterval>;
 
-startListening(config.serverPort);
+  const actualPort = await new Promise<number>((resolve, reject) => {
+    let attempt = 0;
+    const maxAttempts = 10;
 
-httpServer.on('listening', () => {
-  const addr = httpServer.address();
-  const actualPort = typeof addr === 'object' && addr ? addr.port : config.serverPort;
+    httpServer.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE' && attempt < maxAttempts) {
+        attempt++;
+        const nextPort = port + attempt;
+        // eslint-disable-next-line no-console
+        console.log(`[Orbital] Port ${port + attempt - 1} is in use, trying ${nextPort}...`);
+        httpServer.listen(nextPort);
+      } else {
+        reject(new Error(`Failed to start server: ${err.message}`));
+      }
+    });
+
+    httpServer.on('listening', () => {
+      const addr = httpServer.address();
+      const listenPort = typeof addr === 'object' && addr ? addr.port : port;
+      resolve(listenPort);
+    });
+
+    httpServer.listen(port);
+  });
+
+  // ─── Post-listen initialization ────────────────────────────
+
   // Sync scopes from filesystem on startup (populates in-memory cache)
   const scopeCount = scopeService.syncFromFilesystem();
 
@@ -249,6 +302,7 @@ httpServer.on('listening', () => {
   // Start file watchers
   scopeWatcher = startScopeWatcher(config.scopesDir, scopeService);
   eventWatcher = startEventWatcher(config.eventsDir, eventService);
+
   // Recover any active sprints/batches from before server restart
   sprintOrchestrator.recoverActiveSprints().catch(err => console.error('[Orbital] Sprint recovery failed:', err.message));
   batchOrchestrator.recoverActiveBatches().catch(err => console.error('[Orbital] Batch recovery failed:', err.message));
@@ -322,7 +376,7 @@ httpServer.on('listening', () => {
 ║         Orbital Command                              ║
 ║         ${config.projectName.padEnd(42)} ║
 ║                                                      ║
-║  >>> Open: http://localhost:${config.clientPort} <<<                 ║
+║  >>> Open: http://localhost:${actualPort} <<<                 ║
 ║                                                      ║
 ╠══════════════════════════════════════════════════════╣
 ║  Scopes:    ${String(scopeCount).padEnd(3)} loaded from filesystem          ║
@@ -330,32 +384,60 @@ httpServer.on('listening', () => {
 ║  Socket.io: ws://localhost:${actualPort}                      ║
 ╚══════════════════════════════════════════════════════╝
 `);
-});
 
-let shuttingDown = false;
-function gracefulShutdown() {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  // eslint-disable-next-line no-console
-  console.log('[Orbital] Shutting down...');
-  scopeWatcher.close();
-  eventWatcher.close();
-  clearInterval(batchRecoveryInterval);
-  clearInterval(staleCleanupInterval);
-  clearInterval(sessionSyncInterval);
-  clearInterval(gitPollInterval);
-  io.close(() => {
-    closeDatabase();
-    process.exit(0);
-  });
-  // Force exit if server doesn't close within 2s
-  setTimeout(() => {
-    closeDatabase();
-    process.exit(0);
-  }, 2000);
+  // ─── Graceful Shutdown ─────────────────────────────────────
+
+  let shuttingDown = false;
+  function shutdown(): Promise<void> {
+    if (shuttingDown) return Promise.resolve();
+    shuttingDown = true;
+    // eslint-disable-next-line no-console
+    console.log('[Orbital] Shutting down...');
+    scopeWatcher.close();
+    eventWatcher.close();
+    clearInterval(batchRecoveryInterval);
+    clearInterval(staleCleanupInterval);
+    clearInterval(sessionSyncInterval);
+    clearInterval(gitPollInterval);
+
+    return new Promise<void>((resolve) => {
+      const forceTimeout = setTimeout(() => {
+        closeDatabase();
+        resolve();
+      }, 2000);
+
+      io.close(() => {
+        clearTimeout(forceTimeout);
+        closeDatabase();
+        resolve();
+      });
+    });
+  }
+
+  return { app, io, db, workflowEngine, httpServer, shutdown };
 }
 
-process.on('SIGINT', gracefulShutdown);
-process.on('SIGTERM', gracefulShutdown);
+// ─── Direct Execution (backward compat: tsx watch server/index.ts) ───
 
-export { app, io, db, workflowEngine };
+const isDirectRun = process.argv[1] && (
+  process.argv[1].endsWith('server/index.ts') ||
+  process.argv[1].endsWith('server/index.js') ||
+  process.argv[1].endsWith('server')
+);
+
+if (isDirectRun) {
+  startServer().then(({ shutdown }) => {
+    process.on('SIGINT', async () => {
+      await shutdown();
+      process.exit(0);
+    });
+    process.on('SIGTERM', async () => {
+      await shutdown();
+      process.exit(0);
+    });
+  }).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('[Orbital] Failed to start server:', err.message);
+    process.exit(1);
+  });
+}

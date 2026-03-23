@@ -63,6 +63,12 @@
         "additionalProperties": false
       }
     },
+    "logLevel": {
+      "type": "string",
+      "enum": ["debug", "info", "warn", "error"],
+      "default": "info",
+      "description": "Server log verbosity level"
+    },
     "healthChecks": {
       "type": "object",
       "description": "Health check URLs by environment",

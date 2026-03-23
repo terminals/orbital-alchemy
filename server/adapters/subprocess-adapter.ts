@@ -1,5 +1,8 @@
 import { spawn } from 'child_process';
 import type { TerminalAdapter, LaunchOptions, CategorizedLaunchOptions } from './terminal-adapter.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('terminal');
 
 /**
  * Cross-platform terminal adapter using child_process.spawn.
@@ -12,7 +15,7 @@ export class SubprocessAdapter implements TerminalAdapter {
       detached: true,
       stdio: 'ignore',
     });
-    child.on('error', (err: Error) => console.error('[Orbital] Subprocess launch failed:', err.message));
+    child.on('error', (err: Error) => log.error('Subprocess launch failed', { error: err.message }));
     child.unref();
   }
 

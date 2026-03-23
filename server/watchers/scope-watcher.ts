@@ -1,6 +1,9 @@
 import chokidar, { type FSWatcher } from 'chokidar';
 import path from 'path';
 import type { ScopeService } from '../services/scope-service.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('scope');
 
 export function startScopeWatcher(
   scopesDir: string,
@@ -16,23 +19,20 @@ export function startScopeWatcher(
   watcher
     .on('add', (filePath: string) => {
       if (!filePath.endsWith('.md') || scopeService.isSuppressed(filePath)) return;
-      // eslint-disable-next-line no-console
-      console.log(`[Orbital] Scope added: ${path.basename(filePath)}`);
+      log.info('Scope added', { file: path.basename(filePath) });
       scopeService.updateFromFile(filePath);
     })
     .on('change', (filePath: string) => {
       if (!filePath.endsWith('.md') || scopeService.isSuppressed(filePath)) return;
-      // eslint-disable-next-line no-console
-      console.log(`[Orbital] Scope changed: ${path.basename(filePath)}`);
+      log.debug('Scope changed', { file: path.basename(filePath) });
       scopeService.updateFromFile(filePath);
     })
     .on('unlink', (filePath: string) => {
       if (!filePath.endsWith('.md') || scopeService.isSuppressed(filePath)) return;
-      // eslint-disable-next-line no-console
-      console.log(`[Orbital] Scope removed: ${path.basename(filePath)}`);
+      log.info('Scope removed', { file: path.basename(filePath) });
       scopeService.removeByFilePath(filePath);
     })
-    .on('error', (err: unknown) => console.error('[Orbital] Scope watcher error:', err));
+    .on('error', (err: unknown) => log.error('Scope watcher error', { error: String(err) }));
 
   return watcher;
 }

@@ -5,6 +5,9 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import type { Server } from 'socket.io';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('version');
 
 const execFileAsync = promisify(execFile);
 
@@ -57,7 +60,7 @@ export function createVersionRoutes({ io }: VersionRouteDeps): Router {
         branch,
       });
     } catch (err) {
-      console.error('[Orbital] Version route error:', err);
+      log.error('Version route error', { error: (err as Error).message });
       res.status(500).json({ error: `Failed to read version: ${(err as Error).message}` });
     }
   });
@@ -88,7 +91,7 @@ export function createVersionRoutes({ io }: VersionRouteDeps): Router {
         branch,
       });
     } catch (err) {
-      console.error('[Orbital] Version route error:', err);
+      log.error('Version route error', { error: (err as Error).message });
       res.status(500).json({ error: `Failed to check for updates: ${(err as Error).message}` });
     }
   });
@@ -138,7 +141,7 @@ export function createVersionRoutes({ io }: VersionRouteDeps): Router {
         message: 'Update complete. Restart the server to apply changes.',
       });
     } catch (err) {
-      console.error('[Orbital] Version route error:', err);
+      log.error('Version route error', { error: (err as Error).message });
       const recovery = stage === 'installing'
         ? ' Git pull succeeded — run `npm install` manually to finish.'
         : stage === 'pulling'

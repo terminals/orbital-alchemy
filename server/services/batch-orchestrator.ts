@@ -6,7 +6,9 @@ import { launchInCategorizedTerminal, escapeForAnsiC, snapshotSessionPids, disco
 import { linkPidToDispatch, resolveDispatchEvent } from '../utils/dispatch-utils.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 import { getConfig } from '../config.js';
+import { createLogger } from '../utils/logger.js';
 
+const log = createLogger('batch');
 const VALID_MERGE_MODES = ['push', 'pr'] as const;
 
 // ─── Orchestrator ───────────────────────────────────────────
@@ -39,6 +41,7 @@ export class BatchOrchestrator {
 
     // Mark batch as dispatched
     this.sprintService.updateStatus(batchId, 'dispatched');
+    log.info('Batch dispatched', { id: batchId, target_column: batch.target_column, scope_ids: batch.scope_ids });
 
     // Build scope IDs env var prefix (W-1: prepend to command, not process.env)
     const scopeIdsStr = batch.scope_ids.join(',');
@@ -97,7 +100,7 @@ export class BatchOrchestrator {
             this.db.prepare('UPDATE events SET data = ? WHERE id = ?').run(JSON.stringify(data), eventId);
           }
         })
-        .catch(err => console.error('[Orbital] PID discovery failed:', err.message));
+        .catch(err => log.error('PID discovery failed', { error: err.message }));
 
       return { ok: true };
     } catch (err) {
@@ -118,7 +121,7 @@ export class BatchOrchestrator {
     if (!batch || batch.group_type !== 'batch') return;
 
     const expectedStatus = this.engine.getBatchTargetStatus(batch.target_column);
-    if (newStatus === expectedStatus) {
+    if (newStatus === expectedStatus || this.engine.isTerminalStatus(newStatus)) {
       this.sprintService.updateScopeStatus(batch.id, scopeId, 'completed');
 
       // Check if all scopes have transitioned
@@ -173,6 +176,10 @@ export class BatchOrchestrator {
       `SELECT id FROM sprints WHERE group_type = 'batch' AND status IN ('dispatched', 'in_progress')`,
     ).all() as Array<{ id: number }>;
 
+    if (active.length > 0) {
+      log.debug('Checking stale batches', { activeCount: active.length });
+    }
+
     let resolved = 0;
 
     for (const { id } of active) {
@@ -182,11 +189,11 @@ export class BatchOrchestrator {
       const scopes = this.sprintService.getSprintScopes(id);
       const expectedStatus = this.engine.getBatchTargetStatus(batch.target_column);
 
-      // Phase 1: auto-complete scopes that reached target status on filesystem
+      // Phase 1: auto-complete scopes that reached or passed target status
       for (const ss of scopes) {
         if (ss.dispatch_status === 'pending' || ss.dispatch_status === 'dispatched') {
           const scope = this.scopeService.getById(ss.scope_id);
-          if (scope && scope.status === expectedStatus) {
+          if (scope && (scope.status === expectedStatus || this.engine.isTerminalStatus(scope.status))) {
             this.sprintService.updateScopeStatus(id, ss.scope_id, 'completed');
           }
         }
@@ -231,6 +238,10 @@ export class BatchOrchestrator {
       `SELECT id FROM sprints WHERE group_type = 'batch' AND status IN ('dispatched', 'in_progress')`,
     ).all() as Array<{ id: number }>;
 
+    if (active.length > 0) {
+      log.debug('Recovering active batches', { count: active.length });
+    }
+
     for (const { id } of active) {
       const batch = this.sprintService.getById(id);
       if (!batch) continue;
@@ -238,11 +249,11 @@ export class BatchOrchestrator {
       const scopes = this.sprintService.getSprintScopes(id);
       const expectedStatus = this.engine.getBatchTargetStatus(batch.target_column);
 
-      // Check if scopes reached target status while server was down
+      // Check if scopes reached or passed target status while server was down
       for (const ss of scopes) {
         if (ss.dispatch_status === 'pending' || ss.dispatch_status === 'dispatched') {
           const scope = this.scopeService.getById(ss.scope_id);
-          if (scope && scope.status === expectedStatus) {
+          if (scope && (scope.status === expectedStatus || this.engine.isTerminalStatus(scope.status))) {
             this.sprintService.updateScopeStatus(id, ss.scope_id, 'completed');
           }
         }

@@ -1,6 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('scope');
 
 export interface ParsedScope {
   id: number;
@@ -228,9 +231,7 @@ export function parseAllScopes(scopesDir: string): ParsedScope[] {
   for (const scope of scopes) {
     const existing = seen.get(scope.id);
     if (existing) {
-      console.error(
-        `[scope-parser] ID COLLISION: scope ${scope.id} found in both "${existing}" and "${scope.file_path}" — only one will appear on the board. Renumber one of them.`
-      );
+      log.error('Scope ID collision — renumber one of them', { id: scope.id, existing, duplicate: scope.file_path });
     }
     seen.set(scope.id, scope.file_path);
   }

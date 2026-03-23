@@ -34,6 +34,8 @@ import { GitHubService } from './services/github-service.js';
 import { WorkflowEngine } from '../shared/workflow-engine.js';
 import defaultWorkflow from '../shared/default-workflow.json' with { type: 'json' };
 import type { WorkflowConfig } from '../shared/workflow-config.js';
+import { createLogger, setLogLevel } from './utils/logger.js';
+import type { LogLevel } from './utils/logger.js';
 
 import type http from 'http';
 import type Database from 'better-sqlite3';
@@ -64,6 +66,13 @@ export async function startServer(overrides?: ServerOverrides): Promise<ServerIn
   }
 
   const config = getConfig();
+  const envLevel = process.env.ORBITAL_LOG_LEVEL;
+  if (envLevel && ['debug', 'info', 'warn', 'error'].includes(envLevel)) {
+    setLogLevel(envLevel as LogLevel);
+  } else {
+    setLogLevel(config.logLevel);
+  }
+  const log = createLogger('server');
   const port = overrides?.port ?? config.serverPort;
 
   const workflowEngine = new WorkflowEngine(defaultWorkflow as WorkflowConfig);
@@ -161,8 +170,7 @@ export async function startServer(overrides?: ServerOverrides): Promise<ServerIn
     // Handle SESSION_START: link PID to dispatch via dispatch_id env var
     if (eventType === 'SESSION_START' && typeof data.dispatch_id === 'string' && typeof data.pid === 'number') {
       linkPidToDispatch(db, data.dispatch_id, data.pid);
-      // eslint-disable-next-line no-console
-      console.log(`[Orbital] SESSION_START: linked PID ${data.pid} to dispatch ${data.dispatch_id}`);
+      log.info('SESSION_START: linked PID to dispatch', { pid: data.pid, dispatch_id: data.dispatch_id });
       return;
     }
 
@@ -172,16 +180,14 @@ export async function startServer(overrides?: ServerOverrides): Promise<ServerIn
       if (typeof data.dispatch_id === 'string') {
         count = resolveDispatchesByDispatchId(db, io, data.dispatch_id);
         if (count > 0) {
-          // eslint-disable-next-line no-console
-          console.log(`[Orbital] SESSION_END: resolved ${count} dispatch(es) for dispatch_id ${data.dispatch_id}`);
+          log.info('SESSION_END: resolved dispatches', { count, dispatch_id: data.dispatch_id });
         }
       }
       // PID fallback for old hooks without dispatch_id
       if (count === 0 && typeof data.pid === 'number') {
         count = resolveDispatchesByPid(db, io, data.pid);
         if (count > 0) {
-          // eslint-disable-next-line no-console
-          console.log(`[Orbital] SESSION_END: resolved ${count} dispatch(es) for PID ${data.pid} (fallback)`);
+          log.info('SESSION_END: resolved dispatches by PID fallback', { count, pid: data.pid });
         }
       }
       return;
@@ -249,12 +255,10 @@ export async function startServer(overrides?: ServerOverrides): Promise<ServerIn
   // ─── Socket.io ──────────────────────────────────────────────
 
   io.on('connection', (socket) => {
-    // eslint-disable-next-line no-console
-    console.log(`[Orbital] Client connected: ${socket.id}`);
+    log.debug('Client connected', { socketId: socket.id });
 
     socket.on('disconnect', () => {
-      // eslint-disable-next-line no-console
-      console.log(`[Orbital] Client disconnected: ${socket.id}`);
+      log.debug('Client disconnected', { socketId: socket.id });
     });
   });
 
@@ -276,8 +280,7 @@ export async function startServer(overrides?: ServerOverrides): Promise<ServerIn
       if (err.code === 'EADDRINUSE' && attempt < maxAttempts) {
         attempt++;
         const nextPort = port + attempt;
-        // eslint-disable-next-line no-console
-        console.log(`[Orbital] Port ${port + attempt - 1} is in use, trying ${nextPort}...`);
+        log.warn('Port in use, trying next', { tried: port + attempt - 1, next: nextPort });
         httpServer.listen(nextPort);
       } else {
         reject(new Error(`Failed to start server: ${err.message}`));
@@ -301,61 +304,55 @@ export async function startServer(overrides?: ServerOverrides): Promise<ServerIn
   // Resolve stale dispatch events (terminal scopes + age-based)
   const staleResolved = resolveStaleDispatches(db, io, scopeService, workflowEngine);
   if (staleResolved > 0) {
-    // eslint-disable-next-line no-console
-    console.log(`[Orbital] Resolved ${staleResolved} stale dispatch events`);
+    log.info('Resolved stale dispatch events', { count: staleResolved });
   }
 
   // Write iTerm2 dispatch profiles (idempotent, fire-and-forget)
-  ensureDynamicProfiles();
+  ensureDynamicProfiles(workflowEngine);
 
   // Start file watchers
   scopeWatcher = startScopeWatcher(config.scopesDir, scopeService);
   eventWatcher = startEventWatcher(config.eventsDir, eventService);
 
   // Recover any active sprints/batches from before server restart
-  sprintOrchestrator.recoverActiveSprints().catch(err => console.error('[Orbital] Sprint recovery failed:', err.message));
-  batchOrchestrator.recoverActiveBatches().catch(err => console.error('[Orbital] Batch recovery failed:', err.message));
+  sprintOrchestrator.recoverActiveSprints().catch(err => log.error('Sprint recovery failed', { error: err.message }));
+  batchOrchestrator.recoverActiveBatches().catch(err => log.error('Batch recovery failed', { error: err.message }));
 
   // Resolve stale batches on startup (catches stuck dispatches from previous runs)
   const staleBatchesResolved = batchOrchestrator.resolveStaleBatches();
   if (staleBatchesResolved > 0) {
-    // eslint-disable-next-line no-console
-    console.log(`[Orbital] Resolved ${staleBatchesResolved} stale batch(es)`);
+    log.info('Resolved stale batches', { count: staleBatchesResolved });
   }
 
   // Poll active batch PIDs every 30s for two-phase completion (B-1)
   batchRecoveryInterval = setInterval(() => {
-    batchOrchestrator.recoverActiveBatches().catch(err => console.error('[Orbital] Batch recovery failed:', err.message));
+    batchOrchestrator.recoverActiveBatches().catch(err => log.error('Batch recovery failed', { error: err.message }));
   }, 30_000);
 
   // Periodic stale dispatch + batch cleanup (crash recovery — catches SIGKILL'd sessions)
   staleCleanupInterval = setInterval(() => {
     const count = resolveStaleDispatches(db, io, scopeService, workflowEngine);
     if (count > 0) {
-      // eslint-disable-next-line no-console
-      console.log(`[Orbital] Periodic cleanup: resolved ${count} stale dispatch(es)`);
+      log.info('Periodic cleanup: resolved stale dispatches', { count });
     }
     const batchCount = batchOrchestrator.resolveStaleBatches();
     if (batchCount > 0) {
-      // eslint-disable-next-line no-console
-      console.log(`[Orbital] Periodic cleanup: resolved ${batchCount} stale batch(es)`);
+      log.info('Periodic cleanup: resolved stale batches', { count: batchCount });
     }
   }, 30_000);
 
   // Sync frontmatter-derived sessions into DB (non-blocking)
   syncClaudeSessionsToDB(db, scopeService).then((count) => {
-    // eslint-disable-next-line no-console
-    console.log(`[Orbital] Synced ${count} frontmatter sessions`);
+    log.info('Synced frontmatter sessions', { count });
 
     // Purge legacy pattern-matched rows (no action = old regex system)
     const purged = db.prepare(
       "DELETE FROM sessions WHERE action IS NULL AND id LIKE 'claude-%'"
     ).run();
     if (purged.changes > 0) {
-      // eslint-disable-next-line no-console
-      console.log(`[Orbital] Purged ${purged.changes} legacy pattern-matched session rows`);
+      log.info('Purged legacy pattern-matched session rows', { count: purged.changes });
     }
-  }).catch(err => console.error('[Orbital] Session sync failed:', err.message));
+  }).catch(err => log.error('Session sync failed', { error: err.message }));
 
   // Re-sync every 5 minutes so new sessions appear without restart
   sessionSyncInterval = setInterval(() => {
@@ -363,7 +360,7 @@ export async function startServer(overrides?: ServerOverrides): Promise<ServerIn
       .then((count) => {
         if (count > 0) io.emit('session:updated', { type: 'resync', count });
       })
-      .catch(err => console.error('[Orbital] Session resync failed:', err.message));
+      .catch(err => log.error('Session resync failed', { error: err.message }));
   }, 5 * 60 * 1000);
 
   // Poll git status every 10s — emit socket event on change
@@ -400,8 +397,7 @@ export async function startServer(overrides?: ServerOverrides): Promise<ServerIn
   function shutdown(): Promise<void> {
     if (shuttingDown) return Promise.resolve();
     shuttingDown = true;
-    // eslint-disable-next-line no-console
-    console.log('[Orbital] Shutting down...');
+    log.info('Shutting down');
     scopeWatcher.close();
     eventWatcher.close();
     clearInterval(batchRecoveryInterval);
@@ -445,8 +441,7 @@ if (isDirectRun) {
       process.exit(0);
     });
   }).catch((err) => {
-    // eslint-disable-next-line no-console
-    console.error('[Orbital] Failed to start server:', err.message);
+    createLogger('server').error('Failed to start server', { error: err.message });
     process.exit(1);
   });
 }

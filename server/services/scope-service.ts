@@ -7,6 +7,9 @@ import { normalizeStatus, parseAllScopes, parseScopeFile, setValidStatuses } fro
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 import type { TransitionContext, TransitionResult } from '../../shared/workflow-config.js';
 import type { ScopeCache } from './scope-cache.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('scope');
 
 export class ScopeService {
   private onStatusChangeCallbacks: Array<(id: number, status: string) => void> = [];
@@ -108,8 +111,13 @@ export class ScopeService {
     }
 
     // Write to filesystem via updateScopeFrontmatter (which updates cache + emits)
+    const current = context === 'bulk-sync' || context === 'rollback'
+      ? this.cache.getById(id)
+      : this.cache.getById(id); // already fetched above for validation, but may be null in bulk-sync
+    const fromStatus = current?.status ?? 'unknown';
     const result = this.updateScopeFrontmatter(id, { status }, context);
     if (result.ok) {
+      log.info('Status updated', { id, from: fromStatus, to: status, context });
       for (const cb of this.onStatusChangeCallbacks) cb(id, status);
     }
     return result;
@@ -202,6 +210,7 @@ export class ScopeService {
 
     // Eagerly sync to cache + emit scope:created
     this.updateFromFile(filePath);
+    log.info('Idea created', { id: nextId, title });
     return { id: nextId, title };
   }
 
@@ -247,6 +256,7 @@ export class ScopeService {
     fs.unlinkSync(filePath);
     // Eagerly remove from cache + emit scope:deleted
     this.removeByFilePath(filePath);
+    log.info('Idea deleted', { id });
     return true;
   }
 
@@ -309,6 +319,7 @@ export class ScopeService {
     this.removeByFilePath(oldPath);
 
     const relPath = path.relative(path.resolve(this.scopesDir, '..'), newPath);
+    log.info('Idea promoted', { oldId: id, newId, title });
     return { id: newId, filePath: relPath, title, description };
   }
 
@@ -393,6 +404,7 @@ export class ScopeService {
       fs.writeFileSync(filePath, matter.stringify(parsed.content, parsed.data), 'utf-8');
       // Chokidar will pick this up, but eagerly sync for instant feedback
       this.updateFromFile(filePath);
+      log.info('Frontmatter updated', { id, fields: Object.keys(fields) });
       return { ok: true };
     }
 
@@ -436,6 +448,7 @@ export class ScopeService {
 
     // Re-parse file to refresh cache with is_ghost=false
     this.updateFromFile(filePath);
+    log.info('Ghost approved', { id });
 
     return true;
   }

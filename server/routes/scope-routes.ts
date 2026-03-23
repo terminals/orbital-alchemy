@@ -8,6 +8,9 @@ import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 import { launchInTerminal, escapeForAnsiC, buildSessionName, snapshotSessionPids, discoverNewSession, renameSession } from '../utils/terminal-launcher.js';
 import { resolveDispatchEvent, linkPidToDispatch } from '../utils/dispatch-utils.js';
 import { getConfig } from '../config.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('dispatch');
 
 interface ScopeRouteDeps {
   db: Database.Database;
@@ -163,7 +166,7 @@ export function createScopeRoutes({ db, io, scopeService, readinessService, proj
           linkPidToDispatch(db, eventId, session.pid);
           if (promoteSessionName) renameSession(projectRoot, session.sessionId, promoteSessionName);
         })
-        .catch(err => console.error('[Orbital] PID discovery failed:', err.message));
+        .catch(err => log.error('PID discovery failed', { error: err.message }));
     } catch (err) {
       resolveDispatchEvent(db, io, eventId, 'failed', String(err));
       res.status(500).json({ error: 'Failed to launch terminal', details: String(err) });

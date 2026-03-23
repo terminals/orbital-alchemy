@@ -5,6 +5,9 @@ import type { ScopeService } from '../services/scope-service.js';
 import { launchInCategorizedTerminal, escapeForAnsiC, buildSessionName, snapshotSessionPids, discoverNewSession, renameSession } from '../utils/terminal-launcher.js';
 import { resolveDispatchEvent, resolveAbandonedDispatchesForScope, getActiveScopeIds, getAbandonedScopeIds, linkPidToDispatch } from '../utils/dispatch-utils.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('dispatch');
 
 const MAX_BATCH_SIZE = 20;
 
@@ -119,7 +122,7 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
           linkPidToDispatch(db, eventId, session.pid);
           if (sessionName) renameSession(projectRoot, session.sessionId, sessionName);
         })
-        .catch(err => console.error('[Orbital] PID discovery failed:', err.message));
+        .catch(err => log.error('PID discovery failed', { error: err.message }));
     } catch (err) {
       if (scope_id != null && transition?.from) {
         scopeService.updateStatus(scope_id, transition.from, 'rollback');
@@ -168,7 +171,7 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
       resolveAbandonedDispatchesForScope(db, io, scopeId);
       res.json({ ok: true, scope_id: scopeId, reverted_to: from_status });
     } catch (err) {
-      console.error('[Orbital] Error recovering scope:', err);
+      log.error('Error recovering scope', { error: String(err) });
       res.status(500).json({ error: 'Internal server error', details: String(err) });
     }
   });
@@ -185,7 +188,7 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
       const dismissed = resolveAbandonedDispatchesForScope(db, io, scopeId);
       res.json({ ok: true, scope_id: scopeId, dismissed });
     } catch (err) {
-      console.error('[Orbital] Error dismissing abandoned dispatches:', err);
+      log.error('Error dismissing abandoned dispatches', { error: String(err) });
       res.status(500).json({ error: 'Internal server error', details: String(err) });
     }
   });
@@ -244,10 +247,19 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
 
     // Launch single CLI session
     const batchEscaped = escapeForAnsiC(command);
-    const fullCmd = `cd '${projectRoot}' && claude --dangerously-skip-permissions -p $'${batchEscaped}'`;
+    const beforePids = snapshotSessionPids(projectRoot);
+    const fullCmd = `cd '${projectRoot}' && ORBITAL_DISPATCH_ID='${eventId}' claude --dangerously-skip-permissions -p $'${batchEscaped}'`;
     try {
       await launchInCategorizedTerminal(command, fullCmd);
       res.json({ ok: true, dispatch_id: eventId, scope_ids });
+
+      // Fire-and-forget: discover session PID and link to dispatch
+      discoverNewSession(projectRoot, beforePids)
+        .then((session) => {
+          if (!session) return;
+          linkPidToDispatch(db, eventId, session.pid);
+        })
+        .catch(err => log.error('Batch PID discovery failed', { error: err.message }));
     } catch (err) {
       if (transition?.from) {
         for (const id of scope_ids) {

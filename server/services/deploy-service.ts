@@ -1,6 +1,9 @@
 import type Database from 'better-sqlite3';
 import type { Server } from 'socket.io';
 import type { DeployStatus, DeployEnvironment } from '../../shared/api-types.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('deploy');
 
 export interface DeployRecord {
   environment: DeployEnvironment;
@@ -49,6 +52,7 @@ export class DeployService {
     );
 
     const id = result.lastInsertRowid as number;
+    log.info('Deploy recorded', { id, env: deploy.environment, status: deploy.status, commit_sha: deploy.commit_sha, branch: deploy.branch });
     const inserted = this.db.prepare('SELECT * FROM deployments WHERE id = ?').get(id);
     if (inserted) {
       this.io.emit('deploy:updated', inserted);
@@ -67,6 +71,7 @@ export class DeployService {
       `UPDATE deployments SET status = ?, completed_at = COALESCE(?, completed_at), details = COALESCE(?, details) WHERE id = ?`
     ).run(status, completedAt, details, id);
 
+    log.info('Deploy status updated', { id, status });
     const updated = this.db.prepare('SELECT * FROM deployments WHERE id = ?').get(id);
     if (updated) {
       this.io.emit('deploy:updated', updated);

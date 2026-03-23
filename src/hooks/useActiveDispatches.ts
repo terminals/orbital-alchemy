@@ -114,37 +114,47 @@ export function useActiveDispatchProvider(): ActiveDispatchContextValue {
 
   useEffect(() => {
     function onNewEvent(event: OrbitalEvent) {
-      if (event.type === 'DISPATCH' && event.scope_id != null && event.data.resolved == null) {
-        const scopeId = event.scope_id;
-        setActiveScopes((prev) => {
-          if (prev.has(scopeId)) return prev;
-          const next = new Set(prev);
-          next.add(scopeId);
-          return next;
-        });
-        // New dispatch clears abandoned state for this scope
-        removeFromAbandoned(scopeId);
+      if (event.type !== 'DISPATCH' || event.data.resolved != null) return;
+
+      // Collect scope IDs: single dispatch uses event.scope_id, batch uses data.scope_ids
+      const ids: number[] = [];
+      if (event.scope_id != null) ids.push(event.scope_id);
+      if (Array.isArray(event.data.scope_ids)) {
+        for (const id of event.data.scope_ids as number[]) {
+          if (!ids.includes(id)) ids.push(id);
+        }
       }
+      if (ids.length === 0) return;
+
+      setActiveScopes((prev) => {
+        const toAdd = ids.filter(id => !prev.has(id));
+        if (toAdd.length === 0) return prev;
+        const next = new Set(prev);
+        for (const id of toAdd) next.add(id);
+        return next;
+      });
+      for (const id of ids) removeFromAbandoned(id);
     }
 
     function onDispatchResolved(payload: DispatchResolvedPayload) {
-      if (payload.scope_id == null) return;
-      const scopeId = payload.scope_id;
+      // Collect all scope IDs: single dispatch + batch scope_ids
+      const ids: number[] = [];
+      if (payload.scope_id != null) ids.push(payload.scope_id);
+      if (Array.isArray(payload.scope_ids)) ids.push(...payload.scope_ids);
+      if (ids.length === 0) return;
 
-      // Always remove from active
       setActiveScopes((prev) => {
-        if (!prev.has(scopeId)) return prev;
+        const toRemove = ids.filter(id => prev.has(id));
+        if (toRemove.length === 0) return prev;
         const next = new Set(prev);
-        next.delete(scopeId);
+        for (const id of toRemove) next.delete(id);
         return next;
       });
 
       if (payload.outcome === 'abandoned') {
-        // Refetch to get full abandoned info (from_status etc.)
         fetchActiveScopes();
       } else {
-        // completed/failed — remove from abandoned if present
-        removeFromAbandoned(scopeId);
+        for (const id of ids) removeFromAbandoned(id);
       }
     }
 

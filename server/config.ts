@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import { execFileSync } from 'child_process';
 import os from 'os';
+import { createLogger } from './utils/logger.js';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -51,6 +52,9 @@ export interface OrbitalConfig {
   // Build/test commands
   commands: CommandsConfig;
 
+  // Logging
+  logLevel: 'debug' | 'info' | 'warn' | 'error';
+
   // Dynamic configuration
   categories: string[];
   agents: AgentConfig[];
@@ -83,6 +87,7 @@ const DEFAULT_CONFIG: Omit<OrbitalConfig, 'projectRoot'> = {
     validateDocs: null,
     checkRules: null,
   },
+  logLevel: 'info' as const,
   categories: ['feature', 'bugfix', 'refactor', 'infrastructure', 'docs'],
   agents: [
     { id: 'attacker', label: 'Attacker', emoji: '\u{1F5E1}\u{FE0F}', color: '#ff1744' },
@@ -153,11 +158,13 @@ export function loadConfig(projectRoot?: string): OrbitalConfig {
   const configPath = path.join(root, '.claude', 'orbital.config.json');
   let userConfig: Record<string, unknown> = {};
 
+  const log = createLogger('config');
+
   if (fs.existsSync(configPath)) {
     try {
       userConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     } catch (err) {
-      console.warn('[Orbital] Failed to parse orbital.config.json — using defaults:', (err as Error).message);
+      log.warn('Failed to parse orbital.config.json — using defaults', { error: (err as Error).message });
     }
   }
 
@@ -187,6 +194,7 @@ export function loadConfig(projectRoot?: string): OrbitalConfig {
     ...(userConfig.commands as Partial<CommandsConfig> ?? {}),
   };
 
+  const logLevel = (userConfig.logLevel as OrbitalConfig['logLevel']) ?? DEFAULT_CONFIG.logLevel;
   const categories = (userConfig.categories as string[]) ?? DEFAULT_CONFIG.categories;
   const agents = (userConfig.agents as AgentConfig[]) ?? DEFAULT_CONFIG.agents;
 
@@ -202,6 +210,7 @@ export function loadConfig(projectRoot?: string): OrbitalConfig {
     terminal,
     claude,
     commands,
+    logLevel,
     categories,
     agents,
   };

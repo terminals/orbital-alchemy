@@ -3,6 +3,9 @@ import path from 'path';
 import fs from 'fs';
 import { parseEventFile } from '../parsers/event-parser.js';
 import type { EventService } from '../services/event-service.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('event');
 
 const ARCHIVE_DIR_NAME = 'processed';
 
@@ -34,7 +37,7 @@ export function startEventWatcher(
     depth: 0,
   });
 
-  watcher.on('error', (err: unknown) => console.error('[Orbital] Event watcher error:', err));
+  watcher.on('error', (err: unknown) => log.error('Event watcher error', { error: String(err) }));
 
   watcher.on('add', (filePath: string) => {
     if (!filePath.endsWith('.json')) return;
@@ -56,8 +59,7 @@ function processExistingEvents(
     const files = fs.readdirSync(eventsDir).filter((f) => f.endsWith('.json'));
     if (files.length === 0) return;
 
-    // eslint-disable-next-line no-console
-    console.log(`[Orbital] Processing ${files.length} queued events...`);
+    log.info('Processing queued events', { count: files.length });
 
     // Sort by filename (UUID-based, so roughly chronological)
     files.sort();
@@ -69,7 +71,7 @@ function processExistingEvents(
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code !== 'ENOENT') {
-      console.error('[Orbital] Event watcher startup error:', (err as Error).message);
+      log.error('Event watcher startup error', { error: (err as Error).message });
     }
   }
 }
@@ -89,10 +91,10 @@ function processEventFile(
   try {
     fs.renameSync(filePath, path.join(archiveDir, fileName));
   } catch (err) {
-    console.warn('[Orbital] Failed to archive event file', filePath, (err as Error).message);
+    log.warn('Failed to archive event file', { file: filePath, error: (err as Error).message });
     // If rename fails (cross-device), just delete the source
     try { fs.unlinkSync(filePath); } catch (unlinkErr) {
-      console.warn('[Orbital] Failed to delete event file', filePath, (unlinkErr as Error).message);
+      log.warn('Failed to delete event file', { file: filePath, error: (unlinkErr as Error).message });
     }
   }
 }

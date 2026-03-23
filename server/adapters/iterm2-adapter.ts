@@ -3,7 +3,6 @@ import type { TerminalAdapter, LaunchOptions, CategorizedLaunchOptions } from '.
 import {
   launchInTerminal,
   launchInCategorizedTerminal,
-  ensureDynamicProfiles,
 } from '../utils/terminal-launcher.js';
 
 /**
@@ -20,9 +19,7 @@ export class ITerm2Adapter implements TerminalAdapter {
     await launchInCategorizedTerminal(command, fullCmd, opts?.tabName);
   }
 
-  async ensureProfiles(): Promise<void> {
-    await ensureDynamicProfiles();
-  }
+  // ensureProfiles is handled directly via ensureDynamicProfiles(engine) in server startup
 }
 
 /** Check if iTerm2 is available on this system */

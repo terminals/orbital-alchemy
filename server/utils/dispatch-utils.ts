@@ -3,6 +3,9 @@ import type { Server } from 'socket.io';
 import type { ScopeService } from '../services/scope-service.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 import { isSessionPidAlive } from './terminal-launcher.js';
+import { createLogger } from './logger.js';
+
+const log = createLogger('dispatch');
 
 interface DispatchRow {
   data: string;
@@ -25,7 +28,7 @@ export function resolveDispatchEvent(
   try {
     data = JSON.parse(row.data);
   } catch (e) {
-    console.error(`[Orbital] Failed to parse DISPATCH event ${eventId} data:`, e);
+    log.error('Failed to parse DISPATCH event data', { eventId, error: String(e) });
     return;
   }
   data.resolved = { outcome, at: new Date().toISOString(), ...(error ? { error } : {}) };
@@ -34,6 +37,7 @@ export function resolveDispatchEvent(
   io.emit('dispatch:resolved', {
     event_id: eventId,
     scope_id: row.scope_id,
+    scope_ids: data.scope_ids ?? null,
     outcome,
   });
 }
@@ -90,7 +94,7 @@ export function linkPidToDispatch(
   try {
     data = JSON.parse(row.data);
   } catch (e) {
-    console.error(`[Orbital] Failed to parse DISPATCH event ${eventId} data:`, e);
+    log.error('Failed to parse DISPATCH event data', { eventId, error: String(e) });
     return;
   }
   data.pid = pid;
@@ -170,7 +174,7 @@ export function getActiveScopeIds(db: Database.Database, scopeService: ScopeServ
     try {
       data = JSON.parse(row.data);
     } catch (e) {
-      console.error(`[Orbital] Failed to parse DISPATCH event data for scope ${row.scope_id}:`, e);
+      log.error('Failed to parse DISPATCH event data', { scope_id: row.scope_id, error: String(e) });
       continue;
     }
     if (typeof data.pid === 'number') {
@@ -187,6 +191,44 @@ export function getActiveScopeIds(db: Database.Database, scopeService: ScopeServ
       ).get(row.scope_id) as { timestamp: string } | undefined;
       if (dispatch && dispatch.timestamp > cutoff) {
         active.add(row.scope_id);
+      }
+    }
+  }
+
+  // Also check batch dispatches (scope_id IS NULL, batch = true)
+  const batchRows = db.prepare(
+    `SELECT data FROM events
+     WHERE type = 'DISPATCH'
+       AND scope_id IS NULL
+       AND JSON_EXTRACT(data, '$.batch') = 1
+       AND JSON_EXTRACT(data, '$.resolved') IS NULL`,
+  ).all() as Array<{ data: string }>;
+
+  for (const batchRow of batchRows) {
+    let batchData: Record<string, unknown>;
+    try {
+      batchData = JSON.parse(batchRow.data);
+    } catch {
+      continue;
+    }
+
+    const scopeIds = batchData.scope_ids as number[] | undefined;
+    if (!Array.isArray(scopeIds)) continue;
+
+    let batchAlive = false;
+    if (typeof batchData.pid === 'number') {
+      batchAlive = isSessionPidAlive(batchData.pid);
+    } else {
+      // No PID — consider active (stale cleanup will catch it)
+      batchAlive = true;
+    }
+
+    if (batchAlive) {
+      for (const id of scopeIds) {
+        const scope = scopeService.getById(id);
+        if (scope && !engine.isTerminalStatus(scope.status)) {
+          active.add(id);
+        }
       }
     }
   }
@@ -233,7 +275,7 @@ export function resolveStaleDispatches(db: Database.Database, io: Server, scopeS
     try {
       data = JSON.parse(row.data);
     } catch (e) {
-      console.error(`[Orbital] Failed to parse DISPATCH event ${row.id} data:`, e);
+      log.error('Failed to parse DISPATCH event data', { eventId: row.id, error: String(e) });
       continue;
     }
     let isStale = false;
@@ -246,6 +288,50 @@ export function resolveStaleDispatches(db: Database.Database, io: Server, scopeS
 
     if (isStale) {
       resolveDispatchEvent(db, io, row.id, 'abandoned');
+      resolved++;
+    }
+  }
+
+  // Second pass: batch dispatches (scope_id IS NULL, batch = true)
+  const batchRows = db.prepare(
+    `SELECT id, data, timestamp FROM events
+     WHERE type = 'DISPATCH'
+       AND scope_id IS NULL
+       AND JSON_EXTRACT(data, '$.batch') = 1
+       AND JSON_EXTRACT(data, '$.resolved') IS NULL`,
+  ).all() as Array<{ id: string; data: string; timestamp: string }>;
+
+  for (const batchRow of batchRows) {
+    let batchData: Record<string, unknown>;
+    try {
+      batchData = JSON.parse(batchRow.data);
+    } catch {
+      continue;
+    }
+
+    const scopeIds = batchData.scope_ids as number[] | undefined;
+
+    // Criterion 1: all batch scopes in terminal state
+    if (Array.isArray(scopeIds) && scopeIds.length > 0) {
+      const allTerminal = scopeIds.every(id => {
+        const scope = scopeService.getById(id);
+        return scope && engine.isTerminalStatus(scope.status);
+      });
+      if (allTerminal) {
+        resolveDispatchEvent(db, io, batchRow.id, 'completed');
+        resolved++;
+        continue;
+      }
+    }
+
+    // Criteria 2+3: dead PID or old age
+    if (typeof batchData.pid === 'number') {
+      if (!isSessionPidAlive(batchData.pid)) {
+        resolveDispatchEvent(db, io, batchRow.id, 'abandoned');
+        resolved++;
+      }
+    } else if (batchRow.timestamp <= cutoff) {
+      resolveDispatchEvent(db, io, batchRow.id, 'abandoned');
       resolved++;
     }
   }
@@ -294,7 +380,7 @@ export function getAbandonedScopeIds(
     try {
       data = JSON.parse(row.data);
     } catch (e) {
-      console.error(`[Orbital] Failed to parse DISPATCH event data for scope ${row.scope_id}:`, e);
+      log.error('Failed to parse DISPATCH event data', { scope_id: row.scope_id, error: String(e) });
       continue;
     }
     const transition = data.transition as Record<string, unknown> | null;

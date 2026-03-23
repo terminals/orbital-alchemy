@@ -1,4 +1,7 @@
 import fs from 'fs';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('event');
 
 export interface RawEvent {
   id: string;
@@ -43,7 +46,7 @@ export function parseEventFile(filePath: string): RawEvent | null {
       timestamp: String(parsed.timestamp),
     };
   } catch (err) {
-    console.warn('[Orbital] Failed to parse event file', filePath, (err as Error).message);
+    log.warn('Failed to parse event file', { file: filePath, error: (err as Error).message });
     return null;
   }
 }

@@ -45,12 +45,20 @@ BRANCH=$(cd "$PROJECT_DIR" && git branch --show-current 2>/dev/null || true)
 if echo "$COMMAND" | grep -qE '^git commit'; then
   # Only on branches matching commit pattern from manifest
   if [[ "$BRANCH" =~ $WORKFLOW_COMMIT_BRANCHES ]]; then
-    # Record session on the ACTIVE scope (implementing/backlog/planning)
+    # Record session on active scopes AND review scopes
     # Note: scopes are gitignored, so no git add needed
     if [ -n "$SESSION_UUID" ]; then
       ACTIVE_SCOPE=$(find_active_scope 2>/dev/null || true)
       if [ -n "$ACTIVE_SCOPE" ] && [ -f "$ACTIVE_SCOPE" ]; then
         append_session_uuid "$ACTIVE_SCOPE" "commit" "$SESSION_UUID"
+      fi
+      # Also record on all review scopes (for review→completed transitions)
+      REVIEW_DIR="$PROJECT_DIR/scopes/review"
+      if [ -d "$REVIEW_DIR" ]; then
+        for f in "$REVIEW_DIR"/*.md; do
+          [ -f "$f" ] || continue
+          append_session_uuid "$f" "commit" "$SESSION_UUID"
+        done
       fi
     fi
 

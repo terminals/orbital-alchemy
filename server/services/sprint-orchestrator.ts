@@ -6,7 +6,9 @@ import { launchInCategorizedTerminal, escapeForAnsiC, buildSessionName, snapshot
 import { resolveDispatchEvent, linkPidToDispatch } from '../utils/dispatch-utils.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 import { getConfig } from '../config.js';
+import { createLogger } from '../utils/logger.js';
 
+const log = createLogger('sprint');
 const LAUNCH_STAGGER_MS = 2000;
 
 function sleep(ms: number): Promise<void> {
@@ -98,6 +100,8 @@ export class SprintOrchestrator {
     this.sprintService.setLayers(sprintId, layers);
     this.sprintService.updateStatus(sprintId, 'dispatched');
 
+    log.info('Sprint started', { id: sprintId, layers: layers.length, scopes: sprint.scope_ids.length });
+
     // Dispatch Layer 0
     await this.dispatchLayer(sprintId, layers[0], sprint.concurrency_cap);
 
@@ -108,6 +112,7 @@ export class SprintOrchestrator {
   async onScopeReachedDev(scopeId: number): Promise<void> {
     const match = this.sprintService.findActiveSprintForScope(scopeId);
     if (!match) return;
+    log.debug('Scope reached dev', { scopeId, sprintId: match.sprint_id });
 
     const sprintId = match.sprint_id;
     this.sprintService.updateScopeStatus(sprintId, scopeId, 'completed');
@@ -163,6 +168,10 @@ export class SprintOrchestrator {
     const active = this.db.prepare(
       `SELECT id FROM sprints WHERE group_type = 'sprint' AND status IN ('dispatched', 'in_progress')`,
     ).all() as Array<{ id: number }>;
+
+    if (active.length > 0) {
+      log.info('Recovering active sprints', { count: active.length });
+    }
 
     for (const { id } of active) {
       // Check if any scopes completed while server was down
@@ -253,7 +262,7 @@ export class SprintOrchestrator {
             linkPidToDispatch(this.db, eventId, session.pid);
             if (sessionName) renameSession(getConfig().projectRoot, session.sessionId, sessionName);
           })
-          .catch(err => console.error('[Orbital] PID discovery failed:', err.message));
+          .catch(err => log.error('PID discovery failed', { error: err.message }));
       } catch (err) {
         // Rollback scope status to previous value
         this.scopeService.updateStatus(scopeId, previousStatus, 'rollback');

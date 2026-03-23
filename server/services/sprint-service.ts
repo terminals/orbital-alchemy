@@ -1,6 +1,9 @@
 import type Database from 'better-sqlite3';
 import type { Server } from 'socket.io';
 import type { ScopeService } from './scope-service.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('sprint');
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -96,6 +99,7 @@ export class SprintService {
     ).run(name, now, now, targetColumn, groupType);
 
     const sprint = this.getById(Number(result.lastInsertRowid))!;
+    log.info('Sprint created', { id: sprint.id, name, group_type: groupType, target_column: targetColumn });
     this.io.emit('sprint:created', sprint);
     return sprint;
   }
@@ -237,6 +241,7 @@ export class SprintService {
 
     const result = this.db.prepare(`UPDATE sprints SET ${setClauses.join(', ')} WHERE id = ?`).run(...params);
     if (result.changes > 0) {
+      log.info('Sprint status updated', { id, status });
       this.emitUpdate(id);
       if (status === 'completed') {
         const detail = this.getById(id);

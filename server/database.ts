@@ -3,6 +3,9 @@ import path from 'path';
 import fs from 'fs';
 import { SCHEMA_DDL } from './schema.js';
 import { getConfig } from './config.js';
+import { createLogger } from './utils/logger.js';
+
+const log = createLogger('database');
 
 function getDbPaths(): { dir: string; file: string } {
   const config = getConfig();
@@ -18,6 +21,7 @@ export function getDatabase(): Database.Database {
   fs.mkdirSync(dir, { recursive: true });
 
   db = new Database(file);
+  log.info('Database initialized', { path: file });
 
   // Performance pragmas for a local dev tool
   db.pragma('journal_mode = WAL');
@@ -43,6 +47,7 @@ function tableExists(database: Database.Database, tableName: string): boolean {
 
 /** Run incremental migrations for schema changes on existing databases */
 function runMigrations(database: Database.Database): void {
+  log.debug('Running database migrations');
   // Migration 2: Add claude_session_id column to sessions
   const sessionCols = database.pragma('table_info(sessions)') as Array<{ name: string }>;
   if (!sessionCols.some((c) => c.name === 'claude_session_id')) {
@@ -97,5 +102,6 @@ export function closeDatabase(): void {
   if (db) {
     db.close();
     db = null;
+    log.debug('Database closed');
   }
 }

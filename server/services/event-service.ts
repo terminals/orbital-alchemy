@@ -1,6 +1,9 @@
 import type Database from 'better-sqlite3';
 import type { Server } from 'socket.io';
 import type { RawEvent } from '../parsers/event-parser.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('event');
 
 export type EventIngestCallback = (type: string, scopeId: unknown, data: Record<string, unknown>) => void;
 
@@ -44,22 +47,26 @@ export class EventService {
     );
 
     // Only broadcast if this was a new insert (not a duplicate)
-    if (result.changes > 0) {
-      const data = event.data ?? {};
-      this.io.emit('event:new', {
-        id: event.id,
-        type: event.type,
-        scope_id: event.scope_id ?? null,
-        session_id: event.session_id ?? null,
-        agent: event.agent ?? null,
-        data,
-        timestamp: event.timestamp,
-      });
+    if (result.changes === 0) {
+      log.debug('Event duplicate skipped', { id: event.id });
+      return;
+    }
 
-      // Trigger event-driven inference
-      for (const cb of this.onIngestCallbacks) {
-        cb(event.type, event.scope_id ?? data.scope_id, data);
-      }
+    log.info('Event ingested', { type: event.type, id: event.id, scope_id: event.scope_id, agent: event.agent });
+    const data = event.data ?? {};
+    this.io.emit('event:new', {
+      id: event.id,
+      type: event.type,
+      scope_id: event.scope_id ?? null,
+      session_id: event.session_id ?? null,
+      agent: event.agent ?? null,
+      data,
+      timestamp: event.timestamp,
+    });
+
+    // Trigger event-driven inference
+    for (const cb of this.onIngestCallbacks) {
+      cb(event.type, event.scope_id ?? data.scope_id, data);
     }
   }
 

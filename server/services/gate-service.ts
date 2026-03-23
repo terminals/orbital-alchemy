@@ -1,6 +1,9 @@
 import type Database from 'better-sqlite3';
 import type { Server } from 'socket.io';
 import type { GateStatus } from '../../shared/api-types.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('gate');
 
 export interface GateResult {
   scope_id: number | null;
@@ -60,6 +63,7 @@ export class GateService {
       gate.commit_sha
     );
 
+    log.info('Gate recorded', { scope_id: gate.scope_id, gate: gate.gate_name, status: gate.status, duration_ms: gate.duration_ms });
     const inserted = this.db.prepare('SELECT * FROM quality_gates WHERE id = ?').get(result.lastInsertRowid);
     if (inserted) {
       this.io.emit('gate:updated', inserted);

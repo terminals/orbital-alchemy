@@ -1,10 +1,15 @@
 import { promisify } from 'util';
+import { createHash } from 'crypto';
 import { execFile as execFileCb } from 'child_process';
 import fsSync from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { getConfig } from '../config.js';
+import { createLogger } from './logger.js';
+import { WorkflowEngine } from '../../shared/workflow-engine.js';
+
+const log = createLogger('terminal');
 
 const execFileAsync = promisify(execFileCb);
 
@@ -13,7 +18,13 @@ const execFileAsync = promisify(execFileCb);
 const DYNAMIC_PROFILES_DIR = path.join(
   os.homedir(), 'Library', 'Application Support', 'iTerm2', 'DynamicProfiles',
 );
-const PROFILES_FILENAME = 'orbital-dispatch-profiles.json';
+interface ItermColor {
+  'Red Component': number;
+  'Green Component': number;
+  'Blue Component': number;
+  'Alpha Component': number;
+  'Color Space': string;
+}
 
 interface DynamicProfile {
   Name: string;
@@ -24,42 +35,94 @@ interface DynamicProfile {
   'Allow Title Setting': boolean;
   'Title Components': number;
   'Badge Text': string;
+  'Tab Color'?: ItermColor;
+  'Use Tab Color'?: boolean;
 }
 
-const CATEGORY_BADGES: Array<{ category: string; badge: string }> = [
-  { category: 'Scoping',      badge: 'Scoping' },
-  { category: 'Planning',     badge: 'Planning' },
-  { category: 'Implementing', badge: 'Implementing' },
-  { category: 'Reviewing',    badge: 'Reviewing' },
-  { category: 'Deploying',    badge: 'Deploying' },
+/** Convert a hex color (#rrggbb) to iTerm2's color dictionary format. */
+function hexToItermColor(hex: string): ItermColor {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  return { 'Red Component': r, 'Green Component': g, 'Blue Component': b, 'Alpha Component': 1, 'Color Space': 'sRGB' };
+}
+
+/** Derive a stable, hex-only UUID from a prefix + category string. */
+function deriveGuid(prefix: string, category: string): string {
+  const hash = createHash('md5').update(`${prefix}-${category}`).digest('hex');
+  return [
+    hash.slice(0, 8),
+    hash.slice(8, 12),
+    '4' + hash.slice(13, 16),
+    '8' + hash.slice(17, 20),
+    hash.slice(20, 32),
+  ].join('-').toUpperCase();
+}
+
+/** Maps each window category to candidate workflow column IDs (first match wins). */
+const CATEGORY_COLUMN_CANDIDATES: Array<{ category: WindowCategory; columnIds: string[] }> = [
+  { category: 'Scoping',      columnIds: ['planning', 'backlog'] },
+  { category: 'Planning',     columnIds: ['backlog', 'planning'] },
+  { category: 'Implementing', columnIds: ['implementing', 'in-progress'] },
+  { category: 'Reviewing',    columnIds: ['review'] },
+  { category: 'Deploying',    columnIds: ['production', 'main', 'dev', 'completed', 'done'] },
 ];
 
-function buildProfiles(): { Profiles: DynamicProfile[] } {
+const FALLBACK_HEX = '#6B7280';  // neutral gray if no column match
+
+function profilesFilename(prefix: string): string {
+  return `${prefix.toLowerCase()}-dispatch-profiles.json`;
+}
+
+function buildProfiles(colorMap: Map<WindowCategory, string>): { Profiles: DynamicProfile[] } {
   const prefix = getConfig().terminal.profilePrefix;
   return {
-    Profiles: CATEGORY_BADGES.map(({ category, badge }, i) => ({
+    Profiles: CATEGORY_COLUMN_CANDIDATES.map(({ category }) => ({
       Name: `${prefix}-${category}`,
-      Guid: `orbital-${category.toLowerCase()}-0000-0000-${String(i + 1).padStart(12, '0')}`,
+      Guid: deriveGuid(prefix, category),
       'Dynamic Profile Parent Name': 'Default',
       'Custom Window Title': category,
       'Use Custom Window Title': true,
       'Allow Title Setting': false,
       'Title Components': 1,  // 1 = Session Name (not Job Name)
-      'Badge Text': badge,
+      'Badge Text': category,
+      'Tab Color': hexToItermColor(colorMap.get(category) ?? FALLBACK_HEX),
+      'Use Tab Color': true,
     })),
   };
 }
 
+/** Resolve tab colors from the active workflow's column hex values. */
+function resolveColorMap(engine: WorkflowEngine): Map<WindowCategory, string> {
+  const colors = new Map<WindowCategory, string>();
+  for (const { category, columnIds } of CATEGORY_COLUMN_CANDIDATES) {
+    for (const colId of columnIds) {
+      const list = engine.getList(colId);
+      if (list) {
+        colors.set(category, list.hex);
+        break;
+      }
+    }
+  }
+  return colors;
+}
+
 /** Write iTerm2 Dynamic Profiles for each workflow category.
+ *  Derives tab colors from the active workflow's column definitions.
  *  Idempotent — safe to call on every server startup. */
-export async function ensureDynamicProfiles(): Promise<void> {
+export async function ensureDynamicProfiles(engine: WorkflowEngine): Promise<void> {
   try {
     await fs.mkdir(DYNAMIC_PROFILES_DIR, { recursive: true });
-    const filePath = path.join(DYNAMIC_PROFILES_DIR, PROFILES_FILENAME);
-    await fs.writeFile(filePath, JSON.stringify(buildProfiles(), null, 2));
+    const prefix = getConfig().terminal.profilePrefix;
+    const filePath = path.join(DYNAMIC_PROFILES_DIR, profilesFilename(prefix));
+    const colorMap = resolveColorMap(engine);
+    // Write tmp file outside DynamicProfiles/ — iTerm2 watches that dir and reads ALL files
+    const tmpPath = path.join(os.tmpdir(), profilesFilename(prefix) + '.tmp');
+    await fs.writeFile(tmpPath, JSON.stringify(buildProfiles(colorMap), null, 2));
+    await fs.copyFile(tmpPath, filePath);
+    await fs.unlink(tmpPath).catch(() => {});
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn('[Orbital] Failed to write iTerm2 dynamic profiles:', (err as Error).message);
+    log.warn('Failed to write iTerm2 dynamic profiles', { error: (err as Error).message });
   }
 }
 

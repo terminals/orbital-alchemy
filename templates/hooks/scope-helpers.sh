@@ -78,7 +78,7 @@ find_scopes_by_status() {
   done
 }
 
-# Get the currently active scope (implementing > backlog > planning)
+# Get the currently active scope (implementing > review > backlog > planning)
 # Uses a session-scoped cache to avoid O(n) directory scans on every call.
 # Call invalidate_active_scope_cache() after scope transitions.
 find_active_scope() {
@@ -104,6 +104,7 @@ find_active_scope() {
   # Cache miss — scan directories
   local scope
   scope=$(find_scopes_by_status "implementing" "$SCOPE_IMPLEMENTING_DIR" | head -1)
+  [ -z "$scope" ] && scope=$(find_scopes_by_status "review" "$SCOPE_PROJECT_DIR/scopes/review" | head -1)
   [ -z "$scope" ] && scope=$(find_scopes_by_status "backlog" "$SCOPE_PROJECT_DIR/scopes/backlog" | head -1)
   [ -z "$scope" ] && scope=$(find_scopes_by_status "planning" "$SCOPE_PROJECT_DIR/scopes/planning" | head -1)
 

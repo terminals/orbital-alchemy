@@ -320,6 +320,7 @@ export interface SprintScope {
 export interface DispatchResolvedPayload {
   event_id: string;
   scope_id: number | null;
+  scope_ids?: number[] | null;
   outcome: 'completed' | 'failed' | 'abandoned';
 }
 

@@ -3,6 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import type { Server } from 'socket.io';
 import type { WorkflowConfig } from '../../shared/workflow-config.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('workflow');
 import { isWorkflowConfig } from '../../shared/workflow-config.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 
@@ -187,6 +190,7 @@ export class WorkflowService {
     // Strip digest — user edits mean this is no longer a pristine default
     delete (config as WorkflowConfig & { _defaultDigest?: string })._defaultDigest;
     this.writeAtomic(this.activeConfigPath, config);
+    log.info('Workflow config updated');
     this.io?.emit('workflow:changed', { config });
     return result;
   }
@@ -222,6 +226,7 @@ export class WorkflowService {
     const config = this.getActive();
     const preset = { _preset: { name, savedAt: new Date().toISOString(), savedFrom: 'active' }, ...config };
     fs.writeFileSync(path.join(this.presetsDir, `${name}.json`), JSON.stringify(preset, null, 2));
+    log.info('Preset saved', { name });
   }
 
   getPreset(name: string): WorkflowConfig {
@@ -237,6 +242,7 @@ export class WorkflowService {
     const filePath = path.join(this.presetsDir, `${name}.json`);
     if (!fs.existsSync(filePath)) throw new Error(`Preset "${name}" not found`);
     fs.unlinkSync(filePath);
+    log.info('Preset deleted', { name });
   }
 
   // ─── Migration Engine ───────────────────────────────
@@ -379,8 +385,7 @@ export class WorkflowService {
 
       // Step 7: Emit socket event + log
       this.io?.emit('workflow:changed', { config: newConfig, migratedScopes });
-      // eslint-disable-next-line no-console
-      console.log(`[Orbital] Workflow migrated: ${migratedScopes.length} scope(s) moved across ${plan.removedLists.length} removed list(s)`);
+      log.info('Workflow migrated', { scopesMoved: migratedScopes.length, removedLists: plan.removedLists.length });
 
       // Clean up backup on success
       if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
@@ -390,7 +395,7 @@ export class WorkflowService {
         try {
           fs.renameSync(move.dest, move.src);
           fs.writeFileSync(move.src, move.originalContent);
-        } catch (rollbackErr) { console.error('[Orbital] Migration rollback failed for', move.src, rollbackErr); }
+        } catch (rollbackErr) { log.error('Migration rollback failed', { file: move.src, error: String(rollbackErr) }); }
       }
       // Rollback: restore original config + reload engine
       if (fs.existsSync(backupPath)) {

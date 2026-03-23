@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { socket } from '../socket';
+import { useReconnect } from './useReconnect';
 import type { Sprint, GroupType } from '../types';
 
 export interface AddScopesResult {
@@ -25,6 +26,8 @@ export function useSprints() {
   useEffect(() => {
     fetchSprints();
   }, [fetchSprints]);
+
+  useReconnect(fetchSprints);
 
   // Real-time updates via Socket.io
   useEffect(() => {

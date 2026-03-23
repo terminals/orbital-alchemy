@@ -5,16 +5,23 @@
 set -e
 
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+echo "$INPUT" | jq empty 2>/dev/null || exit 0
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 [[ "$TOOL_NAME" == "Grep" || "$TOOL_NAME" == "Glob" ]] || exit 0
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 COUNTER_FILE="$PROJECT_DIR/.claude/metrics/.exploration-count"
 mkdir -p "$(dirname "$COUNTER_FILE")"
 
+# Atomic counter increment with flock
+(
+  flock -x 200 2>/dev/null || true
+  COUNT=$(cat "$COUNTER_FILE" 2>/dev/null || echo "0")
+  COUNT=$((COUNT + 1))
+  echo "$COUNT" > "$COUNTER_FILE"
+) 200>"${COUNTER_FILE}.lock"
+rm -f "${COUNTER_FILE}.lock"
 COUNT=$(cat "$COUNTER_FILE" 2>/dev/null || echo "0")
-COUNT=$((COUNT + 1))
-echo "$COUNT" > "$COUNTER_FILE"
 
 # Remind every 25 searches
 if [ $((COUNT % 25)) -eq 0 ]; then

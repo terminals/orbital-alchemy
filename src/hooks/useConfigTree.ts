@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { socket } from '../socket';
+import { useReconnect } from './useReconnect';
 import type { ConfigPrimitiveType, ConfigFileNode } from '@/types';
 
 interface UseConfigTreeResult {
@@ -30,6 +31,8 @@ export function useConfigTree(type: ConfigPrimitiveType): UseConfigTreeResult {
     setLoading(true);
     fetchTree();
   }, [fetchTree]);
+
+  useReconnect(fetchTree);
 
   // Subscribe to real-time changes
   useEffect(() => {

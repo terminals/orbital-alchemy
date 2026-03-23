@@ -11,6 +11,7 @@ import type { ScopeCache } from './scope-cache.js';
 export class ScopeService {
   private onStatusChangeCallbacks: Array<(id: number, status: string) => void> = [];
   private activeGroupCheck: ((scopeId: number) => { sprint_id: number; group_type: string } | null) | null = null;
+  private suppressedPaths = new Set<string>();
 
   constructor(
     private cache: ScopeCache,
@@ -38,6 +39,11 @@ export class ScopeService {
     const scopes = parseAllScopes(this.scopesDir);
     this.cache.loadAll(scopes);
     return scopes.length;
+  }
+
+  /** Check if a path is suppressed from watcher processing (during programmatic moves) */
+  isSuppressed(filePath: string): boolean {
+    return this.suppressedPaths.has(filePath);
   }
 
   /** Re-parse a single scope file and update the cache */
@@ -398,11 +404,21 @@ export class ScopeService {
     const newPath = path.join(targetDir, fileName);
     const newContent = matter.stringify(parsed.content, parsed.data);
 
+    // Suppress watcher events during programmatic move to prevent race conditions
+    this.suppressedPaths.add(filePath);
+    this.suppressedPaths.add(newPath);
+
     // Update content in-place, then atomic rename (no window where file is missing)
     fs.writeFileSync(filePath, newContent, 'utf-8');
     fs.renameSync(filePath, newPath);
     this.updateFromFile(newPath);
     this.removeByFilePath(filePath);
+
+    // Clear suppression after watcher events have drained
+    setTimeout(() => {
+      this.suppressedPaths.delete(filePath);
+      this.suppressedPaths.delete(newPath);
+    }, 500);
 
     return { ok: true, moved: true };
   }

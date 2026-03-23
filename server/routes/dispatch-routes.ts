@@ -3,7 +3,7 @@ import type Database from 'better-sqlite3';
 import type { Server } from 'socket.io';
 import type { ScopeService } from '../services/scope-service.js';
 import { launchInCategorizedTerminal, escapeForAnsiC, buildSessionName, snapshotSessionPids, discoverNewSession, renameSession } from '../utils/terminal-launcher.js';
-import { resolveDispatchEvent, getActiveScopeIds, linkPidToDispatch } from '../utils/dispatch-utils.js';
+import { resolveDispatchEvent, resolveAbandonedDispatchesForScope, getActiveScopeIds, getAbandonedScopeIds, linkPidToDispatch } from '../utils/dispatch-utils.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 
 const MAX_BATCH_SIZE = 20;
@@ -28,7 +28,8 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
 
   router.get('/dispatch/active-scopes', (_req, res) => {
     const scope_ids = getActiveScopeIds(db, scopeService, engine);
-    res.json({ scope_ids });
+    const abandoned_scopes = getAbandonedScopeIds(db, scopeService, engine, scope_ids);
+    res.json({ scope_ids, abandoned_scopes });
   });
 
   router.get('/dispatch/active', (req, res) => {
@@ -106,7 +107,7 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
     // Launch in iTerm — interactive TUI mode (no -p) for full visibility
     const promptText = prompt ?? command;
     const escaped = escapeForAnsiC(promptText);
-    const fullCmd = `cd '${projectRoot}' && claude --dangerously-skip-permissions $'${escaped}'`;
+    const fullCmd = `cd '${projectRoot}' && ORBITAL_DISPATCH_ID='${eventId}' claude --dangerously-skip-permissions $'${escaped}'`;
     try {
       await launchInCategorizedTerminal(command, fullCmd, sessionName);
       res.json({ ok: true, dispatch_id: eventId, scope_id: scope_id ?? null });
@@ -140,6 +141,53 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
 
     resolveDispatchEvent(db, io, eventId, 'completed');
     res.json({ ok: true, dispatch_id: eventId });
+  });
+
+  /** Recover an abandoned scope by reverting it to its pre-dispatch status. */
+  router.post('/dispatch/recover/:scopeId', (req, res) => {
+    try {
+      const scopeId = Number(req.params.scopeId);
+      if (isNaN(scopeId) || scopeId <= 0) {
+        res.status(400).json({ error: 'Valid scopeId required' });
+        return;
+      }
+
+      const { from_status } = req.body as { from_status?: string };
+      if (!from_status) {
+        res.status(400).json({ error: 'from_status is required' });
+        return;
+      }
+
+      // Revert scope to its pre-dispatch status
+      const result = scopeService.updateStatus(scopeId, from_status, 'rollback');
+      if (!result.ok) {
+        res.status(400).json({ error: result.error });
+        return;
+      }
+
+      resolveAbandonedDispatchesForScope(db, io, scopeId);
+      res.json({ ok: true, scope_id: scopeId, reverted_to: from_status });
+    } catch (err) {
+      console.error('[Orbital] Error recovering scope:', err);
+      res.status(500).json({ error: 'Internal server error', details: String(err) });
+    }
+  });
+
+  /** Dismiss abandoned state without reverting scope status. */
+  router.post('/dispatch/dismiss-abandoned/:scopeId', (req, res) => {
+    try {
+      const scopeId = Number(req.params.scopeId);
+      if (isNaN(scopeId) || scopeId <= 0) {
+        res.status(400).json({ error: 'Valid scopeId required' });
+        return;
+      }
+
+      const dismissed = resolveAbandonedDispatchesForScope(db, io, scopeId);
+      res.json({ ok: true, scope_id: scopeId, dismissed });
+    } catch (err) {
+      console.error('[Orbital] Error dismissing abandoned dispatches:', err);
+      res.status(500).json({ error: 'Internal server error', details: String(err) });
+    }
   });
 
   router.post('/dispatch/batch', async (req, res) => {

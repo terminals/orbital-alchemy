@@ -43,7 +43,8 @@
       "color": "0 84% 60%",
       "hex": "#ef4444",
       "hasDirectory": true,
-      "sessionKey": "implementScope"
+      "sessionKey": "implementScope",
+      "activeHooks": ["block-commit-implementing"]
     },
     {
       "id": "review",
@@ -160,7 +161,6 @@
       "confirmLevel": "quick",
       "label": "Run Review Gate",
       "description": "Launches formal review gate. Moves to review only if all criteria pass.",
-      "skipServerTransition": true,
       "dispatchOnly": true,
       "hooks": ["session-enforcer", "review-gate-check", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
     },
@@ -189,7 +189,6 @@
       "confirmLevel": "quick",
       "label": "Commit",
       "description": "Commits scope work to feature branch.",
-      "skipServerTransition": true,
       "dispatchOnly": true,
       "hooks": ["session-enforcer", "completion-checklist", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update", "scope-commit-logger"]
     },
@@ -262,6 +261,18 @@
       "label": "Back to Implementing",
       "description": "Re-opens implementation to fix issues found after commit.",
       "dispatchOnly": true,
+      "hooks": ["session-enforcer", "scope-transition", "orbital-scope-update"]
+    },
+    {
+      "from": "implementing",
+      "to": "backlog",
+      "direction": "backward",
+      "command": null,
+      "confirmLevel": "quick",
+      "label": "Back to Backlog",
+      "description": "Returns this scope to the backlog. Use when implementation was not started or session failed.",
+      "dispatchOnly": false,
+      "humanOnly": true,
       "hooks": ["session-enforcer", "scope-transition", "orbital-scope-update"]
     },
     {
@@ -589,6 +600,16 @@
       "blocking": false,
       "description": "Emits scope status transition events for time tracking",
       "category": "observer"
+    },
+    {
+      "id": "block-commit-implementing",
+      "label": "Block Commit (Implementing)",
+      "timing": "before",
+      "type": "shell",
+      "target": ".claude/hooks/block-push.sh",
+      "blocking": true,
+      "description": "Blocks git commit/add during implementing sessions",
+      "category": "guard"
     }
   ],
   "groups": [

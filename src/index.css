@@ -2,19 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Electron: window drag region ─── */
-.electron-drag-region {
-  -webkit-app-region: drag;
-}
-/* Prevent drag region from blocking interactive elements */
-.electron-drag-region ~ * button,
-.electron-drag-region ~ * a,
-.electron-drag-region ~ * input,
-.electron-drag-region ~ * select,
-.electron-drag-region ~ * [role="button"] {
-  -webkit-app-region: no-drag;
-}
-
 @layer base {
   :root {
     --background: 240 25% 3.5%;
@@ -445,6 +432,31 @@
   );
 }
 
+/* ─── DISPATCH PULSE DOT ─── */
+.dispatch-pulse {
+  animation: dispatch-pulse 2s ease-in-out infinite;
+}
+@keyframes dispatch-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ─── ABANDONED SCOPE CARD (static amber dashed border) ─── */
+.scope-card-abandoned {
+  border: 1.5px dashed rgba(245, 158, 11, 0.5) !important;
+}
+.scope-card-abandoned:hover {
+  border-color: rgba(245, 158, 11, 0.7) !important;
+}
+[data-theme="neon-glass"] .scope-card-abandoned {
+  border: 1.5px dashed rgba(var(--neon-amber), 0.45) !important;
+  box-shadow: 0 0 8px rgba(var(--neon-amber), 0.08);
+}
+[data-theme="neon-glass"] .scope-card-abandoned:hover {
+  border-color: rgba(var(--neon-amber), 0.65) !important;
+  box-shadow: 0 4px 16px rgba(var(--neon-amber), 0.12);
+}
+
 /* ─── BATCH GROUP DISPATCH STROKE (container-level border animation) ─── */
 .batch-group-dispatched {
   position: relative;
@@ -656,6 +668,25 @@
     0 0 35px rgba(var(--neon-cyan), 0.8),
     0 0 15px rgba(var(--neon-pink), 0.5),
     0 0 60px rgba(var(--neon-cyan), 0.2);
+}
+
+/* ─── VERSION BADGE ─── */
+.version-pulse-dot {
+  animation: version-pulse 2s ease-in-out infinite;
+}
+@keyframes version-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(52, 211, 153, 0.4); }
+  50%      { opacity: 0.5; box-shadow: 0 0 8px rgba(52, 211, 153, 0.7); }
+}
+[data-theme="neon-glass"] .version-badge {
+  text-shadow: 0 0 6px rgba(var(--neon-cyan), 0.3);
+}
+[data-theme="neon-glass"] .version-badge:hover {
+  border-color: rgba(var(--neon-cyan), 0.2) !important;
+  background: rgba(var(--neon-cyan), 0.04);
+}
+[data-theme="neon-glass"] .version-pulse-dot {
+  box-shadow: 0 0 6px rgba(var(--neon-green), 0.6);
 }
 
 [data-theme="neon-glass"] .connection-glow {

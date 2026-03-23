@@ -10,11 +10,14 @@
 set -euo pipefail
 
 INPUT=$(cat)
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
-NEW_STRING=$(echo "$INPUT" | jq -r '.tool_input.new_string // empty' 2>/dev/null)
+echo "$INPUT" | jq empty 2>/dev/null || exit 0
+
+FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
+NEW_STRING=$(echo "$INPUT" | jq -r '.tool_input.new_string // empty')
 
 # Only enforce on scope files
-[[ "$FILE_PATH" == *"scopes/"* && "$FILE_PATH" == *.md ]] || exit 0
+source "$(dirname "$0")/scope-helpers.sh"
+is_scope_file "$FILE_PATH" || exit 0
 
 # Only enforce when status is being set to completed
 echo "$NEW_STRING" | grep -qiE "status:.*completed" || exit 0
@@ -32,44 +35,45 @@ if [ -z "$SCOPE_NUM" ]; then
   exit 0
 fi
 
-# Pad to 3 digits for verdict file lookup
-# Strip leading zeros first to avoid bash printf treating them as octal
-SCOPE_NUM_CLEAN=$(echo "$SCOPE_NUM" | sed 's/^0*//')
-[ -z "$SCOPE_NUM_CLEAN" ] && SCOPE_NUM_CLEAN="0"
+# Pad to 3 digits for verdict file lookup (force base-10 to avoid octal)
+SCOPE_NUM_CLEAN=$((10#${SCOPE_NUM}))
 PADDED=$(printf '%03d' "$SCOPE_NUM_CLEAN")
 VERDICT_FILE="$VERDICTS_DIR/${PADDED}.json"
 
 # ─── Check verdict file exists ───
 if [ ! -f "$VERDICT_FILE" ]; then
-  echo ""
-  echo "MUST_BLOCK: No review verdict found for scope $PADDED."
-  echo "   Run: /scope-post-review $PADDED"
-  echo "   The review gate must pass before a scope can be completed."
-  echo ""
+  echo "" >&2
+  echo "MUST_BLOCK: No review verdict found for scope $PADDED." >&2
+  echo "   Run: /scope-post-review $PADDED" >&2
+  echo "   The review gate must pass before a scope can be completed." >&2
+  echo "   Verdict file expected at: .claude/review-verdicts/${PADDED}.json" >&2
+  echo "   Format: {\"verdict\": \"PASS\", \"reviewSession\": \"uuid\", \"implementSession\": \"uuid\"}" >&2
+  echo "" >&2
   exit 2
 fi
 
 # ─── Validate verdict is PASS ───
-VERDICT=$(jq -r '.verdict // empty' "$VERDICT_FILE" 2>/dev/null)
+VERDICT=$(jq -r '.verdict // empty' "$VERDICT_FILE")
 if [ "$VERDICT" != "PASS" ]; then
-  echo ""
-  echo "MUST_BLOCK: Review verdict for scope $PADDED is '$VERDICT', not PASS."
-  echo "   Fix the failing criteria and re-run: /scope-post-review $PADDED"
-  echo ""
+  echo "" >&2
+  echo "MUST_BLOCK: Review verdict for scope $PADDED is '$VERDICT', not PASS." >&2
+  echo "   Fix the failing criteria and re-run: /scope-post-review $PADDED" >&2
+  echo "   Verdict file: .claude/review-verdicts/${PADDED}.json" >&2
+  echo "" >&2
   exit 2
 fi
 
 # ─── Validate session separation ───
-REVIEW_SESSION=$(jq -r '.reviewSession // empty' "$VERDICT_FILE" 2>/dev/null)
-IMPLEMENT_SESSION=$(jq -r '.implementSession // empty' "$VERDICT_FILE" 2>/dev/null)
+REVIEW_SESSION=$(jq -r '.reviewSession // empty' "$VERDICT_FILE")
+IMPLEMENT_SESSION=$(jq -r '.implementSession // empty' "$VERDICT_FILE")
 
 if [ -n "$REVIEW_SESSION" ] && [ -n "$IMPLEMENT_SESSION" ]; then
   if [ "$REVIEW_SESSION" = "$IMPLEMENT_SESSION" ]; then
-    echo ""
-    echo "MUST_BLOCK: Session separation violation in verdict for scope $PADDED."
-    echo "   The review session ($REVIEW_SESSION) matches the implement session."
-    echo "   A different session must run the review gate."
-    echo ""
+    echo "" >&2
+    echo "MUST_BLOCK: Session separation violation in verdict for scope $PADDED." >&2
+    echo "   The review session ($REVIEW_SESSION) matches the implement session." >&2
+    echo "   A different Claude Code session must run /scope-post-review (the user starts a new session)." >&2
+    echo "" >&2
     exit 2
   fi
 fi

@@ -22,3 +22,9 @@ Thumbs.db
 # Environment
 .env
 .env.*
+
+# Orbital Command
+scopes/
+.claude/orbital/
+.claude/orbital-events/
+.claude/config/workflow-manifest.sh

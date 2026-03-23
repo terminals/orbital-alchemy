@@ -34,10 +34,11 @@ else
 fi
 
 if [ -n "$ORBITAL_DEPLOY_ID" ]; then
-  # Update existing deployment
-  PAYLOAD="{\"status\":\"$STATUS\""
-  [ -n "$COMMIT_SHA" ] && PAYLOAD="$PAYLOAD,\"details\":\"$COMMIT_SHA\""
-  PAYLOAD="$PAYLOAD}"
+  # Update existing deployment — build payload with jq
+  JQ_ARGS=(--arg status "$STATUS")
+  JQ_EXPR='{status: $status}'
+  [ -n "$COMMIT_SHA" ] && JQ_ARGS+=(--arg details "$COMMIT_SHA") && JQ_EXPR='{status: $status, details: $details}'
+  PAYLOAD=$(jq -n "${JQ_ARGS[@]}" "$JQ_EXPR")
 
   curl --fail --silent --max-time 2 \
     -X PATCH \
@@ -45,20 +46,22 @@ if [ -n "$ORBITAL_DEPLOY_ID" ]; then
     -d "$PAYLOAD" \
     "$ORBITAL_URL/api/orbital/deployments/$ORBITAL_DEPLOY_ID" > /dev/null 2>&1 || true
 else
-  # Create new deployment record
-  PAYLOAD="{\"environment\":\"$ENVIRONMENT\",\"status\":\"$STATUS\""
+  # Create new deployment record — build payload with jq
+  JQ_ARGS=(--arg environment "$ENVIRONMENT" --arg status "$STATUS")
+  JQ_EXPR='{environment: $environment, status: $status}'
 
-  [ -n "$COMMIT_SHA" ] && PAYLOAD="$PAYLOAD,\"commit_sha\":\"$COMMIT_SHA\""
-  [ -n "$BRANCH" ] && PAYLOAD="$PAYLOAD,\"branch\":\"$BRANCH\""
-  [ -n "$PR_NUMBER" ] && PAYLOAD="$PAYLOAD,\"pr_number\":$PR_NUMBER"
+  [ -n "$COMMIT_SHA" ] && JQ_ARGS+=(--arg commit_sha "$COMMIT_SHA") && JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, commit_sha: $commit_sha}/')
+  [ -n "$BRANCH" ] && JQ_ARGS+=(--arg branch "$BRANCH") && JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, branch: $branch}/')
+  [ -n "$PR_NUMBER" ] && JQ_ARGS+=(--argjson pr_number "$PR_NUMBER") && JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, pr_number: $pr_number}/')
 
   # Read health check URL from orbital.config.json if configured
-  HEALTH_URL=$(cat "$PROJECT_ROOT/.claude/orbital.config.json" 2>/dev/null | grep -A5 "\"healthChecks\"" | grep "\"$ENVIRONMENT\"" | sed 's/.*: *"//;s/".*//')
-  if [ -n "$HEALTH_URL" ]; then
-    PAYLOAD="$PAYLOAD,\"health_check_url\":\"$HEALTH_URL\""
+  HEALTH_URL=""
+  if command -v jq >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/.claude/orbital.config.json" ]; then
+    HEALTH_URL=$(jq -r ".healthChecks[\"$ENVIRONMENT\"] // empty" "$PROJECT_ROOT/.claude/orbital.config.json" 2>/dev/null)
   fi
+  [ -n "$HEALTH_URL" ] && JQ_ARGS+=(--arg health_check_url "$HEALTH_URL") && JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, health_check_url: $health_check_url}/')
 
-  PAYLOAD="$PAYLOAD}"
+  PAYLOAD=$(jq -n "${JQ_ARGS[@]}" "$JQ_EXPR")
 
   # POST and capture the response to extract deployment ID
   RESPONSE=$(curl --fail --silent --max-time 2 \
@@ -69,7 +72,7 @@ else
 
   # Print the deployment ID for callers to capture
   if [ -n "$RESPONSE" ]; then
-    DEPLOY_ID=$(echo "$RESPONSE" | grep -o '"id":[0-9]*' | grep -o '[0-9]*')
+    DEPLOY_ID=$(echo "$RESPONSE" | jq -r '.id // empty' 2>/dev/null)
     [ -n "$DEPLOY_ID" ] && echo "$DEPLOY_ID"
   fi
 fi

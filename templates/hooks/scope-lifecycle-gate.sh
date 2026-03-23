@@ -21,7 +21,8 @@
 set -euo pipefail
 
 INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
+echo "$INPUT" | jq empty 2>/dev/null || exit 0
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
 # ─── Fast exit: only process git commit, git push, gh pr create ───
 echo "$COMMAND" | grep -qE '^git (commit|push)|^gh pr create' || exit 0
@@ -30,7 +31,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 
 # ─── Resolve session UUID (from hook input or process tree) ───
-SESSION_UUID=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
+SESSION_UUID=$(echo "$INPUT" | jq -r '.session_id // empty')
 if [ -z "$SESSION_UUID" ]; then
   SESSION_UUID=$("$SCRIPT_DIR/get-session-id.sh" 2>/dev/null || true)
 fi
@@ -103,7 +104,7 @@ done
 if [ -n "$TRANSITION_FROM" ] && [ -n "$TRANSITION_TO" ]; then
   if [ -n "$BATCH_SCOPE_IDS" ]; then
     if ! echo "$BATCH_SCOPE_IDS" | grep -qE '^[0-9]+(,[0-9]+)*$'; then
-      echo "ERROR: BATCH_SCOPE_IDS contains invalid characters" >&2
+      echo "ERROR: BATCH_SCOPE_IDS contains invalid characters. Must be comma-separated integers with no spaces, e.g. BATCH_SCOPE_IDS=093,094,095" >&2
       exit 1
     fi
     echo ""

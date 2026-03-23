@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { socket } from '../socket';
+import { useReconnect } from './useReconnect';
 import type { PipelineDrift, DeployFrequencyWeek, Deployment } from '../types';
 
 export function usePipeline() {
@@ -29,6 +30,8 @@ export function usePipeline() {
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
+
+  useReconnect(fetchAll);
 
   useEffect(() => {
     function onDeployUpdate() {

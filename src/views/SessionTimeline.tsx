@@ -80,12 +80,16 @@ interface TimelineSession extends Session {
 
 const ACTION_LABELS: Record<string, string> = {
   createScope: 'Created',
+  reviewScope: 'Reviewed',
   implementScope: 'Implemented',
+  verifyScope: 'Verified',
+  reviewGate: 'Review Gate',
+  fixReview: 'Fix Review',
+  commit: 'Committed',
+  pushToMain: 'Pushed to Main',
   pushToDev: 'Pushed to Dev',
-  prStaging: 'PR to Staging',
-  prProduction: 'PR to Production',
-  codeReview: 'Reviewed',
-  saveWork: 'Saved',
+  pushToStaging: 'PR to Staging',
+  pushToProduction: 'PR to Production',
 };
 
 function actionLabel(action: string): string {

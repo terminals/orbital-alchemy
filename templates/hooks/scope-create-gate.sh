@@ -21,14 +21,15 @@ if [ "$(uname)" = "Darwin" ]; then
 else
   MARKER_AGE=$(( $(date +%s) - $(stat -c %Y "$MARKER") ))
 fi
-if [ "$MARKER_AGE" -gt 7200 ]; then
+if [ "$MARKER_AGE" -gt 900 ]; then
   rm -f "$MARKER"
   exit 0
 fi
 
 # Extract file_path from tool input
 INPUT=$(cat)
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
+echo "$INPUT" | jq empty 2>/dev/null || exit 0
+FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 
 # If no file_path found, allow (defensive — don't break unknown tool shapes)
 [ -z "$FILE_PATH" ] && exit 0
@@ -57,16 +58,22 @@ esac
 
 # ─── Block everything else ───
 HOOK_DIR="$(dirname "$0")"
-"$HOOK_DIR/orbital-emit.sh" VIOLATION "{\"rule\":\"scope-create-gate\",\"file\":\"$FILE_PATH\",\"outcome\":\"blocked\"}" 2>/dev/null &
+VIOLATION_DATA=$(jq -n --arg rule "scope-create-gate" --arg file "$FILE_PATH" --arg outcome "blocked" '{rule: $rule, file: $file, outcome: $outcome}')
+"$HOOK_DIR/orbital-emit.sh" VIOLATION "$VIOLATION_DATA" 2>/dev/null &
+
+# Resolve entry status from workflow manifest
+HOOK_DIR="$(dirname "$0")"
+source "$HOOK_DIR/scope-helpers.sh" 2>/dev/null || true
+ENTRY="${WORKFLOW_ENTRY_STATUS:-planning}"
 
 echo "BLOCKED: Write to non-scope file during /scope create"
 echo ""
 echo "  File: $FILE_PATH"
 echo ""
 echo "  You must write the scope document first:"
-echo "    1. Find next scope number"
+echo "    1. Find next scope number (highest NNN in scopes/**/*.md + 1, zero-padded to 3 digits)"
 echo "    2. Copy template from scopes/_template.md"
-echo "    3. Write to scopes/planning/NNN-feature.md"
+echo "    3. Write to scopes/$ENTRY/NNN-short-description.md"
 echo ""
 echo "  After the scope document is written, the gate lifts automatically."
 echo "  To abandon: delete .claude/metrics/.scope-create-session"

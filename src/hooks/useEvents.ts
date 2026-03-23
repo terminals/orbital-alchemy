@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { socket } from '../socket';
+import { useReconnect } from './useReconnect';
 import type { OrbitalEvent } from '../types';
 
 interface UseEventsOptions {
@@ -32,6 +33,8 @@ export function useEvents(options: UseEventsOptions = {}) {
   useEffect(() => {
     fetchEvents();
   }, [fetchEvents]);
+
+  useReconnect(fetchEvents);
 
   // Real-time updates — prepend new events
   useEffect(() => {

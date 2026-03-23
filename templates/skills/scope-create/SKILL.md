@@ -6,122 +6,65 @@ user-invocable: true
 
 # /scope-create - Create a Unified Scope Document
 
-## What This Does
-
 Creates a three-part scope document (Dashboard / Specification / Process) in `scopes/planning/`.
+All mechanical work (file lookup, ID assignment, template scaffolding, session recording, gate cleanup)
+is handled by a single `scope-prepare.sh` call.
 
 ## Post-Plan Workflow
 
-When this skill is invoked during plan mode:
+When invoked during plan mode:
 1. Plan mode handles exploration (write findings to plan file)
 2. After plan approval (ExitPlanMode), a hook reminds you to write the scope
-3. **Create the scope document** using Steps 2-6 below, populating SPECIFICATION from your plan
-4. Set `status: planning`, `spec_locked: true`
-5. **Stop.** Report the scope number. Implementation is `/scope-implement NNN` in a new session.
+3. Run Step 1 below, then fill SPECIFICATION from your plan findings in Step 2
+4. **Stop.** Report the scope number. Implementation is `/scope-implement NNN` in a new session.
 
 ## Execution
 
-### Step 0: Record Session ID
+### Step 1: Prepare Scope File
 
-1. Run: `bash .claude/hooks/get-session-id.sh` — capture the UUID output
-2. Read the scope file's YAML frontmatter `sessions` field (if updating an existing file)
-3. If `sessions:` key doesn't exist in frontmatter, add `sessions: {}` after `tags:`
-4. If the UUID is NOT already in `sessions.createScope`, append it (skip if duplicate)
-5. Write the updated frontmatter back to the scope file
+One Bash call handles everything: finds the file, assigns a sequential ID (renumbering
+from icebox range if needed), scaffolds the full template, records the session UUID,
+and lifts the write gate.
 
-> For new scopes (no file yet), record the session after the file is written in Step 4.
+**If a scope number is provided** (e.g., `/scope-create 511`):
 
-### Step 1: Gather Information
+```bash
+# For icebox ideas (ID >= 500) — promotes, renumbers, and scaffolds:
+bash .claude/hooks/scope-prepare.sh --promote 511
 
-**If a scope number is provided** (e.g., `/scope-create 083`):
-1. Read the existing file at `scopes/planning/NNN-*.md` (use glob to find by prefix)
-2. Extract the title from frontmatter and the description from the body (text below the closing `---`)
-3. The file was promoted from icebox — it already has a sequential ID and `status: planning`
-4. **Skip to Step 3** using the extracted title and description. The scope number is already assigned.
+# For existing planning scopes (ID < 500) — applies template to existing file:
+bash .claude/hooks/scope-prepare.sh --scaffold 106
+```
 
-**Otherwise** (no argument):
-Ask the user:
+**If no argument** — ask the user for:
 1. **Feature name**: Short descriptive name
 2. **What does it do?**: 1-2 sentence description
-3. **Category**: e.g., Backend, Frontend, Tooling, Blockchain, Infrastructure
+3. **Category**: e.g., Backend, Frontend, Tooling, Infrastructure
 
-### Step 2: Find Next Scope Number
-
-**If updating an existing file** (e.g., promoted from icebox): Check the file's
-current `id` in frontmatter. Scope IDs use 3-digit sequential numbering (e.g.,
-084, 085). If the existing ID is outside this range (icebox-style 500+, 9000+,
-or any non-sequential value), it **must** be renumbered. Find the next sequential
-ID using the steps below, then rename the file and update the frontmatter `id`
-field to match.
-
+Then run:
 ```bash
-# Recursively scan ALL subdirectories under scopes/ for the highest base ID
-find scopes/ -name '*.md' 2>/dev/null | grep -oE '/[0-9]{3}[a-dA-DxX]?-' | grep -oE '[0-9]{3}' | sort -n | uniq | tail -1
-# Add 1 and pad to 3 digits
+bash .claude/hooks/scope-prepare.sh --new --title "Feature Name" --desc "Description" --category "Backend"
 ```
 
-Then cross-check against the Orbital Command database (catches ideas and status-locked scopes):
-```bash
-sqlite3 .claude/orbital/orbital.db "SELECT MAX(id) FROM scopes WHERE id < 1000 AND is_idea = 0" 2>/dev/null
-```
+The script outputs JSON: `{"id", "path", "title", "description", "session_id", "category", "mode"}`.
+The scope file is fully scaffolded with template, frontmatter, dashboard, and process log.
 
-**Use whichever number is higher + 1.** This prevents collisions from scopes in any subfolder (backlog, dev, staging, production, pre-launch, completed, etc.) and from DB-only entries.
+### Step 2: Fill Specification
 
-### Step 3: Copy and Fill Template
+Edit the scope file to replace the placeholder in **SPECIFICATION > Overview** with the
+actual problem statement and goal. If coming from a plan, also populate:
+- **Requirements** (Must Have / Nice to Have / Out of Scope)
+- **Technical Approach** and rationale
+- **Implementation Phases** with files, changes, and verification steps
 
-1. Read `scopes/_template.md`
-2. Create `scopes/planning/NNN-feature-name.md`
-3. Fill in:
-   - **Frontmatter**: id, title, category, created/updated dates, tags, **`status: planning`**
-   - **DASHBOARD**: Set status to `planning`, add creation activity entry
-   - **SPECIFICATION Overview**: Problem statement from user description
-   - **PROCESS Exploration Log**: First session entry with trigger
-
-### Step 4: Initialize DASHBOARD
-
-```markdown
-### Quick Status
-> ⏳ **Status**: Planning | **Phase**: 0 of N | **Spec Locked**: No
-
-### Recent Activity
-- **YYYY-MM-DD HH:MM** - Scope created via `/scope-create`
-
-### Next Actions
-- [ ] Complete exploration (search codebase, understand current state)
-- [ ] Draft specification (requirements, phases, files)
-- [ ] Get spec approval via `/scope-pre-review`
-```
-
-### Step 5: Start PROCESS Exploration
-
-Open the Exploration Log `<details>` and add:
-
-```markdown
-### Session: YYYY-MM-DD HH:MM
-
-**Trigger**: [User's description of what they want]
-
-**Initial Understanding**: [What we know so far]
-
-**Next Steps**: [What to explore in the codebase]
-```
-
-### Step 6: Record Session ID
-
-1. Run: `bash .claude/hooks/get-session-id.sh` — capture the UUID output
-2. Read the newly created scope file's YAML frontmatter `sessions` field
-3. If `sessions:` key doesn't exist in frontmatter, add `sessions: {}` after `tags:`
-4. If the UUID is NOT already in `sessions.createScope`, append it (skip if duplicate)
-5. Write the updated frontmatter back to the scope file
-
-### Step 7: Report
+### Step 3: Report
 
 ```
 Created: scopes/planning/NNN-feature-name.md
 
 Structure:
   PART 1: DASHBOARD  — Status: Planning
-  PART 2: SPECIFICATION — Empty (fill during planning)
+  PART 2: SPECIFICATION — Overview filled (complete during planning)
   PART 3: PROCESS — First exploration session started
 
 Next steps:
@@ -136,4 +79,3 @@ Next steps:
 - **Don't over-plan**: Start exploring, let the spec emerge
 - **Capture decisions**: Use the Decisions & Reasoning section
 - **Log uncertainties**: They help future sessions understand confidence levels
-- **Keep Dashboard current**: Quick Status should always reflect reality

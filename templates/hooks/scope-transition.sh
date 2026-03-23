@@ -63,7 +63,14 @@ if [ -n "$DIRECTION" ]; then
   done
 
   if [ "$RESOLVED" = false ]; then
-    echo "ERROR: Unknown direction '$DIRECTION'" >&2
+    VALID_ALIASES=""
+    for a in "${WORKFLOW_DIRECTION_ALIASES[@]}"; do
+      IFS=':' read -r aname _ _ _ <<< "$a"
+      VALID_ALIASES="${VALID_ALIASES:+$VALID_ALIASES, }$aname"
+    done
+    echo "ERROR: Unknown direction '$DIRECTION'." >&2
+    echo "  Valid directions: ${VALID_ALIASES:-none (use --from STATUS --to STATUS instead)}" >&2
+    echo "  Valid statuses: $WORKFLOW_STATUSES" >&2
     exit 1
   fi
 elif [ -n "$FROM_STATUS" ] && [ -n "$TO_STATUS" ]; then
@@ -85,18 +92,13 @@ else
   exit 1
 fi
 
-# ─── PID-aware file lock (survives kill -9 via stale detection) ───
-LOCK_DIR="/tmp/orbital-scope-${SCOPE_ID:-all}.lock"
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  LOCK_PID=$(cat "$LOCK_DIR/pid" 2>/dev/null)
-  if [ -n "$LOCK_PID" ] && ! kill -0 "$LOCK_PID" 2>/dev/null; then
-    rm -rf "$LOCK_DIR" && mkdir "$LOCK_DIR"
-  else
-    echo "Scope ${SCOPE_ID:-all} locked by PID $LOCK_PID" >&2; exit 0
-  fi
+# ─── File lock (flock-based, no TOCTOU race) ───
+LOCK_FILE="/tmp/orbital-scope-${SCOPE_ID:-all}.flock"
+exec 200>"$LOCK_FILE"
+if ! flock -n -x 200 2>/dev/null; then
+  echo "Scope ${SCOPE_ID:-all} locked by another process" >&2; exit 0
 fi
-echo $$ > "$LOCK_DIR/pid"
-trap 'rm -rf "$LOCK_DIR" 2>/dev/null' EXIT
+trap 'rm -f "$LOCK_FILE" 2>/dev/null' EXIT
 
 SOURCE_DIR="$SCOPE_PROJECT_DIR/scopes/$SOURCE_STATUS"
 TARGET_DIR="$SCOPE_PROJECT_DIR/scopes/$TARGET_STATUS"
@@ -165,4 +167,6 @@ done
 
 if [ "$TRANSITIONED" -gt 0 ]; then
   echo "   Transitioned $TRANSITIONED scope(s) $SOURCE_STATUS → $TARGET_STATUS"
+  # Invalidate active scope cache since status changed
+  invalidate_active_scope_cache
 fi

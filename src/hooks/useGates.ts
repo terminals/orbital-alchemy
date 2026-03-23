@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { socket } from '../socket';
+import { useReconnect } from './useReconnect';
 import type { QualityGate } from '../types';
 
 export function useGates(scopeId?: number) {
@@ -27,6 +28,8 @@ export function useGates(scopeId?: number) {
   useEffect(() => {
     fetchGates();
   }, [fetchGates]);
+
+  useReconnect(fetchGates);
 
   // Real-time gate updates
   useEffect(() => {

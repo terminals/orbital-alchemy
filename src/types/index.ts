@@ -320,7 +320,7 @@ export interface SprintScope {
 export interface DispatchResolvedPayload {
   event_id: string;
   scope_id: number | null;
-  outcome: 'completed' | 'failed';
+  outcome: 'completed' | 'failed' | 'abandoned';
 }
 
 export interface ServerToClientEvents {
@@ -341,6 +341,8 @@ export interface ServerToClientEvents {
   'config:agents:changed': (payload: { action: string; path: string }) => void;
   'config:skills:changed': (payload: { action: string; path: string }) => void;
   'config:hooks:changed': (payload: { action: string; path: string }) => void;
+  'version:updating': (payload: { stage: 'pulling' | 'installing' }) => void;
+  'version:updated': (payload: { success: true } | { success: false; error: string }) => void;
 }
 
 export interface ClientToServerEvents {

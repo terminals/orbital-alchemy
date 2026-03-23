@@ -1,8 +1,9 @@
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { Lightbulb, Sparkles } from 'lucide-react';
+import { Lightbulb, Sparkles, AlertTriangle, Undo2, X } from 'lucide-react';
 import type { Scope, CardDisplayConfig } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { cn, formatScopeId } from '@/lib/utils';
 import { useActiveDispatches } from '@/hooks/useActiveDispatches';
 import { useWorkflow } from '@/hooks/useWorkflow';
@@ -40,6 +41,53 @@ const CATEGORY_BORDER: Record<string, string> = {
 
 const GHOST = 'inline-block rounded border px-1.5 py-0 text-[10px] uppercase bg-transparent';
 
+interface AbandonedPopoverProps {
+  scopeId: number;
+  info: { from_status: string | null };
+  onRecover: (scopeId: number, fromStatus: string) => Promise<void>;
+  onDismiss: (scopeId: number) => Promise<void>;
+}
+
+function AbandonedPopover({ scopeId, info, onRecover, onDismiss }: AbandonedPopoverProps) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
+        <button className="flex items-center gap-0.5 text-amber-500 hover:text-amber-400 transition-colors">
+          <AlertTriangle className="h-3 w-3" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-56 p-3"
+        side="top"
+        align="end"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="text-xs text-muted-foreground mb-2">
+          Session ended without completing work.
+        </p>
+        <div className="flex flex-col gap-1.5">
+          {info.from_status && (
+            <button
+              className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 transition-colors"
+              onClick={() => onRecover(scopeId, info.from_status!)}
+            >
+              <Undo2 className="h-3 w-3" />
+              Revert to {info.from_status}
+            </button>
+          )}
+          <button
+            className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
+            onClick={() => onDismiss(scopeId)}
+          >
+            <X className="h-3 w-3" />
+            Keep here
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function abbreviateEffort(raw: string): string {
   const s = raw.toLowerCase().trim();
   const minMatch = s.match(/^~?(\d+)(?:\s*-\s*\d+)?\s*min/);
@@ -72,11 +120,13 @@ export function ScopeCard({ scope, onClick, isDragOverlay, cardDisplay, dimmed }
     : undefined;
 
   const { engine } = useWorkflow();
-  const { activeScopes } = useActiveDispatches();
+  const { activeScopes, abandonedScopes, recoverScope, dismissAbandoned } = useActiveDispatches();
   const entryPointId = engine.getEntryPoint().id;
   const isIdea = scope.status === entryPointId;
   const isGhost = isIdea && !!scope.is_ghost;
   const isDispatched = !isIdea && activeScopes.has(scope.id);
+  const abandonedInfo = !isIdea ? abandonedScopes.get(scope.id) : undefined;
+  const isAbandoned = !!abandonedInfo && !isDispatched;
 
   return (
     <Card
@@ -90,6 +140,7 @@ export function ScopeCard({ scope, onClick, isDragOverlay, cardDisplay, dimmed }
           ? 'border-l-2 border-dashed border-l-warning-amber/60'
           : scope.category ? CATEGORY_BORDER[scope.category] : '',
         isDispatched && 'scope-card-dispatched',
+        isAbandoned && 'scope-card-abandoned',
         isDragging && 'opacity-30',
         dimmed && !isDragging && 'opacity-30 cursor-default',
       )}
@@ -114,12 +165,21 @@ export function ScopeCard({ scope, onClick, isDragOverlay, cardDisplay, dimmed }
             </span>
           ) : (
             <span className="font-mono text-xxs text-muted-foreground flex items-center gap-1">
-              {isDispatched && <span className="h-1.5 w-1.5 rounded-full bg-pink-500 animate-pulse" />}
+              {isDispatched && <span className="h-1.5 w-1.5 rounded-full bg-pink-500 dispatch-pulse" />}
+              {isAbandoned && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
               {formatScopeId(scope.id)}
             </span>
           )}
           {!isIdea && (
             <div className="ml-auto flex items-center gap-1">
+              {isAbandoned && (
+                <AbandonedPopover
+                  scopeId={scope.id}
+                  info={abandonedInfo}
+                  onRecover={recoverScope}
+                  onDismiss={dismissAbandoned}
+                />
+              )}
               {scope.effort_estimate && cardDisplay?.effort !== false && (
                 <span className={cn(GHOST, 'effort-ghost border-muted-foreground/30 text-muted-foreground')}>
                   {abbreviateEffort(scope.effort_estimate)}

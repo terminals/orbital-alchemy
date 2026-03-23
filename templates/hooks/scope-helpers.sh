@@ -5,6 +5,12 @@
 #   source "$(dirname "$0")/scope-helpers.sh"
 set -e
 
+# Check if a file path is a scope markdown file
+is_scope_file() {
+  local fp="$1"
+  [[ "$fp" == *"scopes/"* && "$fp" == *.md ]]
+}
+
 SCOPE_PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 SCOPE_IMPLEMENTING_DIR="$SCOPE_PROJECT_DIR/scopes/implementing"
 
@@ -54,7 +60,10 @@ move_scope() {
   local target_dir="$SCOPE_PROJECT_DIR/scopes/$dir_name"
   local filename=$(basename "$src")
   mkdir -p "$target_dir"
-  git mv "$src" "$target_dir/$filename" 2>/dev/null || mv "$src" "$target_dir/$filename"
+  if ! git mv "$src" "$target_dir/$filename" 2>/dev/null; then
+    echo "WARNING: git mv failed for $filename, using plain mv" >&2
+    mv "$src" "$target_dir/$filename"
+  fi
   echo "$target_dir/$filename"
 }
 
@@ -70,28 +79,63 @@ find_scopes_by_status() {
 }
 
 # Get the currently active scope (implementing > backlog > planning)
+# Uses a session-scoped cache to avoid O(n) directory scans on every call.
+# Call invalidate_active_scope_cache() after scope transitions.
 find_active_scope() {
+  local cache_file="$SCOPE_PROJECT_DIR/.claude/metrics/.active-scope"
+  # Check cache: must exist, be < 60s old, and point to a real file
+  if [ -f "$cache_file" ]; then
+    local cached
+    cached=$(cat "$cache_file" 2>/dev/null)
+    if [ -n "$cached" ] && [ -f "$cached" ]; then
+      local cache_age
+      if [ "$(uname)" = "Darwin" ]; then
+        cache_age=$(( $(date +%s) - $(stat -f %m "$cache_file") ))
+      else
+        cache_age=$(( $(date +%s) - $(stat -c %Y "$cache_file") ))
+      fi
+      if [ "$cache_age" -lt 60 ]; then
+        echo "$cached"
+        return 0
+      fi
+    fi
+  fi
+
+  # Cache miss — scan directories
   local scope
   scope=$(find_scopes_by_status "implementing" "$SCOPE_IMPLEMENTING_DIR" | head -1)
-  [ -n "$scope" ] && echo "$scope" && return 0
-  scope=$(find_scopes_by_status "backlog" "$SCOPE_PROJECT_DIR/scopes/backlog" | head -1)
-  [ -n "$scope" ] && echo "$scope" && return 0
-  scope=$(find_scopes_by_status "planning" "$SCOPE_PROJECT_DIR/scopes/planning" | head -1)
-  [ -n "$scope" ] && echo "$scope" && return 0
+  [ -z "$scope" ] && scope=$(find_scopes_by_status "backlog" "$SCOPE_PROJECT_DIR/scopes/backlog" | head -1)
+  [ -z "$scope" ] && scope=$(find_scopes_by_status "planning" "$SCOPE_PROJECT_DIR/scopes/planning" | head -1)
+
+  if [ -n "$scope" ]; then
+    mkdir -p "$(dirname "$cache_file")"
+    printf '%s' "$scope" > "$cache_file"
+    echo "$scope"
+    return 0
+  fi
   return 1
+}
+
+# Invalidate the active scope cache (call after transitions)
+invalidate_active_scope_cache() {
+  rm -f "$SCOPE_PROJECT_DIR/.claude/metrics/.active-scope"
 }
 
 # Get a YAML frontmatter field from a scope file
 get_frontmatter() {
   local file="$1" field="$2"
-  sed -n '2,/^---$/p' "$file" | grep "^$field:" | sed "s/^$field:[[:space:]]*//" | tr -d '"'
+  sed -n '2,/^---$/p' "$file" | grep "^$field:" | sed "s/^$field:[[:space:]]*//; s/^[\"']//; s/[\"']$//"
 }
 
 # Set a simple frontmatter field (top-level only, e.g. status, updated)
 set_frontmatter() {
   local file="$1" field="$2" value="$3"
   local tmp="${file}.tmp.$$"
-  sed "s/^${field}:.*/${field}: ${value}/" "$file" > "$tmp" && mv "$tmp" "$file"
+  (
+    flock -x 200 2>/dev/null || true
+    sed "s/^${field}:.*/${field}: ${value}/" "$file" > "$tmp" && mv "$tmp" "$file"
+  ) 200>"${file}.lock"
+  rm -f "${file}.lock"
 }
 
 # Append a UUID to a sessions array key in frontmatter
@@ -99,32 +143,36 @@ set_frontmatter() {
 append_session_uuid() {
   local file="$1" key="$2" uuid="$3"
   local tmp="${file}.tmp.$$"
-  awk -v key="$key" -v uuid="$uuid" '
-    BEGIN { found_sessions=0; found_key=0; added=0 }
-    /^sessions:/ { found_sessions=1 }
-    found_sessions && $0 ~ "^  " key ":" {
-      found_key=1
-      if (index($0, uuid) > 0) { added=1; print; next }
-      # Append UUID to existing array: [a, b] -> [a, b, uuid]
-      sub(/\]$/, ", " uuid "]")
-      added=1
-    }
-    # After sessions: block ends (next top-level key), insert key if not found
-    found_sessions && !found_key && /^[^ ]/ && !/^sessions:/ {
-      print "  " key ": [" uuid "]"
-      found_key=1; added=1
-    }
-    { print }
-    END {
-      # If sessions: block was never found, or key never added
-      if (!found_sessions) {
-        print "sessions:"
-        print "  " key ": [" uuid "]"
-      } else if (!added) {
-        print "  " key ": [" uuid "]"
+  (
+    flock -x 200 2>/dev/null || true
+    awk -v key="$key" -v uuid="$uuid" '
+      BEGIN { found_sessions=0; found_key=0; added=0 }
+      /^sessions:/ { found_sessions=1 }
+      found_sessions && $0 ~ "^  " key ":" {
+        found_key=1
+        if (index($0, uuid) > 0) { added=1; print; next }
+        # Append UUID to existing array: [a, b] -> [a, b, uuid]
+        sub(/\]$/, ", " uuid "]")
+        added=1
       }
-    }
-  ' "$file" > "$tmp" && mv "$tmp" "$file"
+      # After sessions: block ends (next top-level key), insert key if not found
+      found_sessions && !found_key && /^[^ ]/ && !/^sessions:/ {
+        print "  " key ": [" uuid "]"
+        found_key=1; added=1
+      }
+      { print }
+      END {
+        # If sessions: block was never found, or key never added
+        if (!found_sessions) {
+          print "sessions:"
+          print "  " key ": [" uuid "]"
+        } else if (!added) {
+          print "  " key ": [" uuid "]"
+        }
+      }
+    ' "$file" > "$tmp" && mv "$tmp" "$file"
+  ) 200>"${file}.lock"
+  rm -f "${file}.lock"
 }
 
 # Find scope file by numeric ID across all directories

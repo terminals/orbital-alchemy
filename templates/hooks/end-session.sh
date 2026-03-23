@@ -12,7 +12,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PID="$PPID"
 
 # Emit session end event to Orbital dashboard (non-blocking)
-"$SCRIPT_DIR/orbital-emit.sh" SESSION_END "{\"pid\":$PID}" 2>/dev/null &
+SESSION_DATA="{\"pid\":$PID"
+# Include dispatch ID if this session was launched by Orbital dispatch
+if [ -n "$ORBITAL_DISPATCH_ID" ]; then
+  SESSION_DATA="${SESSION_DATA},\"dispatch_id\":\"$ORBITAL_DISPATCH_ID\""
+fi
+SESSION_DATA="${SESSION_DATA}}"
+"$SCRIPT_DIR/orbital-emit.sh" SESSION_END "$SESSION_DATA" 2>/dev/null &
 
 # Clean up cached session ID file (new glob format + old format)
 rm -f "$PROJECT_DIR/.claude/metrics/.session-ids/${PID}"-* 2>/dev/null

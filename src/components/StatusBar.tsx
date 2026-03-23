@@ -5,6 +5,7 @@ import { useWorkflow } from '@/hooks/useWorkflow.tsx';
 import { useTheme } from '@/hooks/useTheme';
 import { formatScopeId } from '@/lib/utils';
 import { cn } from '@/lib/utils';
+import { VersionBadge } from '@/components/VersionBadge';
 import type { Scope } from '@/types';
 
 export function StatusBar() {
@@ -46,40 +47,53 @@ export function StatusBar() {
     return { inProgress: groupByStatus(prog, columnOrder), needsAttention: groupByStatus(attn, columnOrder) };
   }, [scopes, entryPointId, engine, columnOrder]);
 
-  if (inProgress.size === 0 && needsAttention.size === 0) return null;
-
   const handleBadgeClick = (e: React.MouseEvent, scopeId: number) => {
     e.stopPropagation();
     navigate(`/?highlight=${scopeId}`);
   };
+
+  const hasScopes = inProgress.size > 0 || needsAttention.size > 0;
 
   return (
     <div className={cn(
       'fixed bottom-0 left-24 right-0 z-40 border-t border-border bg-surface/95 backdrop-blur-sm',
       neonGlass && 'ticker-glass'
     )}>
-      <div className="flex items-center gap-4 overflow-x-auto px-4 py-2">
-        {inProgress.size > 0 && (
-          <>
-            <span className="flex-shrink-0 text-xxs uppercase tracking-wider font-normal text-muted-foreground">
-              In Progress
-            </span>
-            <ScopeBadges groups={inProgress} colorMap={columnColorMap} onClick={handleBadgeClick} />
-          </>
+      <div className="flex items-center px-4 py-2">
+        {/* Scrollable scope badges */}
+        {hasScopes && (
+          <div className="flex min-w-0 flex-1 items-center gap-4 overflow-x-auto">
+            {inProgress.size > 0 && (
+              <>
+                <span className="flex-shrink-0 text-xxs uppercase tracking-wider font-normal text-muted-foreground">
+                  In Progress
+                </span>
+                <ScopeBadges groups={inProgress} colorMap={columnColorMap} onClick={handleBadgeClick} />
+              </>
+            )}
+
+            {inProgress.size > 0 && needsAttention.size > 0 && (
+              <div className="h-4 w-px flex-shrink-0 bg-border" />
+            )}
+
+            {needsAttention.size > 0 && (
+              <>
+                <span className="flex-shrink-0 text-xxs uppercase tracking-wider font-normal text-warning-amber">
+                  Needs Attention
+                </span>
+                <ScopeBadges groups={needsAttention} colorMap={columnColorMap} onClick={handleBadgeClick} />
+              </>
+            )}
+          </div>
         )}
 
-        {inProgress.size > 0 && needsAttention.size > 0 && (
-          <div className="h-4 w-px flex-shrink-0 bg-border" />
-        )}
+        {/* Spacer when no scopes */}
+        {!hasScopes && <div className="flex-1" />}
 
-        {needsAttention.size > 0 && (
-          <>
-            <span className="flex-shrink-0 text-xxs uppercase tracking-wider font-normal text-warning-amber">
-              Needs Attention
-            </span>
-            <ScopeBadges groups={needsAttention} colorMap={columnColorMap} onClick={handleBadgeClick} />
-          </>
-        )}
+        {/* Version badge — pinned right */}
+        <div className="flex-shrink-0 ml-4">
+          <VersionBadge />
+        </div>
       </div>
     </div>
   );

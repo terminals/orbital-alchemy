@@ -44,21 +44,36 @@ fi
 EVENTS_DIR="${PROJECT_ROOT}/.claude/orbital-events"
 mkdir -p "$EVENTS_DIR"
 
-# Validate and sanitize inputs for JSON safety
+# Validate inputs
 [[ -n "$SCOPE_ID" && ! "$SCOPE_ID" =~ ^[0-9]+$ ]] && SCOPE_ID=""
-AGENT=$(printf '%s' "$AGENT" | sed 's/["\\]/\\&/g')
-SESSION_ID=$(printf '%s' "$SESSION_ID" | sed 's/["\\]/\\&/g')
 
-# Build JSON with optional top-level fields
+# Validate EVENT_DATA is valid JSON; fall back to wrapping as string
+if ! echo "$EVENT_DATA" | jq empty 2>/dev/null; then
+  EVENT_DATA=$(jq -n --arg d "$EVENT_DATA" '$d')
+fi
+
+# Build JSON with optional top-level fields using jq for safe escaping
 EVENT_FILE="${EVENTS_DIR}/${EVENT_ID}.json"
 
-# Use printf for atomic write with optional fields
-JSON="{\"id\":\"$EVENT_ID\",\"type\":\"$EVENT_TYPE\""
+JQ_ARGS=(
+  --arg id "$EVENT_ID"
+  --arg type "$EVENT_TYPE"
+  --argjson data "$EVENT_DATA"
+  --arg timestamp "$TIMESTAMP"
+)
+JQ_EXPR='{id: $id, type: $type, data: $data, timestamp: $timestamp}'
 
-[ -n "$SCOPE_ID" ] && JSON="$JSON,\"scope_id\":$SCOPE_ID"
-[ -n "$AGENT" ] && JSON="$JSON,\"agent\":\"$AGENT\""
-[ -n "$SESSION_ID" ] && JSON="$JSON,\"session_id\":\"$SESSION_ID\""
+if [ -n "$SCOPE_ID" ]; then
+  JQ_ARGS+=(--argjson scope_id "$SCOPE_ID")
+  JQ_EXPR='{id: $id, type: $type, scope_id: $scope_id, data: $data, timestamp: $timestamp}'
+fi
+if [ -n "$AGENT" ]; then
+  JQ_ARGS+=(--arg agent "$AGENT")
+  JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, agent: $agent}/')
+fi
+if [ -n "$SESSION_ID" ]; then
+  JQ_ARGS+=(--arg session_id "$SESSION_ID")
+  JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, session_id: $session_id}/')
+fi
 
-JSON="$JSON,\"data\":$EVENT_DATA,\"timestamp\":\"$TIMESTAMP\"}"
-
-printf '%s\n' "$JSON" > "$EVENT_FILE"
+jq -n "${JQ_ARGS[@]}" "$JQ_EXPR" > "$EVENT_FILE"

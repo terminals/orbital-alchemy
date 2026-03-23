@@ -5,8 +5,9 @@
 set -euo pipefail
 
 INPUT=$(cat)
+echo "$INPUT" | jq empty 2>/dev/null || exit 0
 
-SKILL=$(echo "$INPUT" | jq -r '.tool_input.skill // empty' 2>/dev/null)
+SKILL=$(echo "$INPUT" | jq -r '.tool_input.skill // empty')
 [ -z "$SKILL" ] && exit 0
 
 # Only gate skills that require agent teams

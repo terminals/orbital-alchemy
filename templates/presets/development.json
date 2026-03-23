@@ -4,20 +4,32 @@
   "branchingMode": "trunk",
   "lists": [
     { "id": "backlog", "label": "Backlog", "order": 0, "group": "planning", "color": "230 99% 67%", "hex": "#536dfe", "hasDirectory": true, "isEntryPoint": true },
-    { "id": "implementing", "label": "Implementing", "order": 1, "group": "development", "color": "40 100% 50%", "hex": "#ffaa00", "hasDirectory": true, "sessionKey": "implementScope" },
+    { "id": "implementing", "label": "Implementing", "order": 1, "group": "development", "color": "40 100% 50%", "hex": "#ffaa00", "hasDirectory": true, "sessionKey": "implementScope", "activeHooks": ["block-commit-implementing"] },
     { "id": "review", "label": "Review", "order": 2, "group": "development", "color": "263 69% 50%", "hex": "#6b26d9", "hasDirectory": true, "sessionKey": "reviewGate" },
     { "id": "completed", "label": "Completed", "order": 3, "group": "development", "color": "174 70% 42%", "hex": "#20b6aa", "hasDirectory": true, "sessionKey": "commit" },
     { "id": "dev", "label": "Dev", "order": 4, "group": "deploy", "color": "197 100% 63%", "hex": "#42c3ff", "hasDirectory": true, "gitBranch": "dev" }
   ],
   "edges": [
     { "from": "backlog", "to": "implementing", "direction": "forward", "command": "/scope-implement {id}", "confirmLevel": "quick", "label": "Start Implementing", "description": "Opens a Claude session running /scope-implement.", "dispatchOnly": true },
-    { "from": "implementing", "to": "review", "direction": "forward", "command": "/scope-post-review {id}", "confirmLevel": "full", "label": "Run Review Gate", "description": "Launches formal review gate.", "skipServerTransition": true, "dispatchOnly": true },
-    { "from": "review", "to": "completed", "direction": "forward", "command": "/git-commit", "confirmLevel": "full", "label": "Commit", "description": "Commits scope work to feature branch.", "skipServerTransition": true, "dispatchOnly": true },
+    { "from": "implementing", "to": "review", "direction": "forward", "command": "/scope-post-review {id}", "confirmLevel": "full", "label": "Run Review Gate", "description": "Launches formal review gate.", "dispatchOnly": true },
+    { "from": "review", "to": "completed", "direction": "forward", "command": "/git-commit", "confirmLevel": "full", "label": "Commit", "description": "Commits scope work to feature branch.", "dispatchOnly": true },
     { "from": "completed", "to": "dev", "direction": "forward", "command": "/git-dev", "confirmLevel": "full", "label": "Merge to Dev", "description": "Merges feature branch into dev.", "dispatchOnly": true },
     { "from": "review", "to": "implementing", "direction": "backward", "command": null, "confirmLevel": "quick", "label": "Back to Implementing", "description": "Re-opens implementation to address review findings.", "dispatchOnly": false },
-    { "from": "completed", "to": "implementing", "direction": "backward", "command": null, "confirmLevel": "quick", "label": "Back to Implementing", "description": "Re-opens implementation to fix issues.", "dispatchOnly": false }
+    { "from": "completed", "to": "implementing", "direction": "backward", "command": null, "confirmLevel": "quick", "label": "Back to Implementing", "description": "Re-opens implementation to fix issues.", "dispatchOnly": false },
+    { "from": "implementing", "to": "backlog", "direction": "backward", "command": null, "confirmLevel": "quick", "label": "Back to Backlog", "description": "Returns scope to backlog.", "dispatchOnly": false, "humanOnly": true }
   ],
-  "hooks": [],
+  "hooks": [
+    {
+      "id": "block-commit-implementing",
+      "label": "Block Commit (Implementing)",
+      "timing": "before",
+      "type": "shell",
+      "target": ".claude/hooks/block-push.sh",
+      "blocking": true,
+      "description": "Blocks git commit/add during implementing sessions",
+      "category": "guard"
+    }
+  ],
   "groups": [
     { "id": "planning", "label": "Planning", "order": 0 },
     { "id": "development", "label": "Development", "order": 1 },

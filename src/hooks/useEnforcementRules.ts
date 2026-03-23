@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { socket } from '../socket';
+import { useReconnect } from './useReconnect';
 import type { EnforcementRulesData, ViolationTrendPoint, OrbitalEvent } from '../types';
 
 export function useEnforcementRules() {
@@ -25,6 +26,8 @@ export function useEnforcementRules() {
   useEffect(() => {
     fetchRules();
   }, [fetchRules]);
+
+  useReconnect(fetchRules);
 
   // Re-fetch when new violations/overrides arrive
   useEffect(() => {

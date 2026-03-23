@@ -4,7 +4,8 @@
 set -e
 
 INPUT=$(cat)
-SKILL=$(echo "$INPUT" | jq -r '.tool_input.skill // empty' 2>/dev/null)
+echo "$INPUT" | jq empty 2>/dev/null || exit 0
+SKILL=$(echo "$INPUT" | jq -r '.tool_input.skill // empty')
 
 # Only track scope create invocations
 [[ "$SKILL" == "scope-create" ]] || exit 0

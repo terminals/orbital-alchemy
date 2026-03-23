@@ -9,10 +9,13 @@
 set -e
 
 INPUT=$(cat)
+# Validate JSON input
+echo "$INPUT" | jq empty 2>/dev/null || exit 0
+
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
 # Extract the file being edited/written
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
+FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 [ -z "$FILE_PATH" ] && exit 0
 
 # Only enforce on scope files (bash case * matches / in patterns)
@@ -22,7 +25,7 @@ case "$FILE_PATH" in
 esac
 
 # ─── Determine tool type and extract statuses ───
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // "Edit"' 2>/dev/null)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // "Edit"')
 
 if [ "$TOOL_NAME" = "Write" ]; then
   # Write tool: compare existing file on disk vs new content
@@ -31,15 +34,15 @@ if [ "$TOOL_NAME" = "Write" ]; then
     exit 0
   fi
   OLD_STATUS=$(sed -n '/^---$/,/^---$/p' "$FILE_PATH" | grep -oE '^status:\s*\S+' | head -1 | sed 's/status:[[:space:]]*//')
-  NEW_CONTENT=$(echo "$INPUT" | jq -r '.tool_input.content // empty' 2>/dev/null)
+  NEW_CONTENT=$(echo "$INPUT" | jq -r '.tool_input.content // empty')
   [ -z "$NEW_CONTENT" ] && exit 0
   TARGET_STATUS=$(echo "$NEW_CONTENT" | sed -n '/^---$/,/^---$/p' | grep -oE '^status:\s*\S+' | head -1 | sed 's/status:[[:space:]]*//')
 else
   # Edit tool: compare old_string vs new_string
-  NEW_STRING=$(echo "$INPUT" | jq -r '.tool_input.new_string // empty' 2>/dev/null)
+  NEW_STRING=$(echo "$INPUT" | jq -r '.tool_input.new_string // empty')
   [ -z "$NEW_STRING" ] && exit 0
   TARGET_STATUS=$(echo "$NEW_STRING" | grep -oE 'status:\s*\S+' | head -1 | sed 's/status:[[:space:]]*//')
-  OLD_STRING=$(echo "$INPUT" | jq -r '.tool_input.old_string // empty' 2>/dev/null)
+  OLD_STRING=$(echo "$INPUT" | jq -r '.tool_input.old_string // empty')
   OLD_STATUS=$(echo "$OLD_STRING" | grep -oE 'status:\s*\S+' | head -1 | sed 's/status:[[:space:]]*//')
 fi
 
@@ -92,10 +95,19 @@ else
 fi
 
 # Get current session ID from hook stdin
-SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
+SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 if [ -z "$SESSION_ID" ]; then
   # If we can't identify the session, allow (graceful degradation)
   exit 0
+fi
+
+# ─── Record session UUID on scope for this transition ───
+# This ensures the UUID is present even for direct Edit transitions
+# (scope-lifecycle-gate.sh only records on Bash/git commands)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/scope-helpers.sh" 2>/dev/null || true
+if [ -f "$FILE_PATH" ] && type append_session_uuid &>/dev/null; then
+  append_session_uuid "$FILE_PATH" "$REQUIRED_KEY" "$SESSION_ID"
 fi
 
 # ─── Read scope file and check sessions block ───
@@ -118,14 +130,14 @@ SESSIONS_LINE=$(echo "$FRONTMATTER" | grep "^[[:space:]]*$REQUIRED_KEY:" | head 
 
 if [ -z "$SESSIONS_LINE" ]; then
   # sessions: block exists but this key is missing — session not recorded
-  echo "MUST_BLOCK: Session $SESSION_ID not found in sessions.$REQUIRED_KEY. The scope-lifecycle-gate hook should have recorded this — check .claude/hooks/scope-lifecycle-gate.sh."
+  echo "MUST_BLOCK: Session $SESSION_ID not found in sessions.$REQUIRED_KEY. The scope-lifecycle-gate hook should have recorded this — check .claude/hooks/scope-lifecycle-gate.sh. Format: sessions use inline YAML arrays, e.g. $REQUIRED_KEY: [$SESSION_ID]" >&2
   exit 2
 fi
 
-# Check if our UUID appears in the line
-if echo "$SESSIONS_LINE" | grep -q "$SESSION_ID"; then
+# Check if our UUID appears in the line (fixed-string match, not regex)
+if echo "$SESSIONS_LINE" | grep -qF "$SESSION_ID"; then
   exit 0
 fi
 
-echo "MUST_BLOCK: Session $SESSION_ID not found in sessions.$REQUIRED_KEY. The scope-lifecycle-gate hook should have recorded this — check .claude/hooks/scope-lifecycle-gate.sh."
+echo "MUST_BLOCK: Session $SESSION_ID not found in sessions.$REQUIRED_KEY. The scope-lifecycle-gate hook should have recorded this — check .claude/hooks/scope-lifecycle-gate.sh. Format: sessions use inline YAML arrays — append UUID to existing array, e.g. $REQUIRED_KEY: [existing-uuid, $SESSION_ID]" >&2
 exit 2

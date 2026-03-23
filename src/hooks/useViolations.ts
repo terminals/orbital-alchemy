@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { socket } from '../socket';
+import { useReconnect } from './useReconnect';
 import type { OrbitalEvent } from '../types';
 
 interface ViolationsByRule {
@@ -46,6 +47,8 @@ export function useViolations() {
   }, []);
 
   useEffect(() => { fetchSummary(); }, [fetchSummary]);
+
+  useReconnect(fetchSummary);
 
   // Real-time: re-fetch when new VIOLATION or OVERRIDE events arrive
   useEffect(() => {

@@ -14,6 +14,9 @@ if [ "$TOOL_NAME" != "Edit" ] && [ "$TOOL_NAME" != "Write" ]; then
   exit 0
 fi
 
+# Require jq for JSON parsing and output
+command -v jq >/dev/null 2>&1 || exit 0
+
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
 [ -z "$FILE_PATH" ] && exit 0
 

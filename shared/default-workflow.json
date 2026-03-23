@@ -52,6 +52,7 @@
       "group": "development",
       "color": "45 93% 58%",
       "hex": "#eab308",
+      "supportsBatch": true,
       "hasDirectory": true,
       "sessionKey": "reviewGate"
     },
@@ -137,7 +138,6 @@
       "confirmLevel": "quick",
       "label": "Launch Post-Review",
       "description": "Runs quality gates, formal verification, and code review.",
-      "skipServerTransition": true,
       "dispatchOnly": true,
       "hooks": ["session-enforcer", "review-gate-check", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
     },
@@ -159,6 +159,18 @@
       "hooks": ["session-enforcer", "completion-checklist", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
     },
     {
+      "from": "implementing",
+      "to": "backlog",
+      "direction": "backward",
+      "command": null,
+      "confirmLevel": "quick",
+      "label": "Back to Backlog",
+      "description": "Returns this scope to the backlog. Use when implementation was not started or session failed.",
+      "dispatchOnly": false,
+      "humanOnly": true,
+      "hooks": ["session-enforcer", "scope-transition", "orbital-scope-update"]
+    },
+    {
       "from": "review",
       "to": "completed",
       "direction": "forward",
@@ -166,7 +178,6 @@
       "confirmLevel": "quick",
       "label": "Commit",
       "description": "Commits scope work.",
-      "skipServerTransition": true,
       "dispatchOnly": true,
       "hooks": ["session-enforcer", "completion-checklist", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update", "scope-commit-logger"]
     },

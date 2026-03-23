@@ -9,31 +9,33 @@
 set -euo pipefail
 
 INPUT=$(cat)
+echo "$INPUT" | jq empty 2>/dev/null || exit 0
 
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 [ -z "$TOOL_NAME" ] && TOOL_NAME="$CLAUDE_TOOL_NAME"
 
 # Only process Bash tool calls
 [ "$TOOL_NAME" != "Bash" ] && exit 0
 
-COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 [ -z "$COMMAND" ] && COMMAND="$INPUT"
 
 HOOK_DIR="$(dirname "$0")"
 
 # Override mechanism: OVERRIDE_RULE="rule-name:reason"
 # When set, logs the override and allows the command through
-if [ -n "$OVERRIDE_RULE" ]; then
+if [ -n "${OVERRIDE_RULE:-}" ]; then
   RULE_NAME="${OVERRIDE_RULE%%:*}"
   REASON="${OVERRIDE_RULE#*:}"
-  "$HOOK_DIR/orbital-emit.sh" OVERRIDE "{\"rule\":\"$RULE_NAME\",\"reason\":\"$REASON\",\"outcome\":\"overridden\"}"
+  OVERRIDE_DATA=$(jq -n --arg rule "$RULE_NAME" --arg reason "$REASON" --arg outcome "overridden" '{rule: $rule, reason: $reason, outcome: $outcome}')
+  "$HOOK_DIR/orbital-emit.sh" OVERRIDE "$OVERRIDE_DATA"
   echo "OVERRIDE: Rule '$RULE_NAME' overridden (reason: $REASON)"
   exit 0
 fi
 
 # Pattern 1: --no-verify flag
 if echo "$COMMAND" | grep -qE "\-\-no-verify"; then
-  "$HOOK_DIR/orbital-emit.sh" VIOLATION "{\"rule\":\"no-verify\",\"pattern\":\"--no-verify\",\"outcome\":\"blocked\"}"
+  "$HOOK_DIR/orbital-emit.sh" VIOLATION '{"rule":"no-verify","pattern":"--no-verify","outcome":"blocked"}'
   echo "BLOCKED: Attempting to skip verification hooks"
   echo ""
   echo "Fix the failing checks instead:"
@@ -44,9 +46,9 @@ if echo "$COMMAND" | grep -qE "\-\-no-verify"; then
   exit 2
 fi
 
-# Pattern 2: Direct push to main
-if echo "$COMMAND" | grep -qE "git push[[:space:]]+[^-][^[:space:]]*[[:space:]]+main([[:space:]]|$)|git push.*(:main([[:space:]]|$)|HEAD:main)"; then
-  "$HOOK_DIR/orbital-emit.sh" VIOLATION "{\"rule\":\"push-main\",\"pattern\":\"push to main\",\"outcome\":\"blocked\"}"
+# Pattern 2: Direct push to main (covers: git push origin main, git push --force origin main, HEAD:main)
+if echo "$COMMAND" | grep -qE 'git push\b.*\bmain\b|HEAD:main'; then
+  "$HOOK_DIR/orbital-emit.sh" VIOLATION '{"rule":"push-main","pattern":"push to main","outcome":"blocked"}'
   echo "BLOCKED: Direct push to main is forbidden"
   echo ""
   echo "Use /git-commit to route to the proper workflow:"

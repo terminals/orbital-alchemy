@@ -19,7 +19,7 @@ import { startScopeWatcher } from './watchers/scope-watcher.js';
 import { startEventWatcher } from './watchers/event-watcher.js';
 import { ensureDynamicProfiles } from './utils/terminal-launcher.js';
 import { syncClaudeSessionsToDB } from './services/claude-session-service.js';
-import { resolveStaleDispatches, resolveActiveDispatchesForScope, resolveDispatchesByPid } from './utils/dispatch-utils.js';
+import { resolveStaleDispatches, resolveActiveDispatchesForScope, resolveDispatchesByPid, resolveDispatchesByDispatchId, linkPidToDispatch } from './utils/dispatch-utils.js';
 import { createScopeRoutes } from './routes/scope-routes.js';
 import { createDataRoutes } from './routes/data-routes.js';
 import { createDispatchRoutes } from './routes/dispatch-routes.js';
@@ -27,6 +27,7 @@ import { createSprintRoutes } from './routes/sprint-routes.js';
 import { createWorkflowRoutes } from './routes/workflow-routes.js';
 import { createConfigRoutes } from './routes/config-routes.js';
 import { createGitRoutes } from './routes/git-routes.js';
+import { createVersionRoutes } from './routes/version-routes.js';
 import { WorkflowService } from './services/workflow-service.js';
 import { GitService } from './services/git-service.js';
 import { GitHubService } from './services/github-service.js';
@@ -74,13 +75,8 @@ export async function startServer(overrides?: ServerOverrides): Promise<ServerIn
 
   const ICEBOX_DIR = path.join(config.scopesDir, 'icebox');
   // Resolve path to the bundled default workflow config.
-  // Works in both dev (server/) and compiled (dist/electron/server/) modes.
   const __selfDir2 = path.dirname(fileURLToPath(import.meta.url));
-  const configCandidates = [
-    path.resolve(__selfDir2, '../shared/default-workflow.json'),
-    path.resolve(__selfDir2, '../../..', 'shared/default-workflow.json'),
-  ];
-  const DEFAULT_CONFIG_PATH = configCandidates.find(p => fs.existsSync(p)) ?? configCandidates[0];
+  const DEFAULT_CONFIG_PATH = path.resolve(__selfDir2, '../shared/default-workflow.json');
 
   // Ensure icebox directory exists for idea files
   if (!fs.existsSync(ICEBOX_DIR)) fs.mkdirSync(ICEBOX_DIR, { recursive: true });
@@ -162,13 +158,31 @@ export async function startServer(overrides?: ServerOverrides): Promise<ServerIn
   }
 
   eventService.onIngest((eventType, scopeId, data) => {
-    // Handle SESSION_END: resolve all dispatches linked to the exiting PID
-    // and revert scopes that didn't complete their transition
-    if (eventType === 'SESSION_END' && typeof data.pid === 'number') {
-      const count = resolveDispatchesByPid(db, io, data.pid);
-      if (count > 0) {
-        // eslint-disable-next-line no-console
-        console.log(`[Orbital] SESSION_END: resolved ${count} dispatch(es) for PID ${data.pid}`);
+    // Handle SESSION_START: link PID to dispatch via dispatch_id env var
+    if (eventType === 'SESSION_START' && typeof data.dispatch_id === 'string' && typeof data.pid === 'number') {
+      linkPidToDispatch(db, data.dispatch_id, data.pid);
+      // eslint-disable-next-line no-console
+      console.log(`[Orbital] SESSION_START: linked PID ${data.pid} to dispatch ${data.dispatch_id}`);
+      return;
+    }
+
+    // Handle SESSION_END: resolve dispatches by dispatch_id (preferred) or PID (fallback)
+    if (eventType === 'SESSION_END') {
+      let count = 0;
+      if (typeof data.dispatch_id === 'string') {
+        count = resolveDispatchesByDispatchId(db, io, data.dispatch_id);
+        if (count > 0) {
+          // eslint-disable-next-line no-console
+          console.log(`[Orbital] SESSION_END: resolved ${count} dispatch(es) for dispatch_id ${data.dispatch_id}`);
+        }
+      }
+      // PID fallback for old hooks without dispatch_id
+      if (count === 0 && typeof data.pid === 'number') {
+        count = resolveDispatchesByPid(db, io, data.pid);
+        if (count > 0) {
+          // eslint-disable-next-line no-console
+          console.log(`[Orbital] SESSION_END: resolved ${count} dispatch(es) for PID ${data.pid} (fallback)`);
+        }
       }
       return;
     }
@@ -214,18 +228,13 @@ export async function startServer(overrides?: ServerOverrides): Promise<ServerIn
   app.use('/api/orbital', createWorkflowRoutes({ workflowService, projectRoot: config.projectRoot }));
   app.use('/api/orbital', createConfigRoutes({ projectRoot: config.projectRoot, workflowService, io }));
   app.use('/api/orbital', createGitRoutes({ gitService, githubService, engine: workflowEngine }));
+  app.use('/api/orbital', createVersionRoutes({ io }));
 
-  // ─── Static File Serving (Electron / production) ───────────
+  // ─── Static File Serving (production) ───────────────────────
 
-  // Resolve the Vite-built frontend dist directory.
-  // In dev mode (tsx): __dirname is server/, so ../dist works.
-  // In compiled mode (tsc output in dist/electron/server/): walk up to find dist/index.html.
+  // Resolve the Vite-built frontend dist directory (server/ → ../dist).
   const __selfDir = path.dirname(fileURLToPath(import.meta.url));
-  const distCandidates = [
-    path.resolve(__selfDir, '../dist'),         // dev: server/ → dist/
-    path.resolve(__selfDir, '../../..', 'dist'), // compiled: dist/electron/server/ → dist/
-  ];
-  const distDir = distCandidates.find(d => fs.existsSync(path.join(d, 'index.html'))) ?? distCandidates[0];
+  const distDir = path.resolve(__selfDir, '../dist');
   if (fs.existsSync(path.join(distDir, 'index.html'))) {
     app.use(express.static(distDir));
     app.get('*', (req, res, next) => {
@@ -331,7 +340,7 @@ export async function startServer(overrides?: ServerOverrides): Promise<ServerIn
       // eslint-disable-next-line no-console
       console.log(`[Orbital] Periodic cleanup: resolved ${batchCount} stale batch(es)`);
     }
-  }, 2 * 60 * 1000);
+  }, 30_000);
 
   // Sync frontmatter-derived sessions into DB (non-blocking)
   syncClaudeSessionsToDB(db, scopeService).then((count) => {

@@ -77,7 +77,7 @@ const COMMAND_WINDOW_MAP: Array<[string, WindowCategory]> = [
   ['/scope-post-review', 'Reviewing'],
   ['/scope-pre-review', 'Planning'],
   ['/scope-verify', 'Reviewing'],
-  ['/scope-create', 'Scoping'],
+  ['/scope-create', 'Planning'],
   ['/scope-implement', 'Implementing'],
   ['/git-commit', 'Deploying'],
   ['/git-staging', 'Deploying'],

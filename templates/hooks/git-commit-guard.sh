@@ -1,20 +1,34 @@
 #!/bin/bash
 # git-commit-guard.sh — PreToolUse:Skill hook
 #
-# Sets a flag when /git-commit is invoked so block-push.sh can
-# block git push during that skill. Clears the flag for any other skill.
+# Manages skill-scoped flag files so block-push.sh can enforce
+# stage-specific restrictions:
+#   /git-commit      → .block-push-active    (blocks git push)
+#   /scope-implement → .implementing-session  (blocks git commit/add)
+# Clears flags when any other skill is invoked.
 set -euo pipefail
 
 INPUT=$(cat)
+echo "$INPUT" | jq empty 2>/dev/null || exit 0
 
-SKILL=$(echo "$INPUT" | jq -r '.tool_input.skill // empty' 2>/dev/null)
+SKILL=$(echo "$INPUT" | jq -r '.tool_input.skill // empty')
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-FLAG="$PROJECT_DIR/.claude/.block-push-active"
 
+PUSH_FLAG="$PROJECT_DIR/.claude/.block-push-active"
+IMPL_FLAG="$PROJECT_DIR/.claude/.implementing-session"
+
+# /git-commit → block pushes during commit skill
 if [ "$SKILL" = "git-commit" ]; then
-  touch "$FLAG"
+  touch "$PUSH_FLAG"
 else
-  rm -f "$FLAG"
+  rm -f "$PUSH_FLAG"
+fi
+
+# /scope-implement → block commits during implementing
+if [ "$SKILL" = "scope-implement" ]; then
+  touch "$IMPL_FLAG"
+else
+  rm -f "$IMPL_FLAG"
 fi
 
 exit 0

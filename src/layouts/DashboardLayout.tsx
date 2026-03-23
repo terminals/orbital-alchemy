@@ -37,13 +37,8 @@ export function DashboardLayout() {
         </div>
       )}
 
-      {/* Drag region — allows window to be moved by dragging the top bar (Electron) */}
-      <div className="fixed top-0 left-0 right-0 h-10 z-50 electron-drag-region" />
-
       {/* Sidebar — compact icon-only */}
       <aside className="flex w-24 flex-col items-center border-r border-border bg-surface sidebar-glass">
-        {/* Spacer for macOS traffic lights */}
-        <div className="h-10 w-full flex-shrink-0" />
 
         {/* Logo */}
         <div className="flex h-20 items-center justify-center">

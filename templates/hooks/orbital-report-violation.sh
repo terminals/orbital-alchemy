@@ -18,10 +18,19 @@ DETAILS="${3:-}"
 
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Build JSON data payload
-DATA="{\"rule\":\"$RULE\",\"outcome\":\"detected\""
-[ -n "$FILE" ] && DATA="$DATA,\"file\":\"$FILE\""
-[ -n "$DETAILS" ] && DATA="$DATA,\"details\":\"$DETAILS\""
-DATA="$DATA}"
+# Build JSON data payload using jq for safe escaping
+JQ_ARGS=(--arg rule "$RULE" --arg outcome "detected")
+JQ_EXPR='{rule: $rule, outcome: $outcome}'
+
+if [ -n "$FILE" ]; then
+  JQ_ARGS+=(--arg file "$FILE")
+  JQ_EXPR='{rule: $rule, outcome: $outcome, file: $file}'
+fi
+if [ -n "$DETAILS" ]; then
+  JQ_ARGS+=(--arg details "$DETAILS")
+  JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, details: $details}/')
+fi
+
+DATA=$(jq -n "${JQ_ARGS[@]}" "$JQ_EXPR")
 
 "$HOOK_DIR/orbital-emit.sh" VIOLATION "$DATA"

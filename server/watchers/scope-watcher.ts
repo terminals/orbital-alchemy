@@ -15,19 +15,19 @@ export function startScopeWatcher(
 
   watcher
     .on('add', (filePath: string) => {
-      if (!filePath.endsWith('.md')) return;
+      if (!filePath.endsWith('.md') || scopeService.isSuppressed(filePath)) return;
       // eslint-disable-next-line no-console
       console.log(`[Orbital] Scope added: ${path.basename(filePath)}`);
       scopeService.updateFromFile(filePath);
     })
     .on('change', (filePath: string) => {
-      if (!filePath.endsWith('.md')) return;
+      if (!filePath.endsWith('.md') || scopeService.isSuppressed(filePath)) return;
       // eslint-disable-next-line no-console
       console.log(`[Orbital] Scope changed: ${path.basename(filePath)}`);
       scopeService.updateFromFile(filePath);
     })
     .on('unlink', (filePath: string) => {
-      if (!filePath.endsWith('.md')) return;
+      if (!filePath.endsWith('.md') || scopeService.isSuppressed(filePath)) return;
       // eslint-disable-next-line no-console
       console.log(`[Orbital] Scope removed: ${path.basename(filePath)}`);
       scopeService.removeByFilePath(filePath);

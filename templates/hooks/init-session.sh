@@ -5,7 +5,11 @@
 set -e
 
 INPUT=$(cat)
-SOURCE=$(echo "$INPUT" | jq -r '.source // "startup"' 2>/dev/null)
+if echo "$INPUT" | jq empty 2>/dev/null; then
+  SOURCE=$(echo "$INPUT" | jq -r '.source // "startup"')
+else
+  SOURCE="startup"
+fi
 [ -z "$SOURCE" ] && SOURCE="startup"
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
@@ -25,11 +29,18 @@ if [ -n "$SESSION_ID" ]; then
   done
 fi
 
-# Clean stale scope-create marker from previous sessions
+# Clean stale markers from previous sessions
 rm -f "$PROJECT_DIR/.claude/metrics/.scope-create-session"
+rm -f "$PROJECT_DIR/.claude/metrics/.exploration-count"
+rm -f "$PROJECT_DIR/.claude/metrics/.active-scope"
 
 # Resolve project name from orbital.config.json or git repo name
-PROJECT_NAME=$(cat "$PROJECT_DIR/.claude/orbital.config.json" 2>/dev/null | grep '"projectName"' | sed 's/.*: *"//;s/".*//' || basename "$(git -C "$PROJECT_DIR" rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo "Project")
+PROJECT_NAME=""
+if command -v jq >/dev/null 2>&1 && [ -f "$PROJECT_DIR/.claude/orbital.config.json" ]; then
+  PROJECT_NAME=$(jq -r '.projectName // empty' "$PROJECT_DIR/.claude/orbital.config.json" 2>/dev/null)
+fi
+[ -z "$PROJECT_NAME" ] && PROJECT_NAME=$(basename "$(git -C "$PROJECT_DIR" rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || true
+[ -z "$PROJECT_NAME" ] && PROJECT_NAME="Project"
 
 # Abbreviated banner for resumed/compacted sessions
 if [ "$SOURCE" = "resume" ] || [ "$SOURCE" = "compact" ]; then
@@ -71,6 +82,12 @@ EOF
 
 # Emit session start event to Orbital dashboard (non-blocking)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-"$SCRIPT_DIR/orbital-emit.sh" SESSION_START "{\"source\":\"$SOURCE\"}" 2>/dev/null &
+SESSION_DATA="{\"source\":\"$SOURCE\",\"pid\":$PPID"
+# Include dispatch ID if this session was launched by Orbital dispatch
+if [ -n "$ORBITAL_DISPATCH_ID" ]; then
+  SESSION_DATA="${SESSION_DATA},\"dispatch_id\":\"$ORBITAL_DISPATCH_ID\""
+fi
+SESSION_DATA="${SESSION_DATA}}"
+"$SCRIPT_DIR/orbital-emit.sh" SESSION_START "$SESSION_DATA" 2>/dev/null &
 
 exit 0

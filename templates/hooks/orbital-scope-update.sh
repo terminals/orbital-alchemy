@@ -21,25 +21,20 @@ ORBITAL_API="http://localhost:4444/api/orbital"
 if command -v curl &>/dev/null; then
   # Check if it's a bulk update (comma-separated IDs)
   if [[ "$SCOPE_IDS" == *","* ]]; then
-    # Build bulk JSON payload
-    SCOPES_JSON="["
-    FIRST=true
+    # Build bulk JSON payload using jq for safe escaping
     IFS=',' read -ra IDS <<< "$SCOPE_IDS"
-    for id in "${IDS[@]}"; do
-      id=$(echo "$id" | tr -d ' ')
-      [ "$FIRST" = true ] && FIRST=false || SCOPES_JSON="$SCOPES_JSON,"
-      SCOPES_JSON="$SCOPES_JSON{\"id\":$id,\"status\":\"$STATUS\"}"
-    done
-    SCOPES_JSON="$SCOPES_JSON]"
+    SCOPES_JSON=$(printf '%s\n' "${IDS[@]}" | tr -d ' ' | jq -R 'tonumber' | jq -s --arg status "$STATUS" '[.[] | {id: ., status: $status}]')
+    PAYLOAD=$(jq -n --argjson scopes "$SCOPES_JSON" '{scopes: $scopes}')
 
     HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH \
       -H 'Content-Type: application/json' \
-      -d "{\"scopes\":$SCOPES_JSON}" \
+      -d "$PAYLOAD" \
       "$ORBITAL_API/scopes/bulk/status" 2>/dev/null) || true
   else
+    PAYLOAD=$(jq -n --arg status "$STATUS" '{status: $status}')
     HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH \
       -H 'Content-Type: application/json' \
-      -d "{\"status\":\"$STATUS\"}" \
+      -d "$PAYLOAD" \
       "$ORBITAL_API/scopes/$SCOPE_IDS" 2>/dev/null) || true
   fi
 
@@ -53,5 +48,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 IFS=',' read -ra IDS <<< "$SCOPE_IDS"
 for id in "${IDS[@]}"; do
   id=$(echo "$id" | tr -d ' ')
-  "$SCRIPT_DIR/orbital-emit.sh" SCOPE_STATUS_CHANGED "{\"to\":\"$STATUS\"}" --scope "$id" 2>/dev/null &
+  DATA=$(jq -n --arg to "$STATUS" '{to: $to}')
+  "$SCRIPT_DIR/orbital-emit.sh" SCOPE_STATUS_CHANGED "$DATA" --scope "$id" 2>/dev/null &
 done

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { socket } from '../socket';
+import { useReconnect } from './useReconnect';
 import type { Scope } from '../types';
 
 export function useScopes() {
@@ -24,6 +25,8 @@ export function useScopes() {
   useEffect(() => {
     fetchScopes();
   }, [fetchScopes]);
+
+  useReconnect(fetchScopes);
 
   // Real-time updates via Socket.io
   useEffect(() => {

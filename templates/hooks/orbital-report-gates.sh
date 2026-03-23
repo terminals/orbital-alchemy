@@ -21,15 +21,16 @@ ORBITAL_URL="${ORBITAL_URL:-http://localhost:4444}"
 COMMIT_SHA="${ORBITAL_GATE_COMMIT_SHA:-$(git rev-parse --short HEAD 2>/dev/null || echo "")}"
 SCOPE_ID="${ORBITAL_GATE_SCOPE_ID:-null}"
 
-# Build JSON payload
-PAYLOAD="{\"gate_name\":\"$GATE_NAME\",\"status\":\"$STATUS\""
+# Build JSON payload using jq for safe escaping
+JQ_ARGS=(--arg gate_name "$GATE_NAME" --arg status "$STATUS")
+JQ_EXPR='{gate_name: $gate_name, status: $status}'
 
-[ "$SCOPE_ID" != "null" ] && PAYLOAD="$PAYLOAD,\"scope_id\":$SCOPE_ID"
-[ "$DURATION_MS" != "null" ] && PAYLOAD="$PAYLOAD,\"duration_ms\":$DURATION_MS"
-[ -n "$COMMIT_SHA" ] && PAYLOAD="$PAYLOAD,\"commit_sha\":\"$COMMIT_SHA\""
-[ -n "$DETAILS" ] && PAYLOAD="$PAYLOAD,\"details\":\"$DETAILS\""
+[ "$SCOPE_ID" != "null" ] && JQ_ARGS+=(--argjson scope_id "$SCOPE_ID") && JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, scope_id: $scope_id}/')
+[ "$DURATION_MS" != "null" ] && JQ_ARGS+=(--argjson duration_ms "$DURATION_MS") && JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, duration_ms: $duration_ms}/')
+[ -n "$COMMIT_SHA" ] && JQ_ARGS+=(--arg commit_sha "$COMMIT_SHA") && JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, commit_sha: $commit_sha}/')
+[ -n "$DETAILS" ] && JQ_ARGS+=(--arg details "$DETAILS") && JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, details: $details}/')
 
-PAYLOAD="$PAYLOAD}"
+PAYLOAD=$(jq -n "${JQ_ARGS[@]}" "$JQ_EXPR")
 
 # POST to Orbital server — silent fail if not running
 curl --fail --silent --max-time 2 \

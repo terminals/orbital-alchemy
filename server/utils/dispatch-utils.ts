@@ -9,20 +9,25 @@ interface DispatchRow {
   scope_id: number | null;
 }
 
-/** Mark a DISPATCH event as resolved and emit socket notification.
- *  Changed from original: queries scope_id alongside data, emits dispatch:resolved */
+/** Mark a DISPATCH event as resolved and emit socket notification. */
 export function resolveDispatchEvent(
   db: Database.Database,
   io: Server,
   eventId: string,
-  outcome: 'completed' | 'failed',
+  outcome: 'completed' | 'failed' | 'abandoned',
   error?: string,
 ): void {
   const row = db.prepare('SELECT data, scope_id FROM events WHERE id = ?')
     .get(eventId) as DispatchRow | undefined;
   if (!row) return;
 
-  const data = JSON.parse(row.data);
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(row.data);
+  } catch (e) {
+    console.error(`[Orbital] Failed to parse DISPATCH event ${eventId} data:`, e);
+    return;
+  }
   data.resolved = { outcome, at: new Date().toISOString(), ...(error ? { error } : {}) };
   db.prepare('UPDATE events SET data = ? WHERE id = ?').run(JSON.stringify(data), eventId);
 
@@ -38,7 +43,7 @@ export function resolveActiveDispatchesForScope(
   db: Database.Database,
   io: Server,
   scopeId: number,
-  outcome: 'completed' | 'failed',
+  outcome: 'completed' | 'failed' | 'abandoned',
 ): void {
   const rows = db.prepare(
     `SELECT id FROM events
@@ -50,8 +55,29 @@ export function resolveActiveDispatchesForScope(
   }
 }
 
+/** Re-resolve abandoned DISPATCH events for a scope as completed.
+ *  Used by both recover and dismiss-abandoned routes to clear abandoned state. */
+export function resolveAbandonedDispatchesForScope(
+  db: Database.Database,
+  io: Server,
+  scopeId: number,
+): number {
+  const rows = db.prepare(
+    `SELECT id FROM events
+     WHERE type = 'DISPATCH' AND scope_id = ?
+       AND JSON_EXTRACT(data, '$.resolved.outcome') = 'abandoned'`,
+  ).all(scopeId) as Array<{ id: string }>;
+
+  for (const row of rows) {
+    resolveDispatchEvent(db, io, row.id, 'completed');
+  }
+
+  return rows.length;
+}
+
 /** Store the PID of the Claude session working on a dispatch.
- *  Called after discoverNewSession finds the launched session. */
+ *  Called after discoverNewSession finds the launched session, or when
+ *  a SESSION_START event includes ORBITAL_DISPATCH_ID from the env var. */
 export function linkPidToDispatch(
   db: Database.Database,
   eventId: string,
@@ -60,7 +86,13 @@ export function linkPidToDispatch(
   const row = db.prepare('SELECT data FROM events WHERE id = ?')
     .get(eventId) as { data: string } | undefined;
   if (!row) return;
-  const data = JSON.parse(row.data);
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(row.data);
+  } catch (e) {
+    console.error(`[Orbital] Failed to parse DISPATCH event ${eventId} data:`, e);
+    return;
+  }
   data.pid = pid;
   db.prepare('UPDATE events SET data = ? WHERE id = ?').run(JSON.stringify(data), eventId);
 }
@@ -85,14 +117,33 @@ export function resolveDispatchesByPid(
   ).all(pid) as Array<{ id: string }>;
 
   for (const row of rows) {
-    resolveDispatchEvent(db, io, row.id, 'completed');
+    resolveDispatchEvent(db, io, row.id, 'abandoned');
   }
 
   return rows.length;
 }
 
-/** Fallback age threshold for dispatches without a linked PID (4 hours). */
-const STALE_AGE_MS = 4 * 60 * 60 * 1000;
+/** Resolve all unresolved DISPATCH events linked to a specific dispatch ID.
+ *  Called when a SESSION_END event includes dispatch_id from ORBITAL_DISPATCH_ID env var.
+ *  Defaults to 'abandoned' — successful completions emit AGENT_COMPLETED first
+ *  which resolves via inferScopeStatus as 'completed'. */
+export function resolveDispatchesByDispatchId(
+  db: Database.Database,
+  io: Server,
+  dispatchId: string,
+): number {
+  const row = db.prepare(
+    `SELECT id FROM events
+     WHERE id = ? AND type = 'DISPATCH' AND JSON_EXTRACT(data, '$.resolved') IS NULL`,
+  ).get(dispatchId) as { id: string } | undefined;
+
+  if (!row) return 0;
+  resolveDispatchEvent(db, io, row.id, 'abandoned');
+  return 1;
+}
+
+/** Fallback age threshold for dispatches without a linked PID (30 minutes). */
+const STALE_AGE_MS = 30 * 60 * 1000;
 
 /** Get all scope IDs that have actively running DISPATCH events.
  *  Uses PID liveness (process.kill(pid, 0)) when available, falls back to
@@ -115,7 +166,13 @@ export function getActiveScopeIds(db: Database.Database, scopeService: ScopeServ
     const scope = scopeService.getById(row.scope_id);
     if (scope && engine.isTerminalStatus(scope.status)) continue;
 
-    const data = JSON.parse(row.data);
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(row.data);
+    } catch (e) {
+      console.error(`[Orbital] Failed to parse DISPATCH event data for scope ${row.scope_id}:`, e);
+      continue;
+    }
     if (typeof data.pid === 'number') {
       // Preferred: check if the Claude session process is still running
       if (isSessionPidAlive(data.pid)) {
@@ -138,7 +195,7 @@ export function getActiveScopeIds(db: Database.Database, scopeService: ScopeServ
 }
 
 /** Resolve stale DISPATCH events. Three staleness criteria:
- *  1. Scope already in a terminal state (completed/dev/staging/production)
+ *  1. Scope already in a terminal state (as defined by workflow config)
  *  2. Linked PID is no longer running (session ended/crashed)
  *  3. No linked PID and dispatch older than STALE_AGE_MS (fallback)
  *  Called once at startup and periodically to clean up unresolved dispatches.
@@ -172,7 +229,13 @@ export function resolveStaleDispatches(db: Database.Database, io: Server, scopeS
     }
 
     // Criteria 2+3: dead PID or old age
-    const data = JSON.parse(row.data);
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(row.data);
+    } catch (e) {
+      console.error(`[Orbital] Failed to parse DISPATCH event ${row.id} data:`, e);
+      continue;
+    }
     let isStale = false;
 
     if (typeof data.pid === 'number') {
@@ -182,10 +245,65 @@ export function resolveStaleDispatches(db: Database.Database, io: Server, scopeS
     }
 
     if (isStale) {
-      resolveDispatchEvent(db, io, row.id, 'completed');
+      resolveDispatchEvent(db, io, row.id, 'abandoned');
       resolved++;
     }
   }
 
   return resolved;
+}
+
+/** Get scope IDs with recent abandoned dispatch outcomes.
+ *  Returns an array of abandoned scope entries with scope_id, from_status, and abandoned_at.
+ *  Only includes scopes that are NOT currently in a terminal state and
+ *  do NOT have a newer active (unresolved) dispatch. */
+export function getAbandonedScopeIds(
+  db: Database.Database,
+  scopeService: ScopeService,
+  engine: WorkflowEngine,
+  activeScopeIds?: number[],
+): Array<{ scope_id: number; from_status: string | null; abandoned_at: string }> {
+  const rows = db.prepare(
+    `SELECT scope_id, data, timestamp FROM events
+     WHERE type = 'DISPATCH'
+       AND scope_id IS NOT NULL
+       AND JSON_EXTRACT(data, '$.resolved.outcome') = 'abandoned'
+     ORDER BY timestamp DESC`,
+  ).all() as Array<{ scope_id: number; data: string; timestamp: string }>;
+
+  // Get active scope IDs to exclude scopes with new dispatches
+  const activeScopes = activeScopeIds ?? getActiveScopeIds(db, scopeService, engine);
+  const activeSet = new Set(activeScopes);
+
+  const seen = new Set<number>();
+  const result: Array<{ scope_id: number; from_status: string | null; abandoned_at: string }> = [];
+
+  for (const row of rows) {
+    if (seen.has(row.scope_id)) continue;
+    seen.add(row.scope_id);
+
+    // Skip if scope has a new active dispatch
+    if (activeSet.has(row.scope_id)) continue;
+
+    // Skip if scope is in terminal state
+    const scope = scopeService.getById(row.scope_id);
+    if (!scope) continue;
+    if (engine.isTerminalStatus(scope.status)) continue;
+
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(row.data);
+    } catch (e) {
+      console.error(`[Orbital] Failed to parse DISPATCH event data for scope ${row.scope_id}:`, e);
+      continue;
+    }
+    const transition = data.transition as Record<string, unknown> | null;
+    const resolved = data.resolved as Record<string, unknown> | null;
+    const fromStatus = transition?.from as string ?? null;
+    const abandonedAt = resolved?.at as string ?? row.timestamp;
+
+    result.push({ scope_id: row.scope_id, from_status: fromStatus, abandoned_at: abandonedAt });
+  }
+
+  return result;
 }

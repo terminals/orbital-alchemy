@@ -199,10 +199,11 @@ export class BatchOrchestrator {
         }
       }
 
-      // Phase 2: check PID liveness
+      // Phase 2: check PID liveness (check both unresolved and resolved events —
+      // SESSION_END may have resolved the dispatch event before we get here)
       const dispatchEvent = this.db.prepare(
         `SELECT data FROM events
-         WHERE type = 'DISPATCH' AND JSON_EXTRACT(data, '$.batch_id') = ? AND JSON_EXTRACT(data, '$.resolved') IS NULL
+         WHERE type = 'DISPATCH' AND JSON_EXTRACT(data, '$.batch_id') = ?
          ORDER BY timestamp DESC LIMIT 1`,
       ).get(id) as { data: string } | undefined;
 
@@ -210,7 +211,10 @@ export class BatchOrchestrator {
 
       if (dispatchEvent) {
         const data = JSON.parse(dispatchEvent.data) as Record<string, unknown>;
-        if (typeof data.pid === 'number') {
+        // If the dispatch event is already resolved, the session is definitely done
+        if (data.resolved != null) {
+          pidDead = true;
+        } else if (typeof data.pid === 'number') {
           pidDead = !isSessionPidAlive(data.pid);
         } else {
           // No PID recorded — check if batch is old enough to consider stale
@@ -259,16 +263,20 @@ export class BatchOrchestrator {
         }
       }
 
-      // Check if dispatch PID is still alive
+      // Check if dispatch PID is still alive (include resolved events —
+      // SESSION_END may have resolved the dispatch before server restart)
       const dispatchEvent = this.db.prepare(
         `SELECT data FROM events
-         WHERE type = 'DISPATCH' AND JSON_EXTRACT(data, '$.batch_id') = ? AND JSON_EXTRACT(data, '$.resolved') IS NULL
+         WHERE type = 'DISPATCH' AND JSON_EXTRACT(data, '$.batch_id') = ?
          ORDER BY timestamp DESC LIMIT 1`,
       ).get(id) as { data: string } | undefined;
 
       if (dispatchEvent) {
         const data = JSON.parse(dispatchEvent.data);
-        if (typeof data.pid === 'number' && !isSessionPidAlive(data.pid)) {
+        if (data.resolved != null) {
+          // Dispatch already resolved — session is done
+          this.onSessionPidDied(id);
+        } else if (typeof data.pid === 'number' && !isSessionPidAlive(data.pid)) {
           // PID is dead — trigger two-phase completion check
           this.onSessionPidDied(id);
         }

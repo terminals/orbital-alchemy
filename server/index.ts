@@ -190,6 +190,11 @@ export async function startServer(overrides?: ServerOverrides): Promise<ServerIn
           log.info('SESSION_END: resolved dispatches by PID fallback', { count, pid: data.pid });
         }
       }
+      // Immediately resolve any batches/sprints whose session just ended,
+      // rather than waiting for the next stale-check interval
+      if (count > 0) {
+        batchOrchestrator.resolveStaleBatches();
+      }
       return;
     }
 

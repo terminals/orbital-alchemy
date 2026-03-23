@@ -15,6 +15,8 @@ export class ScopeService {
   private onStatusChangeCallbacks: Array<(id: number, status: string) => void> = [];
   private activeGroupCheck: ((scopeId: number) => { sprint_id: number; group_type: string } | null) | null = null;
   private suppressedPaths = new Set<string>();
+  /** Stash old status when removeByFilePath fires before updateFromFile (chokidar unlink→add) */
+  private recentlyRemoved = new Map<number, string>();
 
   constructor(
     private cache: ScopeCache,
@@ -54,18 +56,37 @@ export class ScopeService {
     const scope = parseScopeFile(filePath);
     if (!scope) return;
 
-    const existing = this.cache.has(scope.id);
+    const previous = this.cache.getById(scope.id);
+    const previousStatus = previous?.status ?? this.recentlyRemoved.get(scope.id);
+    const existing = previous != null;
     this.cache.set(scope);
+    this.recentlyRemoved.delete(scope.id);
 
     const event = existing ? 'scope:updated' : 'scope:created';
     this.io.emit(event, scope);
+
+    // Fire onStatusChange callbacks when status changed via external file move
+    // (e.g. scope-transition.sh, manual mv). This ensures batch/sprint
+    // orchestrators are notified even when the change bypasses updateStatus().
+    // Chokidar fires unlink→add for moves, so the cache entry may already be
+    // removed by removeByFilePath — check recentlyRemoved for the old status.
+    if (previousStatus != null && previousStatus !== scope.status) {
+      for (const cb of this.onStatusChangeCallbacks) cb(scope.id, scope.status);
+    }
   }
 
   /** Remove a scope when its file is deleted */
   removeByFilePath(filePath: string): void {
+    // Stash status before removal so updateFromFile can detect external moves
+    // (chokidar fires unlink before add when a file is moved between directories)
+    const scopeId = this.cache.idByFilePath(filePath);
+    const previous = scopeId != null ? this.cache.getById(scopeId) : undefined;
     const id = this.cache.removeByFilePath(filePath);
     if (id !== undefined) {
+      if (previous) this.recentlyRemoved.set(id, previous.status);
       this.io.emit('scope:deleted', id);
+      // Clean up stash after a short window (if add never fires, this was a real delete)
+      setTimeout(() => this.recentlyRemoved.delete(id), 5000);
     }
   }
 

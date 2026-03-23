@@ -40,6 +40,11 @@ export class ScopeCache {
     return id;
   }
 
+  /** Look up scope ID by file path (used before removal to stash status) */
+  idByFilePath(filePath: string): number | undefined {
+    return this.filePathToId.get(filePath);
+  }
+
   /** Check if scope exists by ID */
   has(id: number): boolean {
     return this.byId.has(id);

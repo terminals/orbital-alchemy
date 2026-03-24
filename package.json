@@ -1,6 +1,6 @@
 {
   "name": "orbital-command",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Orbital Command — mission control dashboard for Claude Code projects",
   "type": "module",
   "license": "MIT",

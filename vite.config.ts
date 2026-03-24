@@ -12,7 +12,15 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ['debug'],
+    include: [
+      'debug',
+      'style-to-js',
+      'loose-envify',
+      'scheduler',
+      'prop-types',
+      'react-is',
+      'ms',
+    ],
   },
   server: {
     port: 4445,

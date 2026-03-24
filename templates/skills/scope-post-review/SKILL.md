@@ -66,7 +66,8 @@ Run the 13 quality gates. This is the cheapest and fastest check.
 Run the scope-specific formal review gate.
 
 1. Invoke: `Skill(skill: "scope-verify", args: "NNN")`
-2. If verdict is FAIL:
+2. **Do NOT emit** the `AGENT_COMPLETED` event here — this pipeline owns the emit timing. The emit happens after Phase 3 or Phase 4 (see Completion Event below).
+3. If verdict is FAIL:
    ```
    ╔═══════════════════════════════════════════════════════════════╗
    ║  Phase 2 FAILED — Scope verification did not pass            ║
@@ -75,7 +76,7 @@ Run the scope-specific formal review gate.
    ╚═══════════════════════════════════════════════════════════════╝
    ```
    **STOP** — do not proceed to Phase 3.
-3. If verdict is PASS → continue to Phase 3.
+4. If verdict is PASS → continue to Phase 3.
 
 ### Phase 3: AI Code Review (`/test-code-review`)
 
@@ -117,6 +118,25 @@ Execute all Phase 3 findings using a coordinated agent team. **This phase requir
    ╚═══════════════════════════════════════════════════════════════╝
    ```
    Phase 4 is skipped but does **not** block the pipeline. The setting is enabled for next time.
+
+### Completion Event
+
+Emit the `AGENT_COMPLETED` event at the **actual** completion point — not during Phase 2:
+
+- **After Phase 3** if code review found **zero blockers and zero warnings** (suggestions only or clean):
+  ```bash
+  bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","verdict":"PASS"}' --scope "{NNN}"
+  ```
+- **After Phase 4** if code review found warnings/blockers and fixes were applied:
+  ```bash
+  bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","verdict":"PASS"}' --scope "{NNN}"
+  ```
+- **Phase 4 skipped** (agent teams not enabled) — emit after reporting the skip, since findings exist but cannot be auto-fixed:
+  ```bash
+  bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","verdict":"PASS","pending_fixes":N}' --scope "{NNN}"
+  ```
+
+**Important**: Phase 2 (`/scope-verify`) normally emits its own `AGENT_COMPLETED` event when run standalone. When called from this pipeline, **skip that emit** — this pipeline owns the emit timing.
 
 ### Final Report
 

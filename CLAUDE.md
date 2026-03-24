@@ -80,3 +80,21 @@ Both use `strict: true`, `noUnusedLocals`, `noUnusedParameters`, ES2022 target.
 - shadcn/ui components live in `src/components/ui/` (New York style, zinc base color, CSS variables).
 - ScopeStatus is a dynamic string (not an enum) — validated at runtime via `WorkflowEngine.isValidStatus()`.
 - Route factories in `server/routes/` follow a pattern: `export function createXRoutes(deps: { ... }): Router`.
+
+## Self-hosting: symlinked templates
+
+This repo uses Orbital Command on itself. To prevent drift between `templates/` (git-tracked, published to npm) and `.claude/` (runtime), the following `.claude/` directories are **symlinks** into `templates/`:
+
+- `.claude/hooks/*.sh` → `templates/hooks/*.sh`
+- `.claude/skills/*/` → `templates/skills/*/`
+- `.claude/agents/*/` → `templates/agents/*/`
+- `.claude/config/workflows/*.json` → `templates/presets/*.json`
+- `.claude/config/agent-triggers.json` → `templates/config/agent-triggers.json`
+- `.claude/quick/` → `templates/quick/`
+- `.claude/anti-patterns/` → `templates/anti-patterns/`
+- `.claude/lessons-learned.md` → `templates/lessons-learned.md`
+
+**Rules:**
+- Always edit `templates/` (the git-tracked source), not `.claude/` directly.
+- Do NOT run `orbital update` in this repo — it overwrites symlinks with copies.
+- Do NOT replace symlinks with regular files.

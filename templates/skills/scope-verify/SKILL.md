@@ -185,7 +185,7 @@ bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"failure","verdic
 ╚═══════════════════════════════════════════════════════════════╝
 ```
 
-Then emit the success event:
+Then emit the success event — **unless called from `/scope-post-review`** (the parent pipeline owns the emit timing):
 ```bash
 bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","verdict":"PASS"}' --scope "{NNN}"
 ```

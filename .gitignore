@@ -2,14 +2,12 @@ node_modules/
 dist/
 *.tsbuildinfo
 
-# Runtime data (created by orbital dev)
-.claude/orbital/
-.claude/orbital-events/
-.claude/config/workflow-manifest.sh
-.claude/config/workflow.json
-.claude/config/workflows/
+# Orbital Command runtime (symlinks, config, runtime data)
+.claude/
+scopes/
 
 .worktrees/
+backup/
 
 # OS files
 .DS_Store
@@ -23,8 +21,5 @@ Thumbs.db
 .env
 .env.*
 
-# Orbital Command
-scopes/
-.claude/orbital/
-.claude/orbital-events/
-.claude/config/workflow-manifest.sh
+# Misc
+Sample of Orbital Command Helper (Renderer).txt

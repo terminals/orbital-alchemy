@@ -148,15 +148,24 @@ async function cmdInit(args) {
 
 function cmdDev() {
   const shouldOpen = process.argv.includes('--open');
+  const forceVite = process.argv.includes('--vite');
   const projectRoot = detectProjectRoot();
   const config = loadConfig(projectRoot);
   const serverPort = config.serverPort || 4444;
   const clientPort = config.clientPort || 4445;
 
+  // Detect packaged mode: dist/index.html exists → serve pre-built frontend
+  const hasPrebuiltFrontend = fs.existsSync(path.join(PACKAGE_ROOT, 'dist', 'index.html'));
+  const useVite = forceVite || !hasPrebuiltFrontend;
+
   console.log(`\nOrbital Command — dev`);
   console.log(`Project root: ${projectRoot}`);
-  console.log(`Server: http://localhost:${serverPort}`);
-  console.log(`Client: http://localhost:${clientPort}\n`);
+  if (useVite) {
+    console.log(`Server: http://localhost:${serverPort}`);
+    console.log(`Client: http://localhost:${clientPort} (Vite dev server)\n`);
+  } else {
+    console.log(`Dashboard: http://localhost:${serverPort}\n`);
+  }
 
   checkTemplatesStaleness(projectRoot);
 
@@ -166,7 +175,7 @@ function cmdDev() {
     ORBITAL_SERVER_PORT: String(serverPort),
   };
 
-  // Start the API server
+  // Start the API server (serves pre-built frontend from dist/ when available)
   const tsxBin = resolveBin('tsx');
   const serverProcess = tsxBin
     ? spawn(tsxBin, ['watch', path.join(PACKAGE_ROOT, 'server', 'index.ts')],
@@ -174,16 +183,24 @@ function cmdDev() {
     : spawn('npx', ['tsx', 'watch', path.join(PACKAGE_ROOT, 'server', 'index.ts')],
         { stdio: 'inherit', env, cwd: PACKAGE_ROOT });
 
-  // Start the Vite dev server
-  const viteBin = resolveBin('vite');
-  const viteProcess = viteBin
-    ? spawn(viteBin, ['--config', path.join(PACKAGE_ROOT, 'vite.config.ts'), '--port', String(clientPort)],
-        { stdio: 'inherit', env, cwd: PACKAGE_ROOT })
-    : spawn('npx', ['vite', '--config', path.join(PACKAGE_ROOT, 'vite.config.ts'), '--port', String(clientPort)],
-        { stdio: 'inherit', env, cwd: PACKAGE_ROOT });
+  let viteProcess = null;
+
+  if (useVite) {
+    // Development mode: spawn Vite for HMR
+    const viteBin = resolveBin('vite');
+    viteProcess = viteBin
+      ? spawn(viteBin, ['--config', path.join(PACKAGE_ROOT, 'vite.config.ts'), '--port', String(clientPort)],
+          { stdio: 'inherit', env, cwd: PACKAGE_ROOT })
+      : spawn('npx', ['vite', '--config', path.join(PACKAGE_ROOT, 'vite.config.ts'), '--port', String(clientPort)],
+          { stdio: 'inherit', env, cwd: PACKAGE_ROOT });
+  }
+
+  const dashboardUrl = useVite
+    ? `http://localhost:${clientPort}`
+    : `http://localhost:${serverPort}`;
 
   if (shouldOpen) {
-    setTimeout(() => openBrowser(`http://localhost:${clientPort}`), 2000);
+    setTimeout(() => openBrowser(dashboardUrl), 2000);
   }
 
   let exiting = false;
@@ -192,7 +209,7 @@ function cmdDev() {
     if (exiting) return;
     exiting = true;
     serverProcess.kill();
-    viteProcess.kill();
+    if (viteProcess) viteProcess.kill();
     process.exit(0);
   }
   process.on('SIGINT', cleanup);
@@ -202,16 +219,18 @@ function cmdDev() {
     if (exiting) return;
     exiting = true;
     console.log(`Server exited with code ${code}`);
-    viteProcess.kill();
+    if (viteProcess) viteProcess.kill();
     process.exit(code || 0);
   });
-  viteProcess.on('exit', (code) => {
-    if (exiting) return;
-    exiting = true;
-    console.log(`Vite exited with code ${code}`);
-    serverProcess.kill();
-    process.exit(code || 0);
-  });
+  if (viteProcess) {
+    viteProcess.on('exit', (code) => {
+      if (exiting) return;
+      exiting = true;
+      console.log(`Vite exited with code ${code}`);
+      serverProcess.kill();
+      process.exit(code || 0);
+    });
+  }
 }
 
 function cmdBuild() {
@@ -290,7 +309,7 @@ Usage:
 
 Commands:
   init              Scaffold Orbital Command into the current project
-  dev               Start the development server (API + Vite)
+  dev               Start the Orbital Command dashboard
   build             Production build of the dashboard
   emit <TYPE> <JSON>  Emit an orbital event
   update            Re-copy hooks/skills/agents from package templates
@@ -303,6 +322,7 @@ Init Options:
 
 Dev Options:
   --open            Open the dashboard in the default browser
+  --vite            Force Vite dev server (for local development with HMR)
 
 Examples:
   orbital init

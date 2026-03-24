@@ -11,17 +11,6 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  optimizeDeps: {
-    include: [
-      'debug',
-      'style-to-js',
-      'loose-envify',
-      'scheduler',
-      'prop-types',
-      'react-is',
-      'ms',
-    ],
-  },
   server: {
     port: 4445,
     proxy: {

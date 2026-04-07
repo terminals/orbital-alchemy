@@ -146,9 +146,11 @@ Overall verdict is PASS only if ALL 4 criteria are PASS.
 ### Step 6: Scope Transition (on PASS only)
 
 If all criteria passed:
-1. Move scope file: `mv scopes/implementing/{file} scopes/review/` (or leave in place if already in `scopes/review/`)
-2. Update frontmatter: `status: review`
-3. Update DASHBOARD: `✅ **Status**: Reviewed | Ready to Commit`
+1. Transition the scope (handles frontmatter + file move atomically):
+   ```bash
+   bash .claude/hooks/scope-transition.sh --from implementing --to review --scope {NNN}
+   ```
+2. Update DASHBOARD: `✅ **Status**: Reviewed | Ready to Commit`
 
 ### Step 7: Report & Next Steps
 
@@ -185,7 +187,7 @@ bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"failure","verdic
 ╚═══════════════════════════════════════════════════════════════╝
 ```
 
-Then emit the success event — **unless called from `/scope-post-review`** (the parent pipeline owns the emit timing):
+Then emit the success event:
 ```bash
 bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","verdict":"PASS"}' --scope "{NNN}"
 ```

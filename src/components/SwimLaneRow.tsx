@@ -12,7 +12,7 @@ interface SwimLaneRowProps {
   onToggleLane: () => void;
   onScopeClick?: (scope: Scope) => void;
   cardDisplay?: CardDisplayConfig;
-  dimmedIds?: Set<number>;
+  dimmedIds?: Set<string>;
   isDragActive: boolean;
   validTargets: Set<ScopeStatus>;
 }

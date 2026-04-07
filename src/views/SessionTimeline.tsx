@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Clock, ExternalLink, FileText, Terminal } from 'lucide-react';
+import { useProjects } from '@/hooks/useProjectContext';
 import { format } from 'date-fns';
 import { socket } from '@/socket';
 import { useTheme } from '@/hooks/useTheme';
@@ -9,13 +9,8 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { cn, formatScopeId } from '@/lib/utils';
+import { ProjectTabBar } from '@/components/ProjectTabBar';
 import type { Session } from '@/types';
-
-const sessionStagger = { show: { transition: { staggerChildren: 0.04 } } };
-const sessionItem = {
-  hidden: { opacity: 0, y: 10 },
-  show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 300, damping: 25 } },
-};
 
 interface SessionMeta {
   slug: string;
@@ -99,130 +94,145 @@ function actionLabel(action: string): string {
 // ─── Main Component ────────────────────────────────────────
 
 export function SessionTimeline() {
-  const [sessions, setSessions] = useState<TimelineSession[]>([]);
+  const { activeProjectId, isMultiProject, getApiBase } = useProjects();
+  const [allSessions, setAllSessions] = useState<TimelineSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<TimelineSession | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [resuming, setResuming] = useState(false);
   const { neonGlass } = useTheme();
-  const autoSelected = useRef(false);
 
+  // Always fetch ALL sessions once — client-side filtering handles project tabs
+  const fetchAllSessions = useCallback(async () => {
+    try {
+      const url = isMultiProject
+        ? '/api/orbital/aggregate/sessions'
+        : '/api/orbital/sessions';
+      const res = await fetch(url);
+      if (res.ok) setAllSessions(await res.json());
+    } catch { /* silent */ }
+    finally { setLoading(false); }
+  }, [isMultiProject]);
+
+  useEffect(() => { fetchAllSessions(); }, [fetchAllSessions]);
+
+  useEffect(() => {
+    const onUpdate = () => fetchAllSessions();
+    socket.on('session:updated', onUpdate);
+    return () => { socket.off('session:updated', onUpdate); };
+  }, [fetchAllSessions]);
+
+  // Client-side filter — instant, no network, no loading state
+  const sessions = useMemo(() => {
+    if (!activeProjectId) return allSessions;
+    return allSessions.filter(s => s.project_id === activeProjectId);
+  }, [allSessions, activeProjectId]);
+
+  // Clear selection when it no longer exists in filtered list
+  useEffect(() => {
+    if (selected && !sessions.some(s => s.id === selected.id)) {
+      setSelected(null);
+      setDetail(null);
+    }
+  }, [sessions, selected]);
+
+  // Auto-select first session when list changes and nothing is selected
+  useEffect(() => {
+    if (!selected && sessions.length > 0) {
+      selectSession(sessions[0]);
+    }
+  }, [sessions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Detail fetch uses the session's own project context for correct routing
   const selectSession = useCallback(async (session: TimelineSession) => {
     setSelected(session);
     setDetail(null);
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/orbital/sessions/${session.id}/content`);
+      const base = session.project_id
+        ? getApiBase(session.project_id)
+        : '/api/orbital';
+      const res = await fetch(`${base}/sessions/${session.id}/content`);
       if (res.ok) setDetail(await res.json());
     } catch { /* silent */ }
     finally { setDetailLoading(false); }
-  }, []);
-
-  const fetchSessions = useCallback(async () => {
-    try {
-      const res = await fetch('/api/orbital/sessions');
-      if (res.ok) setSessions(await res.json());
-    } catch { /* silent */ }
-    finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => { fetchSessions(); }, [fetchSessions]);
-
-  // Auto-select first session on initial load
-  useEffect(() => {
-    if (!autoSelected.current && sessions.length > 0) {
-      autoSelected.current = true;
-      selectSession(sessions[0]);
-    }
-  }, [sessions, selectSession]);
-
-  useEffect(() => {
-    const onUpdate = () => fetchSessions();
-    socket.on('session:updated', onUpdate);
-    return () => { socket.off('session:updated', onUpdate); };
-  }, [fetchSessions]);
+  }, [getApiBase]);
 
   const handleResume = useCallback(async () => {
     const sessionId = detail?.claude_session_id;
     if (!selected || !sessionId) return;
     setResuming(true);
     try {
-      await fetch(`/api/orbital/sessions/${selected.id}/resume`, {
+      const base = selected.project_id
+        ? getApiBase(selected.project_id)
+        : '/api/orbital';
+      await fetch(`${base}/sessions/${selected.id}/resume`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ claude_session_id: sessionId }),
       });
     } catch { /* silent */ }
     finally { setTimeout(() => setResuming(false), 2000); }
-  }, [selected, detail]);
+  }, [selected, detail, getApiBase]);
 
-  if (loading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
-    );
-  }
+  const showList = !loading && sessions.length > 0;
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
+      <ProjectTabBar />
+
       <div className="mb-4 flex items-center gap-3">
         <Clock className="h-4 w-4 text-primary" />
         <h1 className="text-xl font-light">Sessions</h1>
-        <Badge variant="secondary">{sessions.length} sessions</Badge>
+        {!loading && <Badge variant="secondary">{sessions.length} sessions</Badge>}
       </div>
 
-      {sessions.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center">
-          <div className="text-center">
-            <Clock className="mx-auto mb-3 h-10 w-10 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">
-              No session history yet. Sessions are recorded from handoff files.
-            </p>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-1 gap-0 overflow-hidden rounded-lg border border-border/50">
-          {/* Left: session list */}
-          <div className="w-[40%] border-r border-border/50 overflow-hidden">
+      {/* Container structure always stays mounted — only inner content swaps */}
+      <div className="flex flex-1 gap-0 overflow-hidden rounded-lg border border-border/50">
+        {/* Left pane */}
+        <div className="w-[40%] border-r border-border/50 overflow-hidden">
+          {loading ? (
+            <div className="flex h-full items-center justify-center">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            </div>
+          ) : !showList ? (
+            <div className="flex h-full items-center justify-center p-4">
+              <div className="text-center">
+                <Clock className="mx-auto mb-3 h-8 w-8 text-muted-foreground/30" />
+                <p className="text-xs text-muted-foreground">No session history yet.</p>
+              </div>
+            </div>
+          ) : (
             <ScrollArea className="h-full">
               <div className="relative p-3">
                 <div className="absolute left-6 top-3 bottom-3 w-px bg-border" />
-                {neonGlass ? (
-                  <motion.div className="space-y-1" variants={sessionStagger} initial="hidden" animate="show">
-                    {sessions.map((s) => (
-                      <motion.div key={s.id} variants={sessionItem}>
-                        <SessionListItem session={s} isSelected={selected?.id === s.id} neonGlass onClick={() => selectSession(s)} />
-                      </motion.div>
-                    ))}
-                  </motion.div>
-                ) : (
-                  <div className="space-y-1">
-                    {sessions.map((s) => (
-                      <SessionListItem key={s.id} session={s} isSelected={selected?.id === s.id} neonGlass={false} onClick={() => selectSession(s)} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </ScrollArea>
-          </div>
-
-          {/* Right: detail pane */}
-          <div className="w-[60%] overflow-hidden">
-            {selected ? (
-              <DetailPane session={selected} detail={detail} loading={detailLoading} resuming={resuming} onResume={handleResume} />
-            ) : (
-              <div className="flex h-full items-center justify-center">
-                <div className="text-center">
-                  <Clock className="mx-auto mb-3 h-10 w-10 text-muted-foreground/30" />
-                  <p className="text-sm text-muted-foreground">Select a session to view details</p>
+                <div className="space-y-1">
+                  {sessions.map((s) => (
+                    <SessionListItem key={s.id} session={s} isSelected={selected?.id === s.id} neonGlass={neonGlass} onClick={() => selectSession(s)} />
+                  ))}
                 </div>
               </div>
-            )}
-          </div>
+            </ScrollArea>
+          )}
         </div>
-      )}
+
+        {/* Right pane */}
+        <div className="w-[60%] overflow-hidden">
+          {selected ? (
+            <DetailPane session={selected} detail={detail} loading={detailLoading} resuming={resuming} onResume={handleResume} />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <div className="text-center">
+                <Clock className="mx-auto mb-3 h-8 w-8 text-muted-foreground/30" />
+                <p className="text-xs text-muted-foreground">
+                  {loading ? '' : showList ? 'Select a session to view details' : ''}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

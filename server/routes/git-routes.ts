@@ -108,5 +108,82 @@ export function createGitRoutes({ gitService, githubService, engine }: GitRoutes
     }
   });
 
+  // ─── GitHub Auth Flow ──────────────────────────────────────
+
+  router.post('/github/connect', async (req, res) => {
+    try {
+      const { method, token } = req.body as { method?: string; token?: string };
+      if (method === 'pat' && token) {
+        const result = await githubService.connectWithToken(token);
+        res.json(result);
+      } else {
+        const result = await githubService.connectOAuth();
+        res.json(result);
+      }
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to connect', details: String(err) });
+    }
+  });
+
+  router.get('/github/auth-status', async (_req, res) => {
+    try {
+      const status = await githubService.getAuthStatus();
+      res.json(status);
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to check auth', details: String(err) });
+    }
+  });
+
+  router.post('/github/disconnect', async (_req, res) => {
+    try {
+      const result = await githubService.disconnect();
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to disconnect', details: String(err) });
+    }
+  });
+
+  // ─── GitHub CI Checks ──────────────────────────────────────
+
+  router.get('/github/checks/:ref', async (req, res) => {
+    try {
+      const checks = await githubService.getCheckRuns(req.params.ref);
+      res.json(checks);
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to get checks', details: String(err) });
+    }
+  });
+
+  // ─── Git Health Metrics ────────────────────────────────────
+
+  router.get('/git/health', async (_req, res) => {
+    try {
+      // Get PR ages for health calculation
+      let prAges: number[] = [];
+      try {
+        const prs = await githubService.getOpenPRs();
+        const now = Date.now();
+        prAges = prs.map(pr => Math.round((now - new Date(pr.createdAt).getTime()) / (1000 * 60 * 60 * 24)));
+      } catch { /* ok — GitHub may not be connected */ }
+
+      const health = await gitService.getHealthMetrics(prAges);
+      res.json(health);
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to get health metrics', details: String(err) });
+    }
+  });
+
+  // ─── Git Activity Series ───────────────────────────────────
+
+  router.get('/git/activity', async (req, res) => {
+    try {
+      const days = Number(req.query.days) || 30;
+      const activity = await gitService.getActivitySeries(days);
+      res.json(activity);
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to get activity', details: String(err) });
+    }
+  });
+
   return router;
 }

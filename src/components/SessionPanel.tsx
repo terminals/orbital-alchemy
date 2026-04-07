@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { ArrowLeft, Terminal, ChevronRight } from 'lucide-react';
+import { useProjectUrl } from '@/hooks/useProjectUrl';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -48,6 +49,7 @@ interface SessionContent {
 }
 
 export function SessionPanel({ sessions, loading }: SessionPanelProps) {
+  const buildUrl = useProjectUrl();
   const [selected, setSelected] = useState<EnrichedSession | null>(null);
   const [content, setContent] = useState<SessionContent | null>(null);
   const [contentLoading, setContentLoading] = useState(false);
@@ -57,14 +59,14 @@ export function SessionPanel({ sessions, loading }: SessionPanelProps) {
     setSelected(session);
     setContentLoading(true);
     try {
-      const res = await fetch(`/api/orbital/sessions/${session.id}/content`);
+      const res = await fetch(buildUrl(`/sessions/${session.id}/content`));
       if (res.ok) setContent(await res.json());
     } catch {
       // silent
     } finally {
       setContentLoading(false);
     }
-  }, []);
+  }, [buildUrl]);
 
   const handleResume = useCallback(async () => {
     const sessionId = selected?.claude_session_id;
@@ -72,7 +74,7 @@ export function SessionPanel({ sessions, loading }: SessionPanelProps) {
 
     setResuming(true);
     try {
-      await fetch(`/api/orbital/sessions/${selected.id}/resume`, {
+      await fetch(buildUrl(`/sessions/${selected.id}/resume`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ claude_session_id: sessionId }),
@@ -82,7 +84,7 @@ export function SessionPanel({ sessions, loading }: SessionPanelProps) {
     } finally {
       setTimeout(() => setResuming(false), 2000);
     }
-  }, [selected]);
+  }, [selected, buildUrl]);
 
   if (loading) {
     return (

@@ -1,27 +1,31 @@
 import { Router } from 'express';
 import { spawn } from 'child_process';
 import type Database from 'better-sqlite3';
-import type { Server } from 'socket.io';
+import type { Emitter } from '../project-emitter.js';
 import type { ScopeService } from '../services/scope-service.js';
 import type { ReadinessService } from '../services/readiness-service.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 import { launchInTerminal, escapeForAnsiC, buildSessionName, snapshotSessionPids, discoverNewSession, renameSession } from '../utils/terminal-launcher.js';
 import { resolveDispatchEvent, linkPidToDispatch } from '../utils/dispatch-utils.js';
-import { getConfig } from '../config.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('dispatch');
 
 interface ScopeRouteDeps {
   db: Database.Database;
-  io: Server;
+  io: Emitter;
   scopeService: ScopeService;
   readinessService: ReadinessService;
   projectRoot: string;
+  projectName: string;
   engine: WorkflowEngine;
 }
 
-export function createScopeRoutes({ db, io, scopeService, readinessService, projectRoot, engine }: ScopeRouteDeps): Router {
+function isValidSlug(slug: string): boolean {
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(slug) && slug.length <= 80;
+}
+
+export function createScopeRoutes({ db, io, scopeService, readinessService, projectRoot, projectName, engine }: ScopeRouteDeps): Router {
   const router = Router();
 
   // ─── Scope CRUD ──────────────────────────────────────────
@@ -89,14 +93,15 @@ export function createScopeRoutes({ db, io, scopeService, readinessService, proj
     res.status(201).json(idea);
   });
 
-  router.patch('/ideas/:id', (req, res) => {
-    const id = Number(req.params.id);
+  router.patch('/ideas/:slug', (req, res) => {
+    const { slug } = req.params;
+    if (!isValidSlug(slug)) { res.status(400).json({ error: 'Invalid slug' }); return; }
     const { title, description } = req.body as { title?: string; description?: string };
     if (!title?.trim()) {
       res.status(400).json({ error: 'title is required' });
       return;
     }
-    const updated = scopeService.updateIdeaFile(id, title.trim(), (description ?? '').trim());
+    const updated = scopeService.updateIdeaFile(slug, title.trim(), (description ?? '').trim());
     if (!updated) {
       res.status(404).json({ error: 'Idea not found' });
       return;
@@ -104,9 +109,10 @@ export function createScopeRoutes({ db, io, scopeService, readinessService, proj
     res.json({ ok: true });
   });
 
-  router.delete('/ideas/:id', (req, res) => {
-    const id = Number(req.params.id);
-    const deleted = scopeService.deleteIdeaFile(id);
+  router.delete('/ideas/:slug', (req, res) => {
+    const { slug } = req.params;
+    if (!isValidSlug(slug)) { res.status(400).json({ error: 'Invalid slug' }); return; }
+    const deleted = scopeService.deleteIdeaFile(slug);
     if (!deleted) {
       res.status(404).json({ error: 'Idea not found' });
       return;
@@ -114,9 +120,10 @@ export function createScopeRoutes({ db, io, scopeService, readinessService, proj
     res.json({ ok: true });
   });
 
-  router.post('/ideas/:id/promote', async (req, res) => {
-    const ideaId = Number(req.params.id);
-    const result = scopeService.promoteIdea(ideaId);
+  router.post('/ideas/:slug/promote', async (req, res) => {
+    const { slug } = req.params;
+    if (!isValidSlug(slug)) { res.status(400).json({ error: 'Invalid slug' }); return; }
+    const result = scopeService.promoteIdea(slug);
     if (!result) {
       res.status(404).json({ error: 'Idea not found' });
       return;
@@ -184,18 +191,15 @@ export function createScopeRoutes({ db, io, scopeService, readinessService, proj
     }
     surpriseInProgress = true;
 
-    const nextIdStart = scopeService.getNextIceboxId();
     const today = new Date().toISOString().split('T')[0];
-    const idRange = Array.from({ length: 5 }, (_, i) => nextIdStart + i);
 
-    const prompt = `You are analyzing the ${getConfig().projectName} codebase to suggest feature ideas. Your ONLY job is to create markdown files.
+    const prompt = `You are analyzing the ${projectName} codebase to suggest feature ideas. Your ONLY job is to create markdown files.
 
 Create exactly 3 idea files in the scopes/icebox/ directory. Each file must use this EXACT format:
 
-File: scopes/icebox/{ID}-{kebab-slug}.md
+File: scopes/icebox/{kebab-slug}.md
 
 ---
-id: {ID}
 title: "{title}"
 status: icebox
 ghost: true
@@ -208,13 +212,12 @@ tags: []
 
 {2-3 sentence description of the feature, what problem it solves, and a rough approach.}
 
-Use these IDs: ${idRange[0]}, ${idRange[1]}, ${idRange[2]}
-
 Rules:
 - Focus on practical improvements: performance, UX, security, developer experience, monitoring, or reliability
 - Be specific and actionable — not vague architectural rewrites
 - Keep descriptions concise (2-3 sentences max)
-- Filenames must be {ID}-{kebab-case-slug}.md
+- Filenames must be {kebab-case-slug}.md (NO numeric prefix)
+- Do NOT include an id field in frontmatter
 - The ghost: true field is required in frontmatter
 - Do NOT create any other files or make any other changes`;
 
@@ -244,9 +247,10 @@ Rules:
     res.json({ ok: true, status: 'generating' });
   });
 
-  router.post('/ideas/:id/approve', (req, res) => {
-    const id = Number(req.params.id);
-    const approved = scopeService.approveGhostIdea(id);
+  router.post('/ideas/:slug/approve', (req, res) => {
+    const { slug } = req.params;
+    if (!isValidSlug(slug)) { res.status(400).json({ error: 'Invalid slug' }); return; }
+    const approved = scopeService.approveGhostIdea(slug);
     if (!approved) {
       res.status(404).json({ error: 'Ghost idea not found' });
       return;

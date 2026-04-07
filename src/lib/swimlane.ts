@@ -51,6 +51,7 @@ const KNOWN_ORDER: Record<SwimGroupField, readonly string[]> = {
   effort: EFFORT_BUCKETS,
   dependencies: DEPENDENCY_OPTIONS,
   tags: [], // tags are fully dynamic
+  project: [], // project lanes are fully dynamic
 };
 
 function laneColor(field: SwimGroupField, value: string): string {
@@ -84,6 +85,7 @@ export function computeSwimLanes(
   groupField: SwimGroupField,
   sortField: SortField,
   sortDirection: SortDirection,
+  resolveColumnId?: (scope: Scope) => string,
 ): SwimLane[] {
   // Collect all values and map scopes to lanes
   const laneMap = new Map<string, Record<ScopeStatus, Scope[]>>();
@@ -99,7 +101,7 @@ export function computeSwimLanes(
         laneScopeCounts.set(val, 0);
       }
       const cells = laneMap.get(val)!;
-      const status = scope.status as ScopeStatus;
+      const status = (resolveColumnId ? resolveColumnId(scope) : scope.status) as ScopeStatus;
       if (cells[status]) {
         cells[status].push(scope);
       } else {

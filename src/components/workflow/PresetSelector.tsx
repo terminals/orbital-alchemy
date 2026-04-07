@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ChevronDown, Download, Save, Trash2, AlertTriangle, ArrowRight, FolderInput, Plus, Minus } from 'lucide-react';
+import { useProjectUrl } from '@/hooks/useProjectUrl';
 
 interface PresetInfo {
   name: string;
@@ -31,6 +32,7 @@ interface PresetSelectorProps {
 export function PresetSelector({ activeConfigName }: PresetSelectorProps) {
   const [presets, setPresets] = useState<PresetInfo[]>([]);
   const [open, setOpen] = useState(false);
+  const buildUrl = useProjectUrl();
   const [saving, setSaving] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [showSaveInput, setShowSaveInput] = useState(false);
@@ -47,14 +49,14 @@ export function PresetSelector({ activeConfigName }: PresetSelectorProps) {
 
   const fetchPresets = useCallback(async () => {
     try {
-      const res = await fetch('/api/orbital/workflow/presets');
+      const res = await fetch(buildUrl('/workflow/presets'));
       if (!res.ok) return;
       const json: { success: boolean; data: PresetInfo[] } = await res.json();
       if (json.success) setPresets(json.data);
     } catch {
       // Presets endpoint may not exist yet
     }
-  }, []);
+  }, [buildUrl]);
 
   useEffect(() => {
     fetchPresets();
@@ -63,13 +65,13 @@ export function PresetSelector({ activeConfigName }: PresetSelectorProps) {
   const loadPreset = async (name: string) => {
     try {
       // Step 1: Fetch the preset config
-      const presetRes = await fetch(`/api/orbital/workflow/presets/${encodeURIComponent(name)}`);
+      const presetRes = await fetch(buildUrl(`/workflow/presets/${encodeURIComponent(name)}`));
       if (!presetRes.ok) return;
       const presetJson: { success: boolean; data: unknown } = await presetRes.json();
       if (!presetJson.success) return;
 
       // Step 2: Preview the migration impact
-      const previewRes = await fetch('/api/orbital/workflow/preview', {
+      const previewRes = await fetch(buildUrl('/workflow/preview'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(presetJson.data),
@@ -107,7 +109,7 @@ export function PresetSelector({ activeConfigName }: PresetSelectorProps) {
   const applyConfig = async (config: unknown, orphanMappings: Record<string, string>) => {
     setApplying(true);
     try {
-      await fetch('/api/orbital/workflow/apply', {
+      await fetch(buildUrl('/workflow/apply'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ config, orphanMappings }),
@@ -125,7 +127,7 @@ export function PresetSelector({ activeConfigName }: PresetSelectorProps) {
     if (!saveName.trim()) return;
     setSaving(true);
     try {
-      await fetch('/api/orbital/workflow/presets', {
+      await fetch(buildUrl('/workflow/presets'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: saveName.trim() }),
@@ -142,7 +144,7 @@ export function PresetSelector({ activeConfigName }: PresetSelectorProps) {
 
   const deletePreset = async (name: string) => {
     try {
-      await fetch(`/api/orbital/workflow/presets/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      await fetch(buildUrl(`/workflow/presets/${encodeURIComponent(name)}`), { method: 'DELETE' });
       fetchPresets();
     } catch {
       // Silent fail

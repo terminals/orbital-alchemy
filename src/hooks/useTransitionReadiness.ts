@@ -1,8 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { socket } from '../socket';
+import { useProjectUrl } from './useProjectUrl';
 import type { ScopeReadiness, QualityGate, OrbitalEvent } from '../types';
 
-export function useTransitionReadiness(scopeId: number | null) {
+export function useTransitionReadiness(scopeId: number | null, projectId?: string) {
+  const buildUrl = useProjectUrl();
   const [readiness, setReadiness] = useState<ScopeReadiness | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -13,14 +15,15 @@ export function useTransitionReadiness(scopeId: number | null) {
     }
     setLoading(true);
     try {
-      const res = await fetch(`/api/orbital/scopes/${scopeId}/readiness`);
+      const params = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
+      const res = await fetch(buildUrl(`/scopes/${scopeId}/readiness${params}`));
       if (res.ok) setReadiness(await res.json());
     } catch {
       // Server may not be running
     } finally {
       setLoading(false);
     }
-  }, [scopeId]);
+  }, [scopeId, projectId, buildUrl]);
 
   useEffect(() => {
     fetchReadiness();
@@ -32,7 +35,10 @@ export function useTransitionReadiness(scopeId: number | null) {
       fetchReadiness();
     }
     function onNewEvent(event: OrbitalEvent) {
-      // Re-fetch when events affect this scope
+      // Filter by project first — ignore events from other projects
+      const eventProjectId = (event as unknown as Record<string, unknown>)._projectId as string | undefined;
+      if (projectId && eventProjectId && eventProjectId !== projectId) return;
+
       if (
         event.scope_id === scopeId ||
         ['VIOLATION', 'OVERRIDE', 'SCOPE_STATUS_CHANGED'].includes(event.type)
@@ -47,7 +53,7 @@ export function useTransitionReadiness(scopeId: number | null) {
       socket.off('gate:updated', onGateUpdated);
       socket.off('event:new', onNewEvent);
     };
-  }, [scopeId, fetchReadiness]);
+  }, [scopeId, projectId, fetchReadiness]);
 
   return { readiness, loading, refetch: fetchReadiness };
 }

@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { WorkflowConfig, WorkflowList, WorkflowEdge } from '../../../shared/workflow-config';
+import { useProjectUrl } from '@/hooks/useProjectUrl';
 import { useEditHistory } from './useEditHistory';
 import { validateConfig } from './validateConfig';
 import type { ConfigValidationResult } from './validateConfig';
@@ -65,6 +66,7 @@ export type WorkflowEditor = WorkflowEditorState & WorkflowEditorActions;
 export function useWorkflowEditor(activeConfig: WorkflowConfig): WorkflowEditor {
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
+  const buildUrl = useProjectUrl();
   const [previewPlan, setPreviewPlan] = useState<MigrationPlan | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -163,7 +165,7 @@ export function useWorkflowEditor(activeConfig: WorkflowConfig): WorkflowEditor 
     if (!validation.valid || saving) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/orbital/workflow', {
+      const res = await fetch(buildUrl('/workflow'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(history.present),
@@ -176,7 +178,7 @@ export function useWorkflowEditor(activeConfig: WorkflowConfig): WorkflowEditor 
     } finally {
       setSaving(false);
     }
-  }, [validation.valid, saving, history.present, exitEditMode]);
+  }, [validation.valid, saving, history.present, exitEditMode, buildUrl]);
 
   // ─── Preview ────────────────────────────────────────
 
@@ -186,7 +188,7 @@ export function useWorkflowEditor(activeConfig: WorkflowConfig): WorkflowEditor 
     setPreviewPlan(null);
     setShowPreview(true);
     try {
-      const res = await fetch('/api/orbital/workflow/preview', {
+      const res = await fetch(buildUrl('/workflow/preview'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(history.present),
@@ -199,14 +201,14 @@ export function useWorkflowEditor(activeConfig: WorkflowConfig): WorkflowEditor 
     } finally {
       setPreviewLoading(false);
     }
-  }, [history.present]);
+  }, [history.present, buildUrl]);
 
   // ─── Apply Migration ────────────────────────────────
 
   const applyMigration = useCallback(async (orphanMappings: Record<string, string>) => {
     setSaving(true);
     try {
-      const res = await fetch('/api/orbital/workflow/apply', {
+      const res = await fetch(buildUrl('/workflow/apply'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ config: history.present, orphanMappings }),
@@ -220,7 +222,7 @@ export function useWorkflowEditor(activeConfig: WorkflowConfig): WorkflowEditor 
     } finally {
       setSaving(false);
     }
-  }, [history.present, exitEditMode]);
+  }, [history.present, exitEditMode, buildUrl]);
 
   return {
     // State

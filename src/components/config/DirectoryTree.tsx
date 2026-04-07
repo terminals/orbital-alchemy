@@ -5,6 +5,7 @@ import { ChevronRight, ChevronDown, File, Folder, FolderOpen, Plus, Trash2, Penc
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import { useProjectUrl } from '@/hooks/useProjectUrl';
 import { CATEGORY_STYLE } from './HookChip';
 import type { ConfigFileNode, ConfigPrimitiveType } from '@/types';
 import type { HookCategory } from '../../../shared/workflow-config';
@@ -236,6 +237,7 @@ function flattenFiles(nodes: ConfigFileNode[]): ConfigFileNode[] {
 
 export function DirectoryTree({ tree, loading, selectedPath, type, onSelect, onRefresh, onTabChange, activePaths, hookCategoryMap, agentTeamMap }: DirectoryTreeProps) {
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  const buildUrl = useProjectUrl();
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renaming, setRenaming] = useState<ConfigFileNode | null>(null);
   const [renamingValue, setRenamingValue] = useState('');
@@ -306,7 +308,7 @@ export function DirectoryTree({ tree, loading, selectedPath, type, onSelect, onR
     const newPath = parentDir ? `${parentDir}/${renamingValue}` : renamingValue;
 
     try {
-      const res = await fetch(`/api/orbital/config/${type}/rename`, {
+      const res = await fetch(buildUrl(`/config/${type}/rename`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ oldPath: renaming.path, newPath }),
@@ -317,13 +319,13 @@ export function DirectoryTree({ tree, loading, selectedPath, type, onSelect, onR
       // silent fail
     }
     setRenaming(null);
-  }, [renaming, renamingValue, type, onRefresh]);
+  }, [renaming, renamingValue, type, onRefresh, buildUrl]);
 
   // Delete
   const handleDelete = useCallback(async (node: ConfigFileNode) => {
     setContextMenu(null);
     try {
-      const res = await fetch(`/api/orbital/config/${type}/file?path=${encodeURIComponent(node.path)}`, {
+      const res = await fetch(buildUrl(`/config/${type}/file?path=${encodeURIComponent(node.path)}`), {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Delete failed');
@@ -331,7 +333,7 @@ export function DirectoryTree({ tree, loading, selectedPath, type, onSelect, onR
     } catch {
       // silent fail
     }
-  }, [type, onRefresh]);
+  }, [type, onRefresh, buildUrl]);
 
   // Create file/folder
   const startCreate = useCallback((kind: 'file' | 'folder', parentPath: string) => {
@@ -355,14 +357,14 @@ export function DirectoryTree({ tree, loading, selectedPath, type, onSelect, onR
     const fullPath = creating.parent ? `${creating.parent}/${createValue}` : createValue;
     try {
       if (creating.kind === 'folder') {
-        const res = await fetch(`/api/orbital/config/${type}/folder`, {
+        const res = await fetch(buildUrl(`/config/${type}/folder`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: fullPath }),
         });
         if (!res.ok) throw new Error('Create folder failed');
       } else {
-        const res = await fetch(`/api/orbital/config/${type}/file`, {
+        const res = await fetch(buildUrl(`/config/${type}/file`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: fullPath, content: '' }),
@@ -374,7 +376,7 @@ export function DirectoryTree({ tree, loading, selectedPath, type, onSelect, onR
       // silent fail
     }
     setCreating(null);
-  }, [creating, createValue, type, onRefresh]);
+  }, [creating, createValue, type, onRefresh, buildUrl]);
 
   const renderFileNode = (node: ConfigFileNode, dimmed?: boolean) => (
     <div

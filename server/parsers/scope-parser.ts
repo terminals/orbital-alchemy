@@ -8,6 +8,7 @@ const log = createLogger('scope');
 export interface ParsedScope {
   id: number;
   title: string;
+  slug?: string;
   status: string;
   priority: string | null;
   effort_estimate: string | null;
@@ -69,6 +70,16 @@ export function normalizeStatus(raw: string): string {
   return STATUS_MAP[raw] ?? raw;
 }
 
+/** Generate a stable positive integer hash from a string (for synthetic icebox IDs) */
+function slugHash(s: string): number {
+  let hash = 5381;
+  for (let i = 0; i < s.length; i++) {
+    hash = ((hash << 5) + hash + s.charCodeAt(i)) >>> 0;
+  }
+  // Keep in range 10000-2147483647 to avoid collisions with real scope IDs and suffix-encoded IDs
+  return 10000 + (hash % 2137483647);
+}
+
 /**
  * Parse a scope markdown file into structured data.
  * Handles both YAML frontmatter and plain markdown formats.
@@ -83,21 +94,37 @@ export function parseScopeFile(filePath: string): ParsedScope | null {
   const idMatch = fileName.match(/^(\d+)([a-dA-DxX])?/);
   const fileId = idMatch ? scopeFileId(parseInt(idMatch[1], 10), idMatch[2]) : 0;
 
-  // Skip non-scope files
-  if (fileId === 0 && !fileName.startsWith('0')) {
+  // Slug-only icebox files: no numeric prefix, e.g. "onboarding-flow.md"
+  const isSlugOnly = !idMatch && dirName === 'icebox';
+
+  // Skip non-scope files (but allow slug-only icebox files)
+  if (fileId === 0 && !fileName.startsWith('0') && !isSlugOnly) {
     // Files like _template.md, technical-debt.md, backlog_plan.md
     if (fileName.startsWith('_') || !idMatch) return null;
   }
+
+  // For slug-only icebox files, generate a stable negative ID for internal cache indexing.
+  // This avoids collisions with real scope IDs (positive) and between icebox items.
+  const effectiveId = isSlugOnly ? -slugHash(fileName) : fileId;
 
   // Try YAML frontmatter first
   const { data: frontmatter, content: markdownBody } = matter(content);
 
   if (frontmatter && Object.keys(frontmatter).length > 0) {
-    return parseFrontmatterScope(frontmatter, markdownBody, filePath, fileId, dirName);
+    const scope = parseFrontmatterScope(frontmatter, markdownBody, filePath, effectiveId, dirName);
+    // Populate slug for icebox items
+    if (isSlugOnly || dirName === 'icebox') {
+      scope.slug = isSlugOnly ? fileName : fileName.replace(/^\d+[a-dA-DxX]?-/, '');
+    }
+    return scope;
   }
 
   // Fallback: extract from markdown structure
-  return parseMarkdownScope(content, filePath, fileId, dirName);
+  const fallbackScope = parseMarkdownScope(content, filePath, effectiveId, dirName);
+  if (isSlugOnly || dirName === 'icebox') {
+    fallbackScope.slug = isSlugOnly ? fileName : fileName.replace(/^\d+[a-dA-DxX]?-/, '');
+  }
+  return fallbackScope;
 }
 
 function parseFrontmatterScope(
@@ -194,7 +221,7 @@ export function setValidStatuses(statuses: Iterable<string>): void {
   validDirStatuses = new Set(statuses);
 }
 
-function inferStatusFromDir(dirName: string): string {
+export function inferStatusFromDir(dirName: string): string {
   if (validDirStatuses) {
     return validDirStatuses.has(dirName) ? dirName : 'planning';
   }

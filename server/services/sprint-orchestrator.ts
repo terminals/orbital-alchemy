@@ -1,11 +1,10 @@
 import type Database from 'better-sqlite3';
-import type { Server } from 'socket.io';
+import type { Emitter } from '../project-emitter.js';
 import { SprintService } from './sprint-service.js';
 import { ScopeService } from './scope-service.js';
 import { launchInCategorizedTerminal, escapeForAnsiC, buildSessionName, snapshotSessionPids, discoverNewSession, renameSession } from '../utils/terminal-launcher.js';
 import { resolveDispatchEvent, linkPidToDispatch } from '../utils/dispatch-utils.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
-import { getConfig } from '../config.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('sprint');
@@ -20,10 +19,11 @@ function sleep(ms: number): Promise<void> {
 export class SprintOrchestrator {
   constructor(
     private db: Database.Database,
-    private io: Server,
+    private io: Emitter,
     private sprintService: SprintService,
     private scopeService: ScopeService,
     private engine: WorkflowEngine,
+    private projectRoot: string,
   ) {}
 
   /** Build execution layers using Kahn's topological sort */
@@ -247,20 +247,20 @@ export class SprintOrchestrator {
       // Build scope-aware session name and snapshot PIDs
       const scopeRow = this.scopeService.getById(scopeId);
       const sessionName = buildSessionName({ scopeId, title: scopeRow?.title, command });
-      const beforePids = snapshotSessionPids(getConfig().projectRoot);
+      const beforePids = snapshotSessionPids(this.projectRoot);
 
       // Launch in iTerm — interactive TUI mode (no -p) for full visibility
       const escaped = escapeForAnsiC(command);
-      const fullCmd = `cd '${getConfig().projectRoot}' && claude --dangerously-skip-permissions $'${escaped}'`;
+      const fullCmd = `cd '${this.projectRoot}' && claude --dangerously-skip-permissions $'${escaped}'`;
       try {
         await launchInCategorizedTerminal(command, fullCmd, sessionName);
 
         // Fire-and-forget: discover session PID, link to dispatch, and rename
-        discoverNewSession(getConfig().projectRoot, beforePids)
+        discoverNewSession(this.projectRoot, beforePids)
           .then((session) => {
             if (!session) return;
             linkPidToDispatch(this.db, eventId, session.pid);
-            if (sessionName) renameSession(getConfig().projectRoot, session.sessionId, sessionName);
+            if (sessionName) renameSession(this.projectRoot, session.sessionId, sessionName);
           })
           .catch(err => log.error('PID discovery failed', { error: err.message }));
       } catch (err) {

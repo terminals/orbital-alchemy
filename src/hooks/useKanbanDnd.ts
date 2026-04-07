@@ -1,8 +1,12 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { DragStartEvent, DragOverEvent, DragEndEvent } from '@dnd-kit/core';
 import type { Scope, Sprint } from '@/types';
-import type { WorkflowEdge } from '../../shared/workflow-config';
+import type { WorkflowEdge, Phase } from '../../shared/workflow-config';
+import type { WorkflowEngine } from '../../shared/workflow-engine';
+import { WorkflowNormalizer } from '../../shared/workflow-normalizer';
 import { useWorkflow } from './useWorkflow';
+import { useProjectUrl } from './useProjectUrl';
+import { useProjects } from './useProjectContext';
 import type { AddScopesResult } from '@/hooks/useSprints';
 
 export interface PendingDispatch {
@@ -27,6 +31,8 @@ export interface KanbanDndState {
   pendingSprintDispatch: Sprint | null;
   pendingUnmetDeps: AddScopesResult['unmet_dependencies'] | null;
   pendingDepSprintId: number | null;
+  // Phase view disambiguation
+  pendingDisambiguation: { scope: Scope; edges: WorkflowEdge[] } | null;
 }
 
 interface UseKanbanDndOptions {
@@ -34,11 +40,15 @@ interface UseKanbanDndOptions {
   sprints: Sprint[];
   onAddToSprint: (sprintId: number, scopeIds: number[]) => Promise<AddScopesResult | null>;
   onRemoveFromSprint: (sprintId: number, scopeIds: number[]) => Promise<boolean>;
+  /** True when All Projects non-unified phase view is active */
+  isPhaseView?: boolean;
+  /** Per-project engines for phase view resolution */
+  projectEngines?: Map<string, WorkflowEngine>;
 }
 
-async function checkActiveDispatch(scopeId: number): Promise<boolean> {
+async function checkActiveDispatch(buildUrl: (path: string) => string, scopeId: number): Promise<boolean> {
   try {
-    const res = await fetch(`/api/orbital/dispatch/active?scope_id=${scopeId}`);
+    const res = await fetch(buildUrl(`/dispatch/active?scope_id=${scopeId}`));
     if (!res.ok) return false;
     const { active } = await res.json();
     return active != null;
@@ -48,7 +58,7 @@ async function checkActiveDispatch(scopeId: number): Promise<boolean> {
 }
 
 /** Parse a drag ID to determine its type */
-function parseDragId(id: string | number): { type: 'scope'; scopeId: number } | { type: 'sprint'; sprintId: number } | { type: 'column'; status: string } | { type: 'sprint-drop'; sprintId: number } | null {
+function parseDragId(id: string | number): { type: 'scope'; scopeId: number; projectId?: string } | { type: 'sprint'; sprintId: number } | { type: 'column'; status: string } | { type: 'sprint-drop'; sprintId: number } | null {
   const s = String(id);
   if (s.startsWith('sprint-drop-')) return { type: 'sprint-drop', sprintId: parseInt(s.slice(12)) };
   if (s.startsWith('sprint-')) return { type: 'sprint', sprintId: parseInt(s.slice(7)) };
@@ -58,12 +68,45 @@ function parseDragId(id: string | number): { type: 'scope'; scopeId: number } | 
     const lastSep = s.lastIndexOf('::');
     return { type: 'column', status: s.slice(lastSep + 2) };
   }
+  // Project-scoped scope ID: {projectId}::{scopeId} (from scopeKey())
+  const scopeMatch = s.match(/^(.+?)::(\d+)$/);
+  if (scopeMatch) {
+    return { type: 'scope', scopeId: Number(scopeMatch[2]), projectId: scopeMatch[1] };
+  }
   // Assume column status ID
   return { type: 'column', status: s };
 }
 
-export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOptions) {
+export function useKanbanDnd({ scopes, sprints, onAddToSprint, isPhaseView, projectEngines }: UseKanbanDndOptions) {
   const { engine } = useWorkflow();
+  const buildUrl = useProjectUrl();
+  const { getApiBase, isMultiProject } = useProjects();
+
+  // Build URL routed to a specific scope's project (for mutations in All Projects view)
+  const buildScopeUrl = useCallback((scope: Scope, path: string): string => {
+    if (isMultiProject && scope.project_id) {
+      return `${getApiBase(scope.project_id)}${path}`;
+    }
+    return buildUrl(path);
+  }, [buildUrl, getApiBase, isMultiProject]);
+
+  // Present a resolved edge to the user via modal or popover
+  const presentEdge = useCallback(async (scope: Scope, edge: WorkflowEdge) => {
+    const scopeUrl = (p: string) => buildScopeUrl(scope, p);
+    const hasActiveSession = edge.command != null
+      ? await checkActiveDispatch(scopeUrl, scope.id)
+      : false;
+
+    const isFullConfirm = edge.confirmLevel === 'full';
+    setState((prev) => ({
+      ...prev,
+      pending: { scope, transition: edge, hasActiveSession },
+      showModal: isFullConfirm,
+      showPopover: !isFullConfirm,
+      error: null,
+    }));
+  }, [buildScopeUrl]);
+
   const [state, setState] = useState<KanbanDndState>({
     activeScope: null,
     activeSprint: null,
@@ -79,6 +122,7 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
     pendingSprintDispatch: null,
     pendingUnmetDeps: null,
     pendingDepSprintId: null,
+    pendingDisambiguation: null,
   });
 
   // Refs to avoid stale closures in async DnD callbacks
@@ -95,7 +139,8 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
     if (!parsed) return;
 
     if (parsed.type === 'scope') {
-      const scope = scopes.find((s) => s.id === parsed.scopeId);
+      const scope = scopes.find((s) => s.id === parsed.scopeId
+        && (!parsed.projectId || s.project_id === parsed.projectId));
       if (scope) {
         setState((prev) => ({
           ...prev,
@@ -160,13 +205,25 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
           overSprintId: parsed.sprintId,
         }));
       } else if (parsed.type === 'column') {
-        const valid = engine.isValidTransition(currentScope.status, parsed.status);
+        let valid: boolean;
+        if (isPhaseView && currentScope.project_id && projectEngines) {
+          const scopeEngine = projectEngines.get(currentScope.project_id);
+          if (scopeEngine) {
+            const normalizer = new WorkflowNormalizer(scopeEngine);
+            const edges = normalizer.resolveNormalizedTransition(currentScope.status, parsed.status as Phase);
+            valid = edges.length > 0;
+          } else {
+            valid = false;
+          }
+        } else {
+          valid = engine.isValidTransition(currentScope.status, parsed.status);
+        }
         setState((prev) => ({ ...prev, overId: parsed.status, overIsValid: valid, overSprintId: null }));
       } else {
         setState((prev) => ({ ...prev, overId: null, overIsValid: false, overSprintId: null }));
       }
     }
-  }, [sprints, engine]);
+  }, [sprints, engine, isPhaseView, projectEngines]);
 
   const onDragEnd = useCallback(async (event: DragEndEvent) => {
     const over = event.over?.id;
@@ -222,30 +279,32 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
     if (scope && parsed.type === 'column') {
       if (scope.status === parsed.status) return;
 
-      const edge = engine.findEdge(scope.status, parsed.status);
+      let edge: WorkflowEdge | undefined;
+
+      if (isPhaseView && scope.project_id && projectEngines) {
+        const scopeEngine = projectEngines.get(scope.project_id);
+        if (scopeEngine) {
+          const normalizer = new WorkflowNormalizer(scopeEngine);
+          const candidates = normalizer.resolveNormalizedTransition(scope.status, parsed.status as Phase);
+          if (candidates.length > 1) {
+            // Multiple edges map to this phase — let the user choose
+            setState((prev) => ({
+              ...prev,
+              pendingDisambiguation: { scope, edges: candidates },
+            }));
+            return;
+          }
+          edge = candidates[0];
+        }
+      } else {
+        edge = engine.findEdge(scope.status, parsed.status);
+      }
+
       if (!edge) return;
 
-      const hasActiveSession = edge.command != null
-        ? await checkActiveDispatch(scope.id)
-        : false;
-
-      if (edge.confirmLevel === 'full') {
-        setState((prev) => ({
-          ...prev,
-          pending: { scope, transition: edge, hasActiveSession },
-          showModal: true,
-          showPopover: false,
-        }));
-      } else {
-        setState((prev) => ({
-          ...prev,
-          pending: { scope, transition: edge, hasActiveSession },
-          showPopover: true,
-          showModal: false,
-        }));
-      }
+      await presentEdge(scope, edge);
     }
-  }, [onAddToSprint, engine, sprints]);
+  }, [onAddToSprint, engine, sprints, presentEdge, isPhaseView, projectEngines]);
 
   const confirmTransition = useCallback(async () => {
     const { pending } = state;
@@ -254,11 +313,18 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
     setState((prev) => ({ ...prev, dispatching: true, error: null }));
 
     const { scope, transition } = pending;
-    const command = engine.buildCommand(transition, scope.id);
+
+    // Use scope's project engine in phase view, else context engine
+    const activeEngine = (isPhaseView && scope.project_id && projectEngines?.get(scope.project_id))
+      || engine;
+    const command = activeEngine.buildCommand(transition, scope.id);
+
+    // Route mutations to the scope's project endpoint (critical for All Projects view)
+    const url = (path: string) => buildScopeUrl(scope, path);
 
     try {
       if (command) {
-        const res = await fetch('/api/orbital/dispatch', {
+        const res = await fetch(url('/dispatch'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -278,17 +344,17 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
         }
       } else {
         // Idea promotion: entry point → next status — server moves file + launches terminal
-        const entryPointId = engine.getEntryPoint().id;
+        const entryPointId = activeEngine.getEntryPoint().id;
         const isIdeaPromotion = scope.status === entryPointId && transition.direction === 'forward';
 
-        if (isIdeaPromotion && !transition.command) {
-          const res = await fetch(`/api/orbital/ideas/${scope.id}/promote`, { method: 'POST' });
+        if (isIdeaPromotion && !transition.command && scope.slug) {
+          const res = await fetch(url(`/ideas/${scope.slug}/promote`), { method: 'POST' });
           if (!res.ok) {
             const body = await res.json().catch(() => ({ error: 'Request failed' }));
             throw new Error(body.error ?? `HTTP ${res.status}`);
           }
         } else {
-          const res = await fetch(`/api/orbital/scopes/${scope.id}`, {
+          const res = await fetch(url(`/scopes/${scope.id}`), {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: transition.to }),
@@ -315,7 +381,19 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
         error: err instanceof Error ? err.message : 'Dispatch failed',
       }));
     }
-  }, [state, engine]);
+  }, [state, engine, buildScopeUrl, isPhaseView, projectEngines]);
+
+  const selectDisambiguation = useCallback(async (edge: WorkflowEdge) => {
+    const disambiguation = state.pendingDisambiguation;
+    if (!disambiguation) return;
+
+    setState((prev) => ({ ...prev, pendingDisambiguation: null }));
+    await presentEdge(disambiguation.scope, edge);
+  }, [state.pendingDisambiguation, presentEdge]);
+
+  const dismissDisambiguation = useCallback(() => {
+    setState((prev) => ({ ...prev, pendingDisambiguation: null }));
+  }, []);
 
   const cancelTransition = useCallback(() => {
     setState((prev) => ({
@@ -351,7 +429,7 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
   const submitIdea = useCallback(async (title: string, description: string) => {
     setState((prev) => ({ ...prev, dispatching: true, error: null }));
     try {
-      const res = await fetch('/api/orbital/ideas', {
+      const res = await fetch(buildUrl('/ideas'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, description }),
@@ -368,7 +446,7 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
         error: err instanceof Error ? err.message : 'Failed to create idea',
       }));
     }
-  }, []);
+  }, [buildUrl]);
 
   const dismissSprintDispatch = useCallback(() => {
     setState((prev) => ({ ...prev, pendingSprintDispatch: null }));
@@ -406,5 +484,7 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint }: UseKanbanDndOpt
     dismissUnmetDeps,
     resolveUnmetDeps,
     showUnmetDeps,
+    selectDisambiguation,
+    dismissDisambiguation,
   };
 }

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { Server } from 'socket.io';
+import type { Emitter } from '../project-emitter.js';
 import { ConfigService, isValidPrimitiveType } from '../services/config-service.js';
 import type { ConfigPrimitiveType } from '../services/config-service.js';
 import type { WorkflowService } from '../services/workflow-service.js';
@@ -7,7 +7,7 @@ import type { WorkflowService } from '../services/workflow-service.js';
 interface ConfigRouteDeps {
   projectRoot: string;
   workflowService: WorkflowService;
-  io: Server;
+  io: Emitter;
 }
 
 export function createConfigRoutes({ projectRoot, workflowService: _workflowService, io }: ConfigRouteDeps): Router {

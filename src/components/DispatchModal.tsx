@@ -18,6 +18,8 @@ interface DispatchModalProps {
   scope: Scope | null;
   transition: WorkflowEdge | null;
   hasActiveSession: boolean;
+  dispatching: boolean;
+  error: string | null;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -27,20 +29,20 @@ export function DispatchModal({
   scope,
   transition,
   hasActiveSession,
+  dispatching,
+  error,
   onConfirm,
   onCancel,
 }: DispatchModalProps) {
   const [checked, setChecked] = useState<Set<number>>(new Set());
-  const [loading, setLoading] = useState(false);
 
   const checklist = transition?.checklist ?? [];
   const allChecked = checklist.length === 0 || checked.size === checklist.length;
 
-  // Reset state when modal opens
+  // Reset checklist when modal opens
   useEffect(() => {
     if (open) {
       setChecked(new Set());
-      setLoading(false);
     }
   }, [open]);
 
@@ -57,8 +59,7 @@ export function DispatchModal({
     });
   }
 
-  async function handleConfirm() {
-    setLoading(true);
+  function handleConfirm() {
     onConfirm();
   }
 
@@ -140,19 +141,27 @@ export function DispatchModal({
             </div>
           )}
 
+          {/* Error message */}
+          {error && (
+            <div className="flex items-start gap-2 rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex items-center gap-2 pt-1">
             <Button
               onClick={handleConfirm}
-              disabled={!allChecked || loading}
+              disabled={!allChecked || dispatching}
               className="flex-1"
             >
-              {loading ? 'Launching...' : command ? 'Launch in iTerm' : 'Confirm Move'}
+              {dispatching ? 'Launching...' : command ? 'Launch in iTerm' : 'Confirm Move'}
             </Button>
             <Button
               variant="ghost"
               onClick={onCancel}
-              disabled={loading}
+              disabled={dispatching}
             >
               Cancel
             </Button>

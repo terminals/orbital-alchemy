@@ -20,8 +20,7 @@ Creates a GitHub PR from dev to staging. Staging is a release candidate — the 
 
 Find scopes in `scopes/dev/`:
 1. For each scope file in `scopes/dev/*.md`:
-   - `mv scopes/dev/{file} scopes/staging/`
-   - Update frontmatter: `status: staging`
+   - Transition: `bash .claude/hooks/scope-transition.sh --from dev --to staging --scope {NNN}`
    - Update DASHBOARD: `🚀 **Status**: Staging PR Created`
 
 If BATCH_SCOPE_IDS is set, only transition those specific scopes.

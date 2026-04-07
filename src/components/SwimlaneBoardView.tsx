@@ -14,7 +14,7 @@ interface SwimlaneBoardViewProps {
   onToggleCollapse: (columnId: string) => void;
   onScopeClick?: (scope: Scope) => void;
   cardDisplay?: CardDisplayConfig;
-  dimmedIds?: Set<number>;
+  dimmedIds?: Set<string>;
   isDragActive: boolean;
   validTargets: Set<ScopeStatus>;
   sprints: Sprint[];

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { socket } from '../socket';
 import { useReconnect } from './useReconnect';
+import { useProjectUrl } from './useProjectUrl';
 import type { ConfigPrimitiveType, ConfigFileNode } from '@/types';
 
 interface UseConfigTreeResult {
@@ -12,10 +13,11 @@ interface UseConfigTreeResult {
 export function useConfigTree(type: ConfigPrimitiveType): UseConfigTreeResult {
   const [tree, setTree] = useState<ConfigFileNode[]>([]);
   const [loading, setLoading] = useState(true);
+  const buildUrl = useProjectUrl();
 
   const fetchTree = useCallback(async () => {
     try {
-      const res = await fetch(`/api/orbital/config/${type}/tree`);
+      const res = await fetch(buildUrl(`/config/${type}/tree`));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setTree(json.data ?? []);
@@ -24,7 +26,7 @@ export function useConfigTree(type: ConfigPrimitiveType): UseConfigTreeResult {
     } finally {
       setLoading(false);
     }
-  }, [type]);
+  }, [type, buildUrl]);
 
   // Initial fetch
   useEffect(() => {

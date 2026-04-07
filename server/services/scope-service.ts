@@ -1,9 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
-import type { Server } from 'socket.io';
+import type { Emitter } from '../project-emitter.js';
 import type { ParsedScope } from '../parsers/scope-parser.js';
-import { normalizeStatus, parseAllScopes, parseScopeFile, setValidStatuses } from '../parsers/scope-parser.js';
+import { normalizeStatus, parseAllScopes, parseScopeFile, setValidStatuses, inferStatusFromDir } from '../parsers/scope-parser.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 import type { TransitionContext, TransitionResult } from '../../shared/workflow-config.js';
 import type { ScopeCache } from './scope-cache.js';
@@ -20,7 +20,7 @@ export class ScopeService {
 
   constructor(
     private cache: ScopeCache,
-    private io: Server,
+    private io: Emitter,
     private scopesDir: string,
     private engine: WorkflowEngine,
   ) {}
@@ -131,10 +131,9 @@ export class ScopeService {
       if (!check.ok) return check;
     }
 
-    // Write to filesystem via updateScopeFrontmatter (which updates cache + emits)
-    const current = context === 'bulk-sync' || context === 'rollback'
-      ? this.cache.getById(id)
-      : this.cache.getById(id); // already fetched above for validation, but may be null in bulk-sync
+    // Fetch current scope for fromStatus logging. In bulk-sync/rollback contexts
+    // the validation block above is skipped, so this may be the first lookup.
+    const current = this.cache.getById(id);
     const fromStatus = current?.status ?? 'unknown';
     const result = this.updateScopeFrontmatter(id, { status }, context);
     if (result.ok) {
@@ -145,7 +144,8 @@ export class ScopeService {
   }
 
   /** Compute the next sequential scope ID by scanning all non-icebox scopes.
-   *  Checks both filesystem (all subdirs except icebox) and cache to prevent collisions. */
+   *  Checks both filesystem (all subdirs except icebox) and cache to prevent collisions.
+   *  Skips IDs >= 500 to handle legacy icebox-origin files during migration. */
   private getNextScopeId(): number {
     let maxId = 0;
 
@@ -156,7 +156,11 @@ export class ScopeService {
         const dirPath = path.join(this.scopesDir, dir.name);
         for (const file of fs.readdirSync(dirPath)) {
           const m = file.match(/^(\d+)-/);
-          if (m) maxId = Math.max(maxId, parseInt(m[1], 10));
+          if (!m) continue;
+          const id = parseInt(m[1], 10);
+          // Skip legacy icebox-origin IDs (500+) to prevent namespace pollution
+          if (id >= 500) continue;
+          maxId = Math.max(maxId, id);
         }
       }
     }
@@ -170,50 +174,62 @@ export class ScopeService {
 
   // ─── Idea CRUD (filesystem-backed icebox cards) ────────────
 
-  /** Get the next available icebox ID (starts at 501, increments from max found) */
-  getNextIceboxId(): number {
-    const iceboxDir = path.join(this.scopesDir, 'icebox');
-    if (!fs.existsSync(iceboxDir)) return 501;
-    let maxId = 500;
-    for (const file of fs.readdirSync(iceboxDir)) {
-      const m = file.match(/^(\d+)-/);
-      if (m) maxId = Math.max(maxId, parseInt(m[1], 10));
+  /** Normalize Date objects in gray-matter frontmatter to YYYY-MM-DD strings */
+  private normalizeFrontmatterDates(data: Record<string, unknown>): void {
+    for (const key of Object.keys(data)) {
+      if (data[key] instanceof Date) {
+        data[key] = (data[key] as Date).toISOString().split('T')[0];
+      }
     }
-    return maxId + 1;
   }
 
-  /** Find an icebox file by its ID prefix.
-   *  Matches both padded (091-) and unpadded (91-) filenames
-   *  since demoted scopes keep their 3-digit-padded names. */
-  private findIdeaFile(iceboxDir: string, id: number): string | null {
-    if (!fs.existsSync(iceboxDir)) return null;
-    const match = fs.readdirSync(iceboxDir).find((f) => {
-      if (!f.endsWith('.md')) return false;
-      const m = f.match(/^(\d+)-/);
-      return m != null && parseInt(m[1], 10) === id;
-    });
-    return match ? path.join(iceboxDir, match) : null;
-  }
-
-  /** Create an icebox idea as a markdown file. IDs start at 501. */
-  createIdeaFile(title: string, description: string): { id: number; title: string } {
-    const iceboxDir = path.join(this.scopesDir, 'icebox');
-    if (!fs.existsSync(iceboxDir)) fs.mkdirSync(iceboxDir, { recursive: true });
-
-    const nextId = this.getNextIceboxId();
-
+  /** Generate a slug from a title */
+  private slugify(title: string): string {
     const slug = title
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '')
       .slice(0, 60);
-    const fileName = `${nextId}-${slug}.md`;
-    const filePath = path.join(iceboxDir, fileName);
+    if (!slug) return 'untitled';
+    return slug;
+  }
+
+  /** Find an icebox file by its slug.
+   *  Matches slug-only files ({slug}.md) and legacy numeric-prefixed files ({NNN}-{slug}.md). */
+  private findIdeaFile(iceboxDir: string, slug: string): string | null {
+    if (!fs.existsSync(iceboxDir)) return null;
+    const match = fs.readdirSync(iceboxDir).find((f) => {
+      if (!f.endsWith('.md')) return false;
+      // Match slug-only: {slug}.md
+      if (f === `${slug}.md`) return true;
+      // Match legacy numeric-prefixed: {NNN}-{slug}.md
+      return f.match(/^\d+-/) && f.slice(f.indexOf('-') + 1) === `${slug}.md`;
+    });
+    return match ? path.join(iceboxDir, match) : null;
+  }
+
+  /** Create an icebox idea as a slug-only markdown file. */
+  createIdeaFile(title: string, description: string): { slug: string; title: string } {
+    const iceboxDir = path.join(this.scopesDir, 'icebox');
+    if (!fs.existsSync(iceboxDir)) fs.mkdirSync(iceboxDir, { recursive: true });
+
+    const slug = this.slugify(title);
+    let fileName = `${slug}.md`;
+    let filePath = path.join(iceboxDir, fileName);
+
+    // Handle slug collisions by appending -2, -3, etc.
+    if (fs.existsSync(filePath)) {
+      let suffix = 2;
+      while (fs.existsSync(path.join(iceboxDir, `${slug}-${suffix}.md`))) suffix++;
+      fileName = `${slug}-${suffix}.md`;
+      filePath = path.join(iceboxDir, fileName);
+    }
+
+    const finalSlug = fileName.replace(/\.md$/, '');
     const now = new Date().toISOString().split('T')[0];
 
     const content = [
       '---',
-      `id: ${nextId}`,
       `title: "${title.replace(/"/g, '\\"')}"`,
       'status: icebox',
       `created: ${now}`,
@@ -231,116 +247,118 @@ export class ScopeService {
 
     // Eagerly sync to cache + emit scope:created
     this.updateFromFile(filePath);
-    log.info('Idea created', { id: nextId, title });
-    return { id: nextId, title };
+    log.info('Idea created', { slug: finalSlug, title });
+    return { slug: finalSlug, title };
   }
 
-  /** Update an icebox idea's title and description by rewriting its file */
-  updateIdeaFile(id: number, title: string, description: string): boolean {
+  /** Update an icebox idea's title and description in-place. Renames the file if the title slug changes. */
+  updateIdeaFile(slug: string, title: string, description: string): boolean {
     const iceboxDir = path.join(this.scopesDir, 'icebox');
-    const filePath = this.findIdeaFile(iceboxDir, id);
+    const filePath = this.findIdeaFile(iceboxDir, slug);
     if (!filePath) return false;
 
     // Preserve the original created date from existing frontmatter
     const existing = fs.readFileSync(filePath, 'utf-8');
-    const createdMatch = existing.match(/^created:\s*(.+)$/m);
-    const created = createdMatch?.[1]?.trim() ?? new Date().toISOString().split('T')[0];
+    const parsed = matter(existing);
+    const created = parsed.data.created ? String(parsed.data.created) : new Date().toISOString().split('T')[0];
     const now = new Date().toISOString().split('T')[0];
 
-    const content = [
-      '---',
-      `id: ${id}`,
-      `title: "${title.replace(/"/g, '\\"')}"`,
-      'status: icebox',
-      `created: ${created}`,
-      `updated: ${now}`,
-      'blocked_by: []',
-      'blocks: []',
-      'tags: []',
-      '---',
-      '',
-      description || '',
-      '',
-    ].join('\n');
+    // Update frontmatter fields while preserving other data (like ghost)
+    parsed.data.title = title;
+    parsed.data.updated = now;
+    parsed.data.created = created;
+    this.normalizeFrontmatterDates(parsed.data);
 
-    fs.writeFileSync(filePath, content, 'utf-8');
-    // Watcher handles cache sync + scope:updated event
+    const newContent = matter.stringify(description ? `\n${description}\n` : '\n', parsed.data);
+    fs.writeFileSync(filePath, newContent, 'utf-8');
+
+    // If title changed, rename file to new slug
+    const newSlug = this.slugify(title);
+    if (newSlug !== slug) {
+      const newFileName = `${newSlug}.md`;
+      const newPath = path.join(iceboxDir, newFileName);
+      if (!fs.existsSync(newPath)) {
+        this.removeByFilePath(filePath);
+        fs.renameSync(filePath, newPath);
+        this.updateFromFile(newPath);
+      } else {
+        // Collision with existing slug — keep old filename, still sync content changes
+        log.warn('Slug collision during rename, keeping old filename', { slug, newSlug });
+        this.updateFromFile(filePath);
+      }
+    } else {
+      // Eagerly sync content changes to cache
+      this.updateFromFile(filePath);
+    }
+
     return true;
   }
 
   /** Delete an icebox idea by removing its file */
-  deleteIdeaFile(id: number): boolean {
+  deleteIdeaFile(slug: string): boolean {
     const iceboxDir = path.join(this.scopesDir, 'icebox');
-    const filePath = this.findIdeaFile(iceboxDir, id);
+    const filePath = this.findIdeaFile(iceboxDir, slug);
     if (!filePath) return false;
 
     fs.unlinkSync(filePath);
     // Eagerly remove from cache + emit scope:deleted
     this.removeByFilePath(filePath);
-    log.info('Idea deleted', { id });
+    log.info('Idea deleted', { slug });
     return true;
   }
 
   /** Promote an icebox idea to planning — assigns a proper sequential scope ID,
    *  moves the file, and syncs cache. Returns the new scope ID. */
-  promoteIdea(id: number): { id: number; filePath: string; title: string; description: string } | null {
+  promoteIdea(slug: string): { id: number; filePath: string; title: string; description: string } | null {
     const iceboxDir = path.join(this.scopesDir, 'icebox');
-    const oldPath = this.findIdeaFile(iceboxDir, id);
+    const oldPath = this.findIdeaFile(iceboxDir, slug);
     if (!oldPath) return null;
 
     // Read existing file for metadata
-    const content = fs.readFileSync(oldPath, 'utf-8');
-    const titleMatch = content.match(/^title:\s*"?([^"\n]+)"?\s*$/m);
-    const createdMatch = content.match(/^created:\s*(.+)$/m);
-    const title = titleMatch?.[1]?.trim() ?? 'Untitled';
-    const created = createdMatch?.[1]?.trim() ?? new Date().toISOString().split('T')[0];
-
-    // Extract body after frontmatter
-    const fmEnd = content.indexOf('---', content.indexOf('---') + 3);
-    const description = fmEnd !== -1 ? content.slice(fmEnd + 3).trim() : '';
+    const raw = fs.readFileSync(oldPath, 'utf-8');
+    const parsed = matter(raw);
+    const title = parsed.data.title ? String(parsed.data.title) : 'Untitled';
+    const created = parsed.data.created ? String(parsed.data.created) : new Date().toISOString().split('T')[0];
+    const description = parsed.content.trim();
 
     // Assign the next sequential scope ID (excludes icebox items)
     const newId = this.getNextScopeId();
     const paddedId = String(newId).padStart(3, '0');
 
-    // Build slug and new path
-    const slug = title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 60);
+    // Build new path
+    const titleSlug = this.slugify(title);
     const planningDir = path.join(this.scopesDir, 'planning');
     if (!fs.existsSync(planningDir)) fs.mkdirSync(planningDir, { recursive: true });
-    const newFileName = `${paddedId}-${slug}.md`;
+    const newFileName = `${paddedId}-${titleSlug}.md`;
     const newPath = path.join(planningDir, newFileName);
     const now = new Date().toISOString().split('T')[0];
 
-    // Write new file with planning status and new sequential ID
-    const newContent = [
-      '---',
-      `id: ${paddedId}`,
-      `title: "${title.replace(/"/g, '\\"')}"`,
-      'status: planning',
-      `created: ${created}`,
-      `updated: ${now}`,
-      'blocked_by: []',
-      'blocks: []',
-      'tags: []',
-      '---',
-      '',
-      description || '',
-      '',
-    ].join('\n');
+    // Update frontmatter in-place: assign ID and change status (preserve other fields)
+    parsed.data.id = newId;
+    parsed.data.status = 'planning';
+    parsed.data.updated = now;
+    parsed.data.created = created;
+    delete parsed.data.ghost;
+    this.normalizeFrontmatterDates(parsed.data);
 
-    fs.writeFileSync(newPath, newContent, 'utf-8');
+    const newContent = matter.stringify(parsed.content, parsed.data);
 
-    // Sync cache before deleting old file (avoids window where scope is missing)
+    // Write updated content to old path, then rename/move (no intermediate missing state)
+    const originalContent = fs.readFileSync(oldPath, 'utf-8');
+    fs.writeFileSync(oldPath, newContent, 'utf-8');
+    try {
+      fs.renameSync(oldPath, newPath);
+    } catch (err) {
+      // Restore original content on rename failure
+      fs.writeFileSync(oldPath, originalContent, 'utf-8');
+      log.error('Failed to rename during promote', { oldPath, newPath, error: String(err) });
+      return null;
+    }
     this.updateFromFile(newPath);
-    fs.unlinkSync(oldPath);
     this.removeByFilePath(oldPath);
 
     const relPath = path.relative(path.resolve(this.scopesDir, '..'), newPath);
-    log.info('Idea promoted', { oldId: id, newId, title });
+    log.info('Idea promoted', { slug, newId, title });
     return { id: newId, filePath: relPath, title, description };
   }
 
@@ -381,7 +399,8 @@ export class ScopeService {
 
     // Validate status transition before any writes
     const newStatus = fields.status as string | undefined;
-    const rawOldStatus = String(parsed.data.status ?? 'planning');
+    const dirName = path.basename(path.dirname(filePath));
+    const rawOldStatus = String(parsed.data.status ?? inferStatusFromDir(dirName));
     const oldStatus = normalizeStatus(rawOldStatus);
     let needsMove = false;
 
@@ -457,9 +476,9 @@ export class ScopeService {
   }
 
   /** Approve a ghost idea — removes ghost:true from frontmatter and refreshes cache */
-  approveGhostIdea(id: number): boolean {
+  approveGhostIdea(slug: string): boolean {
     const iceboxDir = path.join(this.scopesDir, 'icebox');
-    const filePath = this.findIdeaFile(iceboxDir, id);
+    const filePath = this.findIdeaFile(iceboxDir, slug);
     if (!filePath) return false;
 
     const content = fs.readFileSync(filePath, 'utf-8');
@@ -469,7 +488,7 @@ export class ScopeService {
 
     // Re-parse file to refresh cache with is_ghost=false
     this.updateFromFile(filePath);
-    log.info('Ghost approved', { id });
+    log.info('Ghost approved', { slug });
 
     return true;
   }

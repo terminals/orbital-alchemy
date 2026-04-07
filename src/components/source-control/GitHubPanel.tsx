@@ -1,30 +1,27 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Github, ChevronDown, ChevronRight, Eye, Lock, Globe } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { useProjectUrl } from '@/hooks/useProjectUrl';
+import { Github, ChevronDown, ChevronRight, Lock, Globe, LogOut } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { GitHubSetupGuide } from './GitHubSetupGuide';
-import { PullRequestList } from './PullRequestList';
-import type { GitHubStatus, PullRequestInfo } from '@/types';
+import { Button } from '@/components/ui/button';
+import { GitHubConnectDialog } from './GitHubConnectDialog';
+import type { GitHubStatus } from '@/types';
 
 interface Props {
   github: GitHubStatus | null;
+  onConnectionChange?: () => void;
 }
 
-export function GitHubPanel({ github }: Props) {
+export function GitHubPanel({ github, onConnectionChange }: Props) {
+  const buildUrl = useProjectUrl();
   const [expanded, setExpanded] = useState(true);
-  const [prs, setPrs] = useState<PullRequestInfo[]>([]);
 
-  const fetchPRs = useCallback(async () => {
-    if (!github?.connected) return;
+  const handleDisconnect = useCallback(async () => {
     try {
-      const res = await fetch('/api/orbital/github/prs');
-      if (res.ok) setPrs(await res.json());
+      await fetch(buildUrl('/github/disconnect'), { method: 'POST' });
+      onConnectionChange?.();
     } catch { /* ok */ }
-  }, [github?.connected]);
-
-  useEffect(() => {
-    if (expanded && github?.connected) fetchPRs();
-  }, [expanded, github?.connected, fetchPRs]);
+  }, [buildUrl, onConnectionChange]);
 
   const VisibilityIcon = github?.repo?.visibility === 'public' ? Globe : Lock;
 
@@ -59,7 +56,15 @@ export function GitHubPanel({ github }: Props) {
       {expanded && (
         <CardContent>
           {!github || !github.connected ? (
-            <GitHubSetupGuide error={github?.error ?? null} />
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Connect to GitHub to see repository info, pull requests, and CI status.
+              </p>
+              <GitHubConnectDialog
+                error={github?.error ?? null}
+                onConnected={() => onConnectionChange?.()}
+              />
+            </div>
           ) : (
             <div className="space-y-4">
               {/* Repo info */}
@@ -93,13 +98,17 @@ export function GitHubPanel({ github }: Props) {
                 </div>
               )}
 
-              {/* PRs */}
+              {/* Disconnect button */}
               <div className="border-t border-border pt-3">
-                <h4 className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <Eye className="h-3 w-3" />
-                  Open Pull Requests
-                </h4>
-                <PullRequestList prs={prs} />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => { e.stopPropagation(); handleDisconnect(); }}
+                  className="gap-2 text-xs text-muted-foreground hover:text-ask-red"
+                >
+                  <LogOut className="h-3 w-3" />
+                  Disconnect
+                </Button>
               </div>
             </div>
           )}

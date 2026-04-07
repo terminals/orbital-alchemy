@@ -6,6 +6,18 @@ import type {
 // Re-export shared types so existing imports from '@/types' keep working
 export type { SprintStatus, SprintScopeStatus, GroupType, GateStatus, DeployStatus, DeployEnvironment, AgentConfig };
 
+// ─── Project Types ────────────────────────────────────────
+
+export interface Project {
+  id: string;
+  name: string;
+  color: string;        // HSL string, e.g. "210 80% 55%"
+  path: string;
+  status: 'active' | 'error' | 'offline';
+  enabled: boolean;
+  scopeCount: number;
+}
+
 // ─── Scope Types ───────────────────────────────────────────
 
 // ScopeStatus is a dynamic string — runtime validation via engine.isValidStatus()
@@ -16,6 +28,7 @@ export type ScopePriority = 'critical' | 'high' | 'medium' | 'low';
 export interface Scope {
   id: number;
   title: string;
+  slug?: string;
   status: ScopeStatus;
   is_ghost?: boolean;
   priority: ScopePriority | null;
@@ -29,6 +42,8 @@ export interface Scope {
   updated_at: string | null;
   raw_content: string | null;
   sessions: Record<string, string[]>;
+  /** Project this scope belongs to (multi-project mode) */
+  project_id?: string;
 }
 
 // ─── Card Display Types ────────────────────────────────────
@@ -38,6 +53,7 @@ export interface CardDisplayConfig {
   category: boolean;
   priority: boolean;
   tags: boolean;
+  project: boolean;
 }
 
 // ─── Filter Types ──────────────────────────────────────────
@@ -45,7 +61,7 @@ export interface CardDisplayConfig {
 export type FilterField = 'priority' | 'category' | 'tags' | 'effort' | 'dependencies';
 
 export type ViewMode = 'kanban' | 'swimlane';
-export type SwimGroupField = 'priority' | 'category' | 'tags' | 'effort' | 'dependencies';
+export type SwimGroupField = 'priority' | 'category' | 'tags' | 'effort' | 'dependencies' | 'project';
 
 export type ScopeFilterState = Record<FilterField, Set<string>>;
 
@@ -107,6 +123,7 @@ export interface OrbitalEvent {
   agent: string | null;
   data: Record<string, unknown>;
   timestamp: string;
+  project_id?: string;
 }
 
 // ─── Quality Gate Types ────────────────────────────────────
@@ -120,6 +137,7 @@ export interface QualityGate {
   duration_ms: number | null;
   run_at: string;
   commit_sha: string | null;
+  project_id?: string;
 }
 
 // ─── Transition Readiness Types ───────────────────────────
@@ -240,6 +258,7 @@ export interface Session {
   discoveries: string[];
   next_steps: string[];
   progress_pct: number | null;
+  project_id?: string;
 }
 
 // ─── Agent Types ───────────────────────────────────────────
@@ -304,6 +323,7 @@ export interface Sprint {
   updated_at: string;
   dispatched_at: string | null;
   completed_at: string | null;
+  project_id?: string;
 }
 
 export interface SprintScope {
@@ -344,11 +364,21 @@ export interface ServerToClientEvents {
   'config:hooks:changed': (payload: { action: string; path: string }) => void;
   'version:updating': (payload: { stage: 'pulling' | 'installing' }) => void;
   'version:updated': (payload: { success: true } | { success: false; error: string }) => void;
+  // Multi-project events
+  'project:registered': (payload: { id: string; name: string; path: string; color: string }) => void;
+  'project:unregistered': (payload: { id: string }) => void;
+  'project:status:changed': (payload: { id: string; status: string }) => void;
+  'project:updated': (payload: { id: string; name?: string; color?: string; enabled?: boolean }) => void;
+  // Sync events
+  'sync:file:updated': (payload: { relativePath: string; projects: string[] }) => void;
+  'sync:file:created': (payload: { relativePath: string; autoSynced: string[]; pending: string[] }) => void;
+  'sync:file:deleted': (payload: { relativePath: string; removed: string[]; preserved: string[] }) => void;
+  'sync:drift:detected': (payload: { projectPath: string; relativePath: string }) => void;
 }
 
 export interface ClientToServerEvents {
-  'subscribe': (channel: string) => void;
-  'unsubscribe': (channel: string) => void;
+  'subscribe': (payload: string | { projectId?: string; scope?: string }) => void;
+  'unsubscribe': (payload: string | { projectId?: string; scope?: string }) => void;
 }
 
 // ─── Config Primitives Types ──────────────────────────────
@@ -385,6 +415,9 @@ export interface CommitEntry {
   branch: string;
   scopeId: number | null;
   refs: string[];
+  project_id?: string;
+  projectName?: string;
+  projectColor?: string;
 }
 
 export interface BranchInfoData {
@@ -435,6 +468,11 @@ export interface PullRequestInfo {
   url: string;
   createdAt: string;
   scopeIds: number[];
+  reviewDecision?: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null;
+  lastActivityAt?: string;
+  project_id?: string;
+  projectName?: string;
+  projectColor?: string;
 }
 
 export interface DriftPair {
@@ -442,6 +480,47 @@ export interface DriftPair {
   to: string;
   count: number;
   commits: Array<{ sha: string; message: string; author: string; date: string }>;
+}
+
+// ─── Aggregate Repo Types ────────────────────────────────
+
+export interface ProjectGitOverview {
+  projectId: string;
+  projectName: string;
+  projectColor: string;
+  status: 'ok' | 'error';
+  overview?: GitOverview;
+  error?: string;
+}
+
+export interface ProjectBranchHealth {
+  projectId: string;
+  projectName: string;
+  projectColor: string;
+  branchCount: number;
+  staleBranchCount: number;
+  featureBranchCount: number;
+  maxDriftSeverity: 'clean' | 'low' | 'moderate' | 'high';
+}
+
+export interface RepoHealthMetrics {
+  commitsPerWeek: number;
+  avgPrAgeDays: number;
+  staleBranchCount: number;
+  driftSeverity: 'clean' | 'low' | 'moderate' | 'high';
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+}
+
+export interface ActivityDataPoint {
+  date: string;
+  count: number;
+}
+
+export interface CheckRun {
+  name: string;
+  status: 'completed' | 'in_progress' | 'queued';
+  conclusion: 'success' | 'failure' | 'neutral' | 'cancelled' | 'timed_out' | null;
+  url: string;
 }
 
 // ─── Pipeline Display Types ──────────────────────────────

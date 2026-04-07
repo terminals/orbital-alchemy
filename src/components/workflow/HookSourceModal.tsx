@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { FileCode2, Loader2 } from 'lucide-react';
+import { useProjectUrl } from '@/hooks/useProjectUrl';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { UnifiedHook } from '../../../shared/workflow-config';
@@ -24,6 +25,7 @@ export function HookSourceModal({ hook, open, onClose }: HookSourceModalProps) {
   const [source, setSource] = useState<HookSource | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const buildUrl = useProjectUrl();
 
   useEffect(() => {
     if (!hook || !open) { setSource(null); setError(null); return; }
@@ -31,7 +33,7 @@ export function HookSourceModal({ hook, open, onClose }: HookSourceModalProps) {
     setLoading(true);
     setError(null);
 
-    fetch(`/api/orbital/workflow/hooks/source?path=${encodeURIComponent(hook.scriptPath)}`)
+    fetch(buildUrl(`/workflow/hooks/source?path=${encodeURIComponent(hook.scriptPath)}`))
       .then(async (res) => {
         if (cancelled) return;
         if (!res.ok) {
@@ -47,7 +49,7 @@ export function HookSourceModal({ hook, open, onClose }: HookSourceModalProps) {
       .finally(() => { if (!cancelled) setLoading(false); });
 
     return () => { cancelled = true; };
-  }, [hook?.id, hook?.scriptPath, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hook?.id, hook?.scriptPath, open, buildUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!hook) return null;
 

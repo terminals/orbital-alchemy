@@ -9,7 +9,6 @@ import {
 import { LayoutDashboard, X } from 'lucide-react';
 import { useScopes } from '@/hooks/useScopes';
 import { useCardDisplay } from '@/hooks/useCardDisplay';
-import { ActiveDispatchContext, useActiveDispatchProvider } from '@/hooks/useActiveDispatches';
 import { useScopeFilters } from '@/hooks/useScopeFilters';
 import { useBoardSettings, sortScopes } from '@/hooks/useBoardSettings';
 import { useSwimlaneBoardSettings } from '@/hooks/useSwimlaneBoardSettings';
@@ -32,29 +31,55 @@ import { ScopeDetailModal } from '@/components/ScopeDetailModal';
 import { IdeaFormDialog } from '@/components/IdeaFormDialog';
 import { IdeaDetailModal } from '@/components/IdeaDetailModal';
 import { ScopeFilterBar } from '@/components/ScopeFilterBar';
+import { SearchInput } from '@/components/SearchInput';
 import { SprintPreflightModal } from '@/components/SprintPreflightModal';
 import { BatchPreflightModal } from '@/components/BatchPreflightModal';
 import { SprintDependencyDialog } from '@/components/SprintDependencyDialog';
 import { ColumnHeaderActions } from '@/components/ColumnHeaderActions';
-import { Badge } from '@/components/ui/badge';
 import { sprintAwareCollision } from '@/lib/collisionDetection';
 import { computeSwimLanes } from '@/lib/swimlane';
-import type { Scope } from '@/types';
+import { computeAllProjectsBoard } from '@/lib/all-projects-board';
+import { scopeKey } from '@/lib/scope-key';
+import { WorkflowNormalizer } from '../../shared/workflow-normalizer';
+import { ProjectTabBar } from '@/components/ProjectTabBar';
+import { TransitionDisambiguationDialog } from '@/components/TransitionDisambiguationDialog';
+import { useProjectUrl } from '@/hooks/useProjectUrl';
+import { useProjects } from '@/hooks/useProjectContext';
+import type { Scope, Project } from '@/types';
 
 export function ScopeBoard() {
-  const { scopes, loading } = useScopes();
+  const buildUrl = useProjectUrl();
+  const { scopes, loading, refetch } = useScopes();
   const { engine } = useWorkflow();
-  const activeDispatchCtx = useActiveDispatchProvider();
+  const { activeProjectId, projects, projectEngines, isMultiProject } = useProjects();
   const { sortField, sortDirection, setSort, collapsed, toggleCollapse } = useBoardSettings();
   const { viewMode, setViewMode, groupField, setGroupField, collapsedLanes, toggleLaneCollapse } = useSwimlaneBoardSettings();
   const { display: cardDisplay, toggle: toggleCardDisplay, hiddenCount } = useCardDisplay();
-  const [selectedScopeId, setSelectedScopeId] = useState<number | null>(null);
-  const selectedScope = useMemo(() => scopes.find((s) => s.id === selectedScopeId) ?? null, [scopes, selectedScopeId]);
+  const [selectedScopeKey, setSelectedScopeKey] = useState<string | null>(null);
+  const selectedScope = useMemo(() => scopes.find((s) => scopeKey(s) === selectedScopeKey) ?? null, [scopes, selectedScopeKey]);
   const [selectedIdea, setSelectedIdea] = useState<Scope | null>(null);
   const [pendingBatchDispatch, setPendingBatchDispatch] = useState<number | null>(null);
 
   // Dynamic board columns from engine
   const boardColumns = useMemo(() => engine.getBoardColumns(), [engine]);
+
+  // All Projects: compute phase-normalized or unified board
+  const isAllProjects = isMultiProject && activeProjectId === null;
+  const allProjectsBoard = useMemo(() => {
+    if (!isAllProjects || projectEngines.size === 0) return null;
+    return computeAllProjectsBoard(scopes, projectEngines);
+  }, [isAllProjects, scopes, projectEngines]);
+
+  // Effective columns: All Projects board columns or single-project columns
+  const effectiveColumns = allProjectsBoard?.columns ?? boardColumns;
+
+  // Project lookup for card badges
+  const projectLookup = useMemo(() => {
+    if (!isMultiProject) return undefined;
+    const map = new Map<string, Project>();
+    for (const p of projects) map.set(p.id, p);
+    return map;
+  }, [isMultiProject, projects]);
 
   const {
     sprints,
@@ -80,21 +105,21 @@ export function ScopeBoard() {
   } = useScopeFilters(scopes);
 
   const search = useSearch(filteredScopes);
-  const { highlightedScopeId, clearHighlight } = useStatusBarHighlight();
+  const { highlightedScopeKey, clearHighlight } = useStatusBarHighlight();
 
   // Merge search dimming with statusbar highlight dimming
   const mergedDimmedIds = useMemo(() => {
-    if (highlightedScopeId == null) return search.dimmedIds;
-    const dimmed = new Set<number>();
+    if (highlightedScopeKey == null) return search.dimmedIds;
+    const dimmed = new Set<string>();
     for (const scope of search.displayScopes) {
-      if (scope.id !== highlightedScopeId) dimmed.add(scope.id);
+      if (scopeKey(scope) !== highlightedScopeKey) dimmed.add(scopeKey(scope));
     }
     return dimmed;
-  }, [highlightedScopeId, search.dimmedIds, search.displayScopes]);
+  }, [highlightedScopeKey, search.dimmedIds, search.displayScopes]);
 
   // Click anywhere to clear highlight
   useEffect(() => {
-    if (highlightedScopeId == null) return;
+    if (highlightedScopeKey == null) return;
     const timer = setTimeout(() => {
       document.addEventListener('click', clearHighlight, { once: true });
     }, 100);
@@ -102,7 +127,7 @@ export function ScopeBoard() {
       clearTimeout(timer);
       document.removeEventListener('click', clearHighlight);
     };
-  }, [highlightedScopeId, clearHighlight]);
+  }, [highlightedScopeKey, clearHighlight]);
 
   const {
     state: dndState,
@@ -120,11 +145,15 @@ export function ScopeBoard() {
     dismissUnmetDeps,
     resolveUnmetDeps,
     showUnmetDeps,
+    selectDisambiguation,
+    dismissDisambiguation,
   } = useKanbanDnd({
     scopes: search.displayScopes,
     sprints,
     onAddToSprint: addScopesToSprint,
     onRemoveFromSprint: removeScopesFromSprint,
+    isPhaseView: isAllProjects && allProjectsBoard != null && !allProjectsBoard.isUnified,
+    projectEngines: isAllProjects ? projectEngines : undefined,
   });
 
   // 8px activation constraint so clicks pass through to detail modal
@@ -135,6 +164,7 @@ export function ScopeBoard() {
   const modifiers = useZoomModifier();
 
   // Build scope lookup from full set so sprint containers always resolve
+  // Uses numeric ID since sprints are per-project (not aggregated in All Projects)
   const scopeLookup = useMemo(() => {
     const map = new Map<number, Scope>();
     for (const scope of scopes) map.set(scope.id, scope);
@@ -142,6 +172,22 @@ export function ScopeBoard() {
   }, [scopes]);
 
   const scopesByStatus = useMemo(() => {
+    // All Projects board has its own grouping logic
+    if (allProjectsBoard) {
+      const groups: Record<string, Scope[]> = {};
+      for (const col of allProjectsBoard.columns) groups[col.id] = [];
+      for (const [colId, colScopes] of Object.entries(allProjectsBoard.scopesByColumn)) {
+        // Filter to display scopes (respects search/filters)
+        const displayKeys = new Set(search.displayScopes.map(s => scopeKey(s)));
+        groups[colId] = sortScopes(
+          colScopes.filter(s => displayKeys.has(scopeKey(s))),
+          sortField,
+          sortDirection,
+        );
+      }
+      return groups;
+    }
+
     const groups: Record<string, Scope[]> = {};
     for (const col of boardColumns) groups[col.id] = [];
 
@@ -160,7 +206,7 @@ export function ScopeBoard() {
     }
 
     return groups;
-  }, [search.displayScopes, sortField, sortDirection, boardColumns, engine]);
+  }, [search.displayScopes, sortField, sortDirection, boardColumns, engine, allProjectsBoard]);
 
   // Sprints/batches by column using target_column (W-6)
   const sprintsByColumn = useMemo(() => {
@@ -194,19 +240,44 @@ export function ScopeBoard() {
   // Swimlane computation (only when in swimlane mode)
   const swimLanes = useMemo(() => {
     if (viewMode !== 'swimlane') return [];
-    return computeSwimLanes(search.displayScopes, groupField, sortField, sortDirection);
-  }, [viewMode, search.displayScopes, groupField, sortField, sortDirection]);
+
+    // Build phase resolver for All Projects non-unified mode
+    let resolveColumnId: ((scope: Scope) => string) | undefined;
+    if (isAllProjects && allProjectsBoard && !allProjectsBoard.isUnified) {
+      const normalizers = new Map<string, WorkflowNormalizer>();
+      for (const [pid, eng] of projectEngines) {
+        normalizers.set(pid, new WorkflowNormalizer(eng));
+      }
+      resolveColumnId = (scope: Scope) => {
+        const n = normalizers.get(scope.project_id ?? '');
+        return n ? n.getPhase(scope.status) : 'queued';
+      };
+    }
+
+    return computeSwimLanes(search.displayScopes, groupField, sortField, sortDirection, resolveColumnId);
+  }, [viewMode, search.displayScopes, groupField, sortField, sortDirection, isAllProjects, allProjectsBoard, projectEngines]);
 
   // Compute valid drop targets for the currently dragged item
   const validTargets = useMemo(() => {
     if (dndState.activeScope) {
+      // In All Projects phase view, resolve targets through the scope's project engine
+      if (isAllProjects && allProjectsBoard && !allProjectsBoard.isUnified && dndState.activeScope.project_id) {
+        const scopeEngine = projectEngines.get(dndState.activeScope.project_id);
+        if (scopeEngine) {
+          const directTargets = scopeEngine.getValidTargets(dndState.activeScope.status);
+          // Map workflow targets to phase columns
+          const normalizer = new WorkflowNormalizer(scopeEngine);
+          const phases = new Set(directTargets.map(t => normalizer.getPhase(t)));
+          return phases;
+        }
+      }
       return new Set(engine.getValidTargets(dndState.activeScope.status));
     }
     if (dndState.activeSprint) {
       return new Set<string>(['implementing']);
     }
     return new Set<string>();
-  }, [dndState.activeScope, dndState.activeSprint, engine]);
+  }, [dndState.activeScope, dndState.activeSprint, engine, isAllProjects, allProjectsBoard, projectEngines]);
 
   // ─── Sprint Preflight ───────────────────────────────────
   const preflight = useSprintPreflight(
@@ -220,7 +291,7 @@ export function ScopeBoard() {
   const { surpriseLoading, handleSurprise, handleApproveGhost, handleRejectGhost } =
     useIdeaActions(closeIdeaForm, setSelectedIdea);
 
-  if (loading) {
+  if (loading && scopes.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -229,7 +300,6 @@ export function ScopeBoard() {
   }
 
   return (
-    <ActiveDispatchContext.Provider value={activeDispatchCtx}>
     <DndContext
       sensors={sensors}
       modifiers={modifiers}
@@ -239,20 +309,30 @@ export function ScopeBoard() {
       onDragEnd={onDragEnd}
     >
       <div className="flex flex-1 min-h-0 flex-col">
-        {/* Header */}
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <LayoutDashboard className="h-4 w-4 text-primary" />
-            <h1 className="text-xl font-light">Kanban</h1>
-            <Badge variant="secondary" className="ml-2">
-              {search.hasSearch
-                ? `${search.matchCount} / ${scopes.length} scopes`
-                : hasActiveFilters
-                ? `${filteredScopes.length} / ${scopes.length} scopes`
-                : `${scopes.length} scopes`}
-            </Badge>
-          </div>
-          <div className="flex items-center gap-2">
+        {/* Project Tab Bar (multi-project only) */}
+        <ProjectTabBar />
+
+        {/* Header — single row */}
+        <div className="mb-4 flex items-center gap-3">
+          <LayoutDashboard className="h-4 w-4 text-primary shrink-0" />
+          <h1 className="text-xl font-light shrink-0">Kanban</h1>
+
+          <div className="ml-auto flex items-center gap-2 shrink-0">
+            <SearchInput
+              query={search.query}
+              mode={search.mode}
+              isStale={search.isStale}
+              onQueryChange={search.setQuery}
+              onModeChange={search.setMode}
+            />
+            <ScopeFilterBar
+              filters={filters}
+              optionsWithCounts={optionsWithCounts}
+              onToggle={toggleFilter}
+              onClearField={clearField}
+              onClearAll={clearAll}
+              hasActiveFilters={hasActiveFilters}
+            />
             <ViewModeSelector
               viewMode={viewMode}
               groupField={groupField}
@@ -273,31 +353,16 @@ export function ScopeBoard() {
           </div>
         )}
 
-        {/* Filters + Search */}
-        <ScopeFilterBar
-          filters={filters}
-          optionsWithCounts={optionsWithCounts}
-          onToggle={toggleFilter}
-          onClearField={clearField}
-          onClearAll={clearAll}
-          hasActiveFilters={hasActiveFilters}
-          searchQuery={search.query}
-          searchMode={search.mode}
-          searchIsStale={search.isStale}
-          onSearchChange={search.setQuery}
-          onSearchModeChange={search.setMode}
-        />
-
         {/* Board — Kanban or Swimlane */}
         {viewMode === 'swimlane' ? (
           <SwimlaneBoardView
             lanes={swimLanes}
-            columns={boardColumns}
+            columns={effectiveColumns}
             collapsedColumns={collapsed}
             collapsedLanes={collapsedLanes}
             onToggleLane={toggleLaneCollapse}
             onToggleCollapse={toggleCollapse}
-            onScopeClick={(scope) => scope.status === engine.getEntryPoint().id ? setSelectedIdea(scope) : setSelectedScopeId(scope.id)}
+            onScopeClick={(scope) => scope.status === engine.getEntryPoint().id ? setSelectedIdea(scope) : setSelectedScopeKey(scopeKey(scope))}
             cardDisplay={cardDisplay}
             dimmedIds={mergedDimmedIds}
             isDragActive={!!(dndState.activeScope || dndState.activeSprint)}
@@ -307,23 +372,23 @@ export function ScopeBoard() {
         ) : (
           <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
             <div className="flex h-full w-max gap-2 pb-4">
-              {boardColumns.map((col) => (
+              {effectiveColumns.map((col) => (
                 <KanbanColumn
                   key={col.id}
                   id={col.id}
                   label={col.label}
                   color={col.color}
                   scopes={scopesByStatus[col.id] ?? []}
-                  sprints={sprintsByColumn[col.id]}
+                  sprints={isAllProjects ? undefined : sprintsByColumn[col.id]}
                   scopeLookup={scopeLookup}
-                  globalSprintScopeIds={globalSprintScopeIds}
-                  onScopeClick={(scope) => scope.status === engine.getEntryPoint().id ? setSelectedIdea(scope) : setSelectedScopeId(scope.id)}
-                  onDeleteSprint={deleteSprint}
-                  onDispatchSprint={(id) => setPendingBatchDispatch(id)}
-                  onRenameSprint={(id, name) => renameSprint(id, name)}
-                  editingSprintId={editingSprintId}
-                  onSprintEditingDone={() => setEditingSprintId(null)}
-                  onAddAllToSprint={async (sprintId, scopeIds) => {
+                  globalSprintScopeIds={isAllProjects ? undefined : globalSprintScopeIds}
+                  onScopeClick={(scope) => scope.status === engine.getEntryPoint().id ? setSelectedIdea(scope) : setSelectedScopeKey(scopeKey(scope))}
+                  onDeleteSprint={isAllProjects ? undefined : deleteSprint}
+                  onDispatchSprint={isAllProjects ? undefined : (id) => setPendingBatchDispatch(id)}
+                  onRenameSprint={isAllProjects ? undefined : (id, name) => renameSprint(id, name)}
+                  editingSprintId={isAllProjects ? undefined : editingSprintId}
+                  onSprintEditingDone={isAllProjects ? undefined : () => setEditingSprintId(null)}
+                  onAddAllToSprint={isAllProjects ? undefined : async (sprintId, scopeIds) => {
                     const result = await addScopesToSprint(sprintId, scopeIds);
                     if (result && result.unmet_dependencies.length > 0) {
                       showUnmetDeps(sprintId, result.unmet_dependencies);
@@ -338,7 +403,8 @@ export function ScopeBoard() {
                   onToggleCollapse={() => toggleCollapse(col.id)}
                   cardDisplay={cardDisplay}
                   dimmedIds={mergedDimmedIds}
-                  headerExtra={
+                  projectLookup={projectLookup}
+                  headerExtra={isAllProjects ? undefined :
                     <ColumnHeaderActions
                       columnId={col.id}
                       dispatching={dndState.dispatching}
@@ -369,6 +435,8 @@ export function ScopeBoard() {
           scope={dndState.pending?.scope ?? null}
           transition={dndState.pending?.transition ?? null}
           hasActiveSession={dndState.pending?.hasActiveSession ?? false}
+          dispatching={dndState.dispatching}
+          error={dndState.error}
           onConfirm={confirmTransition}
           onCancel={cancelTransition}
           onViewDetails={openModalFromPopover}
@@ -380,6 +448,8 @@ export function ScopeBoard() {
           scope={dndState.pending?.scope ?? null}
           transition={dndState.pending?.transition ?? null}
           hasActiveSession={dndState.pending?.hasActiveSession ?? false}
+          dispatching={dndState.dispatching}
+          error={dndState.error}
           onConfirm={confirmTransition}
           onCancel={cancelTransition}
         />
@@ -388,7 +458,7 @@ export function ScopeBoard() {
         <ScopeDetailModal
           scope={selectedScope}
           open={!!selectedScope}
-          onClose={() => setSelectedScopeId(null)}
+          onClose={() => setSelectedScopeKey(null)}
         />
 
         {/* Idea form dialog */}
@@ -406,14 +476,15 @@ export function ScopeBoard() {
           scope={selectedIdea}
           open={!!selectedIdea}
           onClose={() => setSelectedIdea(null)}
-          onDelete={async (id) => {
+          onDelete={async (slug) => {
             try {
-              const res = await fetch(`/api/orbital/ideas/${id}`, { method: 'DELETE' });
+              const res = await fetch(buildUrl(`/ideas/${slug}`), { method: 'DELETE' });
               if (!res.ok) throw new Error(`HTTP ${res.status}`);
-              setSelectedIdea(null);
             } catch {
-              setSelectedIdea(null);
+              // keep going — modal closes either way
             }
+            setSelectedIdea(null);
+            refetch();
           }}
           onApprove={handleApproveGhost}
           onReject={handleRejectGhost}
@@ -447,8 +518,15 @@ export function ScopeBoard() {
           onAddAll={resolveUnmetDeps}
           onCancel={dismissUnmetDeps}
         />
+
+        {/* Transition disambiguation dialog (All Projects phase view) */}
+        <TransitionDisambiguationDialog
+          open={dndState.pendingDisambiguation != null}
+          edges={dndState.pendingDisambiguation?.edges ?? []}
+          onSelect={selectDisambiguation}
+          onCancel={dismissDisambiguation}
+        />
       </div>
     </DndContext>
-    </ActiveDispatchContext.Provider>
   );
 }

@@ -143,7 +143,18 @@ async function cmdInit(args) {
   runInit(projectRoot, { force });
 
   stampTemplateVersion(projectRoot);
-  console.log(`Run \`orbital dev\` to start the development server.\n`);
+
+  // Auto-register with central server if ~/.orbital/ exists
+  if (fs.existsSync(ORBITAL_HOME)) {
+    const registry = loadRegistry();
+    const alreadyRegistered = (registry.projects || []).some(p => p.path === projectRoot);
+    if (!alreadyRegistered) {
+      cmdRegister([projectRoot]);
+      console.log(`  Auto-registered with Orbital Command central server.`);
+    }
+  }
+
+  console.log(`Run \`orbital launch\` to start the dashboard.\n`);
 }
 
 function cmdDev() {
@@ -300,6 +311,175 @@ async function cmdUninstall() {
   runUninstall(projectRoot);
 }
 
+// ---------------------------------------------------------------------------
+// Multi-project commands
+// ---------------------------------------------------------------------------
+
+const ORBITAL_HOME = path.join(process.env.HOME || process.env.USERPROFILE || '~', '.orbital');
+const REGISTRY_PATH = path.join(ORBITAL_HOME, 'config.json');
+
+function loadRegistry() {
+  if (!fs.existsSync(REGISTRY_PATH)) return { version: 1, projects: [] };
+  try {
+    return JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf8'));
+  } catch {
+    return { version: 1, projects: [] };
+  }
+}
+
+async function cmdLaunch() {
+  const shouldOpen = process.argv.includes('--open');
+  const projectRoot = detectProjectRoot();
+
+  // Ensure ~/.orbital/ exists
+  if (!fs.existsSync(ORBITAL_HOME)) fs.mkdirSync(ORBITAL_HOME, { recursive: true });
+
+  const registry = loadRegistry();
+  const projectCount = registry.projects?.length || 0;
+
+  console.log(`\nOrbital Command — launch`);
+  console.log(`Projects registered: ${projectCount}`);
+  if (projectCount === 0) {
+    console.log(`Auto-registering current project: ${projectRoot}`);
+  }
+  console.log();
+
+  // Use tsx to run the server with the central server entry
+  const env = {
+    ...process.env,
+    ORBITAL_LAUNCH_MODE: 'central',
+    ORBITAL_AUTO_REGISTER: projectCount === 0 ? projectRoot : '',
+    ORBITAL_SERVER_PORT: String(process.env.ORBITAL_SERVER_PORT || '4444'),
+  };
+
+  const tsxBin = resolveBin('tsx');
+  const serverScript = path.join(PACKAGE_ROOT, 'server', 'launch.ts');
+
+  // Check if launch.ts exists, fall back to inline startup
+  const serverProcess = tsxBin
+    ? spawn(tsxBin, ['watch', serverScript], { stdio: 'inherit', env, cwd: PACKAGE_ROOT })
+    : spawn('npx', ['tsx', 'watch', serverScript], { stdio: 'inherit', env, cwd: PACKAGE_ROOT });
+
+  if (shouldOpen) {
+    const port = env.ORBITAL_SERVER_PORT;
+    setTimeout(() => openBrowser(`http://localhost:${port}`), 2500);
+  }
+
+  let exiting = false;
+  function cleanup() {
+    if (exiting) return;
+    exiting = true;
+    serverProcess.kill();
+    process.exit(0);
+  }
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
+
+  serverProcess.on('exit', (code) => {
+    if (!exiting) process.exit(code || 0);
+  });
+}
+
+function cmdRegister(args) {
+  const targetPath = args[0] ? path.resolve(args[0]) : detectProjectRoot();
+  const nameFlag = args.indexOf('--alias');
+  const name = nameFlag >= 0 ? args[nameFlag + 1] : path.basename(targetPath);
+
+  // Ensure ~/.orbital/ exists
+  if (!fs.existsSync(ORBITAL_HOME)) fs.mkdirSync(ORBITAL_HOME, { recursive: true });
+
+  // Check the project has been initialized
+  if (!fs.existsSync(path.join(targetPath, '.claude'))) {
+    console.error(`Error: ${targetPath} has not been initialized with Orbital Command.`);
+    console.error(`Run \`orbital init\` in that directory first.`);
+    process.exit(1);
+  }
+
+  const registry = loadRegistry();
+
+  // Check if already registered
+  if (registry.projects?.some(p => p.path === targetPath)) {
+    console.log(`Project already registered: ${targetPath}`);
+    return;
+  }
+
+  // Color palette
+  const COLORS = [
+    '210 80% 55%', '340 75% 55%', '160 60% 45%', '30 90% 55%',
+    '270 65% 55%', '50 85% 50%', '180 55% 45%', '0 70% 55%',
+    '120 50% 42%', '300 60% 50%', '200 70% 50%', '15 80% 55%',
+  ];
+  const usedColors = (registry.projects || []).map(p => p.color);
+  const color = COLORS.find(c => !usedColors.includes(c)) || COLORS[0];
+
+  // Generate slug
+  const baseSlug = path.basename(targetPath).toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'project';
+  const existingIds = (registry.projects || []).map(p => p.id);
+  const slug = existingIds.includes(baseSlug)
+    ? `${baseSlug}-${crypto.createHash('sha256').update(targetPath).digest('hex').slice(0, 4)}`
+    : baseSlug;
+
+  const project = {
+    id: slug,
+    path: targetPath,
+    name,
+    color,
+    registeredAt: new Date().toISOString(),
+    enabled: true,
+  };
+
+  if (!registry.projects) registry.projects = [];
+  registry.projects.push(project);
+  fs.writeFileSync(REGISTRY_PATH, JSON.stringify(registry, null, 2), 'utf8');
+
+  console.log(`Registered project: ${name}`);
+  console.log(`  ID:    ${slug}`);
+  console.log(`  Path:  ${targetPath}`);
+  console.log(`  Color: ${color}`);
+}
+
+function cmdUnregister(args) {
+  const idOrPath = args[0];
+  if (!idOrPath) {
+    console.error('Usage: orbital unregister <id-or-path>');
+    process.exit(1);
+  }
+
+  const absPath = path.isAbsolute(idOrPath) ? idOrPath : path.resolve(idOrPath);
+  const registry = loadRegistry();
+  const idx = (registry.projects || []).findIndex(p => p.id === idOrPath || p.path === absPath);
+
+  if (idx === -1) {
+    console.error(`Project not found: ${idOrPath}`);
+    process.exit(1);
+  }
+
+  const removed = registry.projects.splice(idx, 1)[0];
+  fs.writeFileSync(REGISTRY_PATH, JSON.stringify(registry, null, 2), 'utf8');
+
+  console.log(`Unregistered project: ${removed.name} (${removed.id})`);
+  console.log(`  Project files in ${removed.path} are preserved.`);
+}
+
+function cmdProjects() {
+  const registry = loadRegistry();
+  const projects = registry.projects || [];
+
+  if (projects.length === 0) {
+    console.log('\nNo projects registered.');
+    console.log('Use `orbital register` or `orbital init` to add a project.\n');
+    return;
+  }
+
+  console.log(`\n  ${'ID'.padEnd(22)} ${'NAME'.padEnd(22)} ${'STATUS'.padEnd(10)} PATH`);
+  console.log(`  ${'─'.repeat(22)} ${'─'.repeat(22)} ${'─'.repeat(10)} ${'─'.repeat(30)}`);
+  for (const p of projects) {
+    const status = p.enabled ? (fs.existsSync(p.path) ? 'active' : 'offline') : 'disabled';
+    console.log(`  ${p.id.padEnd(22)} ${p.name.padEnd(22)} ${status.padEnd(10)} ${p.path}`);
+  }
+  console.log();
+}
+
 function printHelp() {
   console.log(`
 Orbital Command — CLI for the agentic project management system
@@ -308,12 +488,19 @@ Usage:
   orbital <command> [options]
 
 Commands:
+  launch            Start Orbital Command (multi-project central server)
   init              Scaffold Orbital Command into the current project
-  dev               Start the Orbital Command dashboard
+  dev               Start single-project dashboard (legacy, use 'launch' instead)
+  register [path]   Register a project with the central server
+  unregister <id>   Remove a project from the central server
+  projects          List all registered projects
   build             Production build of the dashboard
   emit <TYPE> <JSON>  Emit an orbital event
   update            Re-copy hooks/skills/agents from package templates
   uninstall         Remove Orbital artifacts from the project
+
+Launch Options:
+  --open            Open the dashboard in the default browser
 
 Init Options:
   --force           Overwrite existing hooks, skills, and agents
@@ -325,8 +512,10 @@ Dev Options:
   --vite            Force Vite dev server (for local development with HMR)
 
 Examples:
+  orbital launch
+  orbital launch --open
   orbital init
-  orbital init --force
+  orbital register ~/code/my-project
   orbital dev
   orbital dev --open
   orbital emit SCOPE_TRANSITION '{"scope":"042","from":"implementing","to":"review"}'
@@ -343,11 +532,23 @@ const [command, ...args] = process.argv.slice(2);
 
 async function main() {
   switch (command) {
+    case 'launch':
+      await cmdLaunch();
+      break;
     case 'init':
       await cmdInit(args);
       break;
     case 'dev':
       cmdDev();
+      break;
+    case 'register':
+      cmdRegister(args);
+      break;
+    case 'unregister':
+      cmdUnregister(args);
+      break;
+    case 'projects':
+      cmdProjects();
       break;
     case 'build':
       cmdBuild();

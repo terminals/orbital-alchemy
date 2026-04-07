@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { Server } from 'socket.io';
+import type { Emitter } from '../project-emitter.js';
 import type { GateStatus } from '../../shared/api-types.js';
 import { createLogger } from '../utils/logger.js';
 
@@ -45,7 +45,7 @@ export const GATE_NAMES = [
 export class GateService {
   constructor(
     private db: Database.Database,
-    private io: Server
+    private io: Emitter
   ) {}
 
   /** Record a gate result */

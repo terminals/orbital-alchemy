@@ -46,10 +46,24 @@ Then run:
 bash .claude/hooks/scope-prepare.sh --new --title "Feature Name" --desc "Description" --category "Backend"
 ```
 
-The script outputs JSON: `{"id", "path", "title", "description", "session_id", "category", "mode"}`.
+The script outputs JSON: `{"id", "path", "title", "description", "session_id", "category", "effort", "mode", "available_categories", "effort_buckets"}`.
 The scope file is fully scaffolded with template, frontmatter, dashboard, and process log.
 
-### Step 2: Fill Specification
+### Step 2: Categorize and Estimate
+
+Read the JSON output from Step 1. Using the title, description, and any preserved idea body
+in the scope file, update the frontmatter:
+
+1. **Category**: Select the best match from `available_categories` in the JSON output.
+   Match semantically — "feature" for new capabilities, "bugfix" for fixes, "refactor" for
+   restructuring, "infrastructure" for tooling/CI/config, "docs" for documentation.
+   If the category is still "TBD", update it in the scope file's frontmatter.
+
+2. **Effort**: Estimate using the bucket system from `effort_buckets` in the JSON output
+   (typically: `<1H`, `1-4H`, or `4H+`). Consider the scope of changes implied by the
+   title and description. If effort is still "TBD", update it in the scope file's frontmatter.
+
+### Step 3: Fill Specification
 
 Edit the scope file to replace the placeholder in **SPECIFICATION > Overview** with the
 actual problem statement and goal. If coming from a plan, also populate:
@@ -57,7 +71,7 @@ actual problem statement and goal. If coming from a plan, also populate:
 - **Technical Approach** and rationale
 - **Implementation Phases** with files, changes, and verification steps
 
-### Step 3: Report
+### Step 4: Report
 
 ```
 Created: scopes/planning/NNN-feature-name.md

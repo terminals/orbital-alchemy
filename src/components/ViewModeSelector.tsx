@@ -42,7 +42,7 @@ export function ViewModeSelector({
           aria-label="Toggle view mode"
         >
           <ActiveIcon className="h-3 w-3" />
-          {viewMode === 'swimlane' ? 'Swimlane' : 'Kanban'}
+          Board
         </Button>
       </PopoverTrigger>
 

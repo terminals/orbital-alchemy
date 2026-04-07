@@ -176,6 +176,24 @@ append_session_uuid() {
   rm -f "${file}.lock"
 }
 
+# Find icebox file by slug (e.g. "onboarding-flow" matches scopes/icebox/onboarding-flow.md)
+# or legacy scopes/icebox/502-onboarding-flow.md)
+find_scope_by_slug() {
+  local slug="$1"
+  local icebox_dir="$SCOPE_PROJECT_DIR/scopes/icebox"
+  [ -d "$icebox_dir" ] || return 1
+  # Try slug-only file first
+  if [ -f "$icebox_dir/${slug}.md" ]; then
+    echo "$icebox_dir/${slug}.md"
+    return 0
+  fi
+  # Fall back to legacy numeric-prefixed: {NNN}-{slug}.md
+  for f in "$icebox_dir"/*-"${slug}.md"; do
+    [ -f "$f" ] && echo "$f" && return 0
+  done
+  return 1
+}
+
 # Find scope file by numeric ID across all directories
 find_scope_by_id() {
   local id="$1"

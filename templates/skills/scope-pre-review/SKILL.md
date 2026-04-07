@@ -188,8 +188,11 @@ J items are implementation notes (no spec change).
 ### Step 8: Update Scope Status
 
 After applying spec fixes and writing the AGENT REVIEW:
-- Update frontmatter: `status: backlog`, `spec_locked: true`
-- Move file: `mv scopes/planning/{file} scopes/backlog/`
+- Transition the scope (handles frontmatter + file move atomically):
+  ```bash
+  bash .claude/hooks/scope-transition.sh --from planning --to backlog --scope {NNN}
+  ```
+- Update frontmatter: `spec_locked: true` (scope-transition.sh handles status, this is the extra field)
 - Update DASHBOARD Quick Status: `🟢 **Status**: Backlog | **Spec Locked**: Yes`
 - Add to Recent Activity: `Review completed — N blockers, M warnings. X items applied to spec, K clarifications resolved.`
 

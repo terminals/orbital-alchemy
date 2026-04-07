@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { Server } from 'socket.io';
+import type { Emitter } from '../project-emitter.js';
 import type { ScopeService } from './scope-service.js';
 import { createLogger } from '../utils/logger.js';
 
@@ -84,7 +84,7 @@ export interface SprintDetail {
 export class SprintService {
   constructor(
     private db: Database.Database,
-    private io: Server,
+    private io: Emitter,
     private scopeService: ScopeService,
   ) {}
 

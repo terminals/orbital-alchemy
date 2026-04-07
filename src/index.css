@@ -381,55 +381,24 @@
 [data-theme="neon-glass"] .scope-cat-infrastructure:hover { box-shadow: inset 12px 0 16px -10px rgba(64, 196, 255, 0.3), 0 8px 8px -4px rgba(var(--neon-cyan), 0.12); }
 [data-theme="neon-glass"] .scope-cat-docs:hover           { box-shadow: inset 12px 0 16px -10px rgba(107, 114, 128, 0.3), 0 8px 8px -4px rgba(var(--neon-cyan), 0.12); }
 
-/* ─── DISPATCH STROKE LOADER (active dispatch border animation) ─── */
-/* Animatable custom property for conic-gradient rotation */
-@property --dispatch-angle {
-  syntax: '<angle>';
-  initial-value: 0deg;
-  inherits: false;
+/* ─── DISPATCH BORDER GLOW (active dispatch indicator) ─── */
+/* Uses outline (not box-shadow) — immune to overflow clipping and
+   won't conflict with card-glass box-shadow or Tailwind shadow-none. */
+@keyframes dispatch-glow {
+  0%, 100% { outline-color: rgba(233, 30, 99, 0.3); }
+  50%      { outline-color: rgba(233, 30, 99, 0.8); }
 }
-@keyframes dispatch-stroke {
-  to { --dispatch-angle: 360deg; }
-}
-/* Shared: position context for the pseudo-element border */
 .scope-card-dispatched {
-  position: relative;
-  overflow: visible;
+  outline: 1.5px solid rgba(233, 30, 99, 0.5);
+  outline-offset: -1.5px;
+  animation: dispatch-glow 2s ease-in-out infinite;
 }
-/* Default theme: hot pink border stroke */
-.scope-card-dispatched::before {
-  content: '';
-  position: absolute;
-  inset: -1.5px;
-  border-radius: inherit;
-  padding: 1.5px;
-  background: conic-gradient(
-    from var(--dispatch-angle),
-    transparent 0%,
-    rgba(233, 30, 99, 0.7) 10%,
-    rgba(233, 30, 99, 0.3) 20%,
-    transparent 30%
-  );
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  animation: dispatch-stroke 2.5s linear infinite;
-  pointer-events: none;
-  z-index: 1;
+[data-theme="neon-glass"] .scope-card-dispatched {
+  animation-name: dispatch-glow-neon;
 }
-/* Neon-glass theme: brighter pink with subtle cyan trail */
-[data-theme="neon-glass"] .scope-card-dispatched::before {
-  padding: 1.5px;
-  background: conic-gradient(
-    from var(--dispatch-angle),
-    transparent 0%,
-    rgba(var(--neon-pink), 0.9) 8%,
-    rgba(var(--neon-pink), 0.5) 16%,
-    rgba(var(--neon-cyan), 0.15) 24%,
-    transparent 32%
-  );
+@keyframes dispatch-glow-neon {
+  0%, 100% { outline-color: rgba(var(--neon-pink), 0.35); }
+  50%      { outline-color: rgba(var(--neon-pink), 0.9); }
 }
 
 /* ─── DISPATCH PULSE DOT ─── */
@@ -457,45 +426,22 @@
   box-shadow: 0 4px 16px rgba(var(--neon-amber), 0.12);
 }
 
-/* ─── BATCH GROUP DISPATCH STROKE (container-level border animation) ─── */
+/* ─── BATCH GROUP DISPATCH GLOW (container-level indicator) ─── */
+@keyframes batch-glow {
+  0%, 100% { outline-color: rgba(255, 171, 0, 0.3); }
+  50%      { outline-color: rgba(255, 171, 0, 0.8); }
+}
 .batch-group-dispatched {
-  position: relative;
-  overflow: visible;
+  outline: 2px solid rgba(255, 171, 0, 0.5);
+  outline-offset: -2px;
+  animation: batch-glow 2.5s ease-in-out infinite;
 }
-/* Default theme: amber border stroke */
-.batch-group-dispatched::before {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  border-radius: inherit;
-  padding: 2px;
-  background: conic-gradient(
-    from var(--dispatch-angle),
-    transparent 0%,
-    rgba(255, 171, 0, 0.7) 10%,
-    rgba(255, 171, 0, 0.3) 20%,
-    transparent 30%
-  );
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  animation: dispatch-stroke 3s linear infinite;
-  pointer-events: none;
-  z-index: 1;
+[data-theme="neon-glass"] .batch-group-dispatched {
+  animation-name: batch-glow-neon;
 }
-/* Neon-glass theme: amber head with cyan trail */
-[data-theme="neon-glass"] .batch-group-dispatched::before {
-  padding: 2px;
-  background: conic-gradient(
-    from var(--dispatch-angle),
-    transparent 0%,
-    rgba(var(--neon-amber), 0.9) 8%,
-    rgba(var(--neon-amber), 0.5) 16%,
-    rgba(var(--neon-cyan), 0.15) 24%,
-    transparent 32%
-  );
+@keyframes batch-glow-neon {
+  0%, 100% { outline-color: rgba(var(--neon-amber), 0.35); }
+  50%      { outline-color: rgba(var(--neon-amber), 0.9); }
 }
 
 /* Effort estimate ghost button */

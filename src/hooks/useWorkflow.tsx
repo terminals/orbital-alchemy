@@ -1,7 +1,6 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { WorkflowEngine } from '../../shared/workflow-engine';
-import { isWorkflowConfig } from '../../shared/workflow-config';
-import { socket } from '../socket';
+import { createContext, useContext, useEffect, type ReactNode } from 'react';
+import type { WorkflowEngine } from '../../shared/workflow-engine';
+import { useProjects } from './useProjectContext';
 
 // ─── Context ──────────────────────────────────────────────
 
@@ -17,57 +16,25 @@ interface WorkflowProviderProps {
   children: ReactNode;
 }
 
+/**
+ * Provides the WorkflowEngine for the currently active project.
+ *
+ * Reads from ProjectProvider's cached `projectEngines` map — no independent
+ * fetching. When "All Projects" is selected, returns the first project's engine
+ * (individual views that need all engines use `useProjects().projectEngines`).
+ */
 export function WorkflowProvider({ children }: WorkflowProviderProps) {
-  const [engine, setEngine] = useState<WorkflowEngine | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { activeProjectId, projects, projectEngines } = useProjects();
 
-  const loadConfig = useCallback(async () => {
-    const maxRetries = 3;
-    const backoffMs = [500, 1000, 2000];
-    const controller = new AbortController();
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        const res = await fetch('/api/orbital/workflow', { signal: controller.signal });
-        if (!res.ok) throw new Error(`Failed to load workflow: HTTP ${res.status}`);
-        const json = await res.json() as { success: boolean; data?: unknown };
-        const config: unknown = json.data ?? json;
-        if (!isWorkflowConfig(config)) throw new Error('Invalid workflow config from server');
-        setEngine(new WorkflowEngine(config));
-        setError(null);
-        setLoading(false);
-        return;
-      } catch (err) {
-        if (controller.signal.aborted) return;
-        if (attempt < maxRetries) {
-          await new Promise(r => setTimeout(r, backoffMs[attempt]));
-          continue;
-        }
-        setError(err instanceof Error ? err.message : 'Failed to load workflow');
-        setLoading(false);
-      }
-    }
-  }, []);
-
-  // Initial fetch
-  useEffect(() => {
-    loadConfig();
-  }, [loadConfig]);
-
-  // Hot-reload: re-fetch when server config changes (scope 110 emits this)
-  useEffect(() => {
-    const handler = () => { loadConfig(); };
-    socket.on('workflow:changed', handler);
-    return () => { socket.off('workflow:changed', handler); };
-  }, [loadConfig]);
-
-  // Re-fetch on socket reconnect (covers server restarts)
-  useEffect(() => {
-    const handler = () => { setLoading(true); loadConfig(); };
-    socket.on('connect', handler);
-    return () => { socket.off('connect', handler); };
-  }, [loadConfig]);
+  // Resolve the active engine from the cached map.
+  // When "All Projects" is selected, prefer the first project's engine but fall
+  // back to ANY loaded engine so the page doesn't stay blank while individual
+  // project engines are still loading (or if the first project's fetch fails).
+  const targetId = activeProjectId ?? projects[0]?.id ?? null;
+  let engine = targetId ? projectEngines.get(targetId) ?? null : null;
+  if (!engine && projectEngines.size > 0) {
+    engine = projectEngines.values().next().value ?? null;
+  }
 
   // Inject CSS variables from engine config onto document root
   useEffect(() => {
@@ -81,29 +48,27 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
     }
   }, [engine]);
 
-  if (loading) {
+  if (!engine) {
+    // No projects at all — show error
+    if (projects.length === 0) {
+      return (
+        <div className="flex h-screen items-center justify-center bg-background">
+          <div className="flex flex-col items-center gap-3 max-w-sm text-center">
+            <span className="text-sm text-destructive">No Projects</span>
+            <span className="text-xs text-muted-foreground">
+              No projects registered. Run <code>orbital register</code> to add a project.
+            </span>
+          </div>
+        </div>
+      );
+    }
+
+    // Projects exist but no engine loaded yet — show spinner
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           <span className="text-xs text-muted-foreground">Loading workflow...</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !engine) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3 max-w-sm text-center">
-          <span className="text-sm text-destructive">Workflow Error</span>
-          <span className="text-xs text-muted-foreground">{error ?? 'Unknown error'}</span>
-          <button
-            onClick={() => { setLoading(true); loadConfig(); }}
-            className="mt-2 rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90"
-          >
-            Retry
-          </button>
         </div>
       </div>
     );

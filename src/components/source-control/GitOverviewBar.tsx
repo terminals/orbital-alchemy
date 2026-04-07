@@ -8,14 +8,16 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import type { GitOverview, GitHubStatus } from '@/types';
+import { ActivitySparkline } from './ActivitySparkline';
+import type { GitOverview, GitHubStatus, ActivityDataPoint } from '@/types';
 
 interface Props {
   overview: GitOverview;
   github: GitHubStatus | null;
+  activity?: ActivityDataPoint[];
 }
 
-export function GitOverviewBar({ overview, github }: Props) {
+export function GitOverviewBar({ overview, github, activity }: Props) {
   return (
     <Card className="mb-6">
       <CardContent className="flex flex-wrap items-center gap-4 py-3">
@@ -71,6 +73,13 @@ export function GitOverviewBar({ overview, github }: Props) {
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <GitBranch className="h-3 w-3" />
             <span>{overview.featureBranchCount} feature branch{overview.featureBranchCount !== 1 ? 'es' : ''}</span>
+          </div>
+        )}
+
+        {/* Activity sparkline (30-day) */}
+        {activity && activity.length > 0 && (
+          <div className="w-20">
+            <ActivitySparkline data={activity} height={22} />
           </div>
         )}
 

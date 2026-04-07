@@ -3,7 +3,7 @@ import path from 'path';
 import readline from 'readline';
 import type Database from 'better-sqlite3';
 import type { ScopeService } from './scope-service.js';
-import { getConfig, getClaudeSessionsDir } from '../config.js';
+import { getClaudeSessionsDir } from '../config.js';
 
 export interface ClaudeSession {
   id: string;
@@ -59,11 +59,21 @@ export interface SessionStats {
   };
 }
 
-function getSessionsDir(): string {
-  return getClaudeSessionsDir(getConfig().projectRoot);
+/** Module-level projectRoot fallback for single-project mode. */
+let _projectRoot: string | null = null;
+
+/** Set the project root fallback (single-project mode only). */
+export function setSessionProjectRoot(projectRoot: string): void {
+  _projectRoot = projectRoot;
 }
 
-let cache: { sessions: ClaudeSession[]; expiry: number } | null = null;
+function getSessionsDir(projectRoot?: string): string {
+  const root = projectRoot ?? _projectRoot;
+  if (!root) throw new Error('Session project root not set — pass projectRoot or call setSessionProjectRoot()');
+  return getClaudeSessionsDir(root);
+}
+
+const cacheByDir = new Map<string, { sessions: ClaudeSession[]; expiry: number }>();
 const CACHE_TTL_MS = 60_000;
 
 /**
@@ -146,12 +156,13 @@ async function parseSessionFile(filePath: string): Promise<ClaudeSession | null>
   };
 }
 
-export async function getClaudeSessions(since?: string): Promise<ClaudeSession[]> {
-  if (cache && Date.now() < cache.expiry) {
-    return filterSince(cache.sessions, since);
+export async function getClaudeSessions(since?: string, projectRoot?: string): Promise<ClaudeSession[]> {
+  const sessionsDir = getSessionsDir(projectRoot);
+  const cached = cacheByDir.get(sessionsDir);
+  if (cached && Date.now() < cached.expiry) {
+    return filterSince(cached.sessions, since);
   }
 
-  const sessionsDir = getSessionsDir();
   if (!fs.existsSync(sessionsDir)) return [];
 
   const files = fs
@@ -171,7 +182,7 @@ export async function getClaudeSessions(since?: string): Promise<ClaudeSession[]
     (a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime(),
   );
 
-  cache = { sessions, expiry: Date.now() + CACHE_TTL_MS };
+  cacheByDir.set(sessionsDir, { sessions, expiry: Date.now() + CACHE_TTL_MS });
   return filterSince(sessions, since);
 }
 
@@ -248,8 +259,8 @@ function extractFirstUserMessage(lines: string[], max: number): string | null {
  * Parse a full JSONL file and return detailed stats grouped by line type.
  * This is heavier than parseSessionFile — only called for the detail view.
  */
-export function getSessionStats(claudeSessionId: string): SessionStats | null {
-  const filePath = path.join(getSessionsDir(), `${claudeSessionId}.jsonl`);
+export function getSessionStats(claudeSessionId: string, projectRoot?: string): SessionStats | null {
+  const filePath = path.join(getSessionsDir(projectRoot), `${claudeSessionId}.jsonl`);
   if (!fs.existsSync(filePath)) return null;
 
   const stats: SessionStats = {
@@ -360,8 +371,8 @@ export function getSessionStats(claudeSessionId: string): SessionStats | null {
  * 2. For each scope, parse the sessions JSON: Record<phase, uuid[]>
  * 3. For each (phase, uuid), UPSERT into sessions table with JSONL metadata if available
  */
-export async function syncClaudeSessionsToDB(db: Database.Database, scopeService: ScopeService): Promise<number> {
-  cache = null; // Force fresh read from filesystem
+export async function syncClaudeSessionsToDB(db: Database.Database, scopeService: ScopeService, projectRoot?: string): Promise<number> {
+  cacheByDir.clear(); // Force fresh read from filesystem
 
   const scopeRows = scopeService.getAll()
     .filter(s => Object.keys(s.sessions).length > 0)
@@ -389,7 +400,7 @@ export async function syncClaudeSessionsToDB(db: Database.Database, scopeService
           if (typeof uuid !== 'string' || !uuid) continue;
 
           // Check if JSONL file exists for metadata enrichment
-          const jsonlPath = path.join(getSessionsDir(), `${uuid}.jsonl`);
+          const jsonlPath = path.join(getSessionsDir(projectRoot), `${uuid}.jsonl`);
           let startedAt: string | null = null;
           let endedAt: string | null = null;
           let summary: string | null = null;

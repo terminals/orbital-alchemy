@@ -2,6 +2,7 @@ import { useDroppable } from '@dnd-kit/core';
 import type { Scope, ScopeStatus, CardDisplayConfig } from '@/types';
 import { ScopeCard } from './ScopeCard';
 import { cn } from '@/lib/utils';
+import { scopeKey } from '@/lib/scope-key';
 
 interface SwimCellProps {
   laneValue: string;
@@ -9,7 +10,7 @@ interface SwimCellProps {
   scopes: Scope[];
   onScopeClick?: (scope: Scope) => void;
   cardDisplay?: CardDisplayConfig;
-  dimmedIds?: Set<number>;
+  dimmedIds?: Set<string>;
   isDragActive: boolean;
   isValidDrop: boolean;
   isCollapsed: boolean;
@@ -35,30 +36,40 @@ export function SwimCell({
     <div
       ref={setNodeRef}
       className={cn(
-        'swim-cell min-h-[48px] rounded border border-white/[0.04] p-1 transition-colors',
-        isDragActive && isOver && isValidDrop && 'ring-2 ring-green-500/60 border-green-500/40 bg-green-500/5',
-        isDragActive && isOver && !isValidDrop && 'ring-2 ring-red-500/50 border-red-500/30 bg-red-500/5',
+        'swim-cell min-h-[48px] overflow-hidden rounded border border-white/[0.04] p-1 transition-colors',
+        isDragActive && isOver && isValidDrop && 'ring-2 ring-inset ring-green-500/60 border-green-500/40 bg-green-500/5',
+        isDragActive && isOver && !isValidDrop && 'ring-2 ring-inset ring-red-500/50 border-red-500/30 bg-red-500/5',
         isDragActive && !isOver && isValidDrop && 'border-green-500/20',
         scopes.length === 0 && 'border-dashed border-white/[0.06]',
       )}
     >
       <div className="space-y-1.5">
+        {isDragActive && isValidDrop && (
+          <div className={cn(
+            'flex h-8 items-center justify-center rounded border-2 border-dashed text-[10px] transition-colors',
+            isOver
+              ? 'border-cyan-500/60 bg-cyan-500/10 text-cyan-400'
+              : 'border-white/20 bg-white/[0.03] text-white/30',
+          )}>
+            Drop here
+          </div>
+        )}
         {scopes.filter((s) => !s.is_ghost).map((scope) => (
           <ScopeCard
-            key={scope.id}
+            key={scopeKey(scope)}
             scope={scope}
             onClick={onScopeClick}
             cardDisplay={cardDisplay}
-            dimmed={dimmedIds?.has(scope.id)}
+            dimmed={dimmedIds?.has(scopeKey(scope))}
           />
         ))}
         {scopes.filter((s) => s.is_ghost).map((scope) => (
           <ScopeCard
-            key={scope.id}
+            key={scopeKey(scope)}
             scope={scope}
             onClick={onScopeClick}
             cardDisplay={cardDisplay}
-            dimmed={dimmedIds?.has(scope.id)}
+            dimmed={dimmedIds?.has(scopeKey(scope))}
           />
         ))}
       </div>

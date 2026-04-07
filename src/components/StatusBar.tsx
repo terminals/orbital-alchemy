@@ -2,20 +2,21 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useScopes } from '@/hooks/useScopes';
 import { useWorkflow } from '@/hooks/useWorkflow.tsx';
+import { useActiveDispatches } from '@/hooks/useActiveDispatches';
 import { useTheme } from '@/hooks/useTheme';
-import { formatScopeId } from '@/lib/utils';
-import { cn } from '@/lib/utils';
+import { formatScopeId, cn } from '@/lib/utils';
+import { scopeKey } from '@/lib/scope-key';
 import { VersionBadge } from '@/components/VersionBadge';
 import type { Scope } from '@/types';
 
 export function StatusBar() {
   const { scopes } = useScopes();
   const { engine } = useWorkflow();
+  const { activeScopes } = useActiveDispatches();
   const { neonGlass } = useTheme();
   const navigate = useNavigate();
 
   const boardColumns = useMemo(() => engine.getBoardColumns(), [engine]);
-  const entryPointId = useMemo(() => engine.getEntryPoint().id, [engine]);
 
   const columnOrder = useMemo(() => {
     const map = new Map<string, number>();
@@ -34,8 +35,7 @@ export function StatusBar() {
     const attn: Scope[] = [];
 
     for (const scope of scopes) {
-      if (scope.status === entryPointId) continue;
-      if (engine.isTerminalStatus(scope.status)) continue;
+      if (!activeScopes.has(scopeKey(scope))) continue;
 
       if (scope.blocked_by.length > 0) {
         attn.push(scope);
@@ -45,11 +45,11 @@ export function StatusBar() {
     }
 
     return { inProgress: groupByStatus(prog, columnOrder), needsAttention: groupByStatus(attn, columnOrder) };
-  }, [scopes, entryPointId, engine, columnOrder]);
+  }, [scopes, activeScopes, columnOrder]);
 
-  const handleBadgeClick = (e: React.MouseEvent, scopeId: number) => {
+  const handleBadgeClick = (e: React.MouseEvent, key: string) => {
     e.stopPropagation();
-    navigate(`/?highlight=${scopeId}`);
+    navigate(`/?highlight=${encodeURIComponent(key)}`);
   };
 
   const hasScopes = inProgress.size > 0 || needsAttention.size > 0;
@@ -106,7 +106,7 @@ function ScopeBadges({
 }: {
   groups: Map<string, Scope[]>;
   colorMap: Map<string, string>;
-  onClick: (e: React.MouseEvent, scopeId: number) => void;
+  onClick: (e: React.MouseEvent, key: string) => void;
 }) {
   return (
     <>
@@ -115,8 +115,8 @@ function ScopeBadges({
         const hex = hslToHex(color);
         return scopeList.map((scope) => (
           <button
-            key={scope.id}
-            onClick={(e) => onClick(e, scope.id)}
+            key={scopeKey(scope)}
+            onClick={(e) => onClick(e, scopeKey(scope))}
             className="flex flex-shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-xxs transition-colors hover:brightness-125 cursor-pointer"
             style={{
               backgroundColor: `${hex}15`,

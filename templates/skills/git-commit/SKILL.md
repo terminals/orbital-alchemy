@@ -40,8 +40,7 @@ Find scopes in `scopes/review/` that have a passing verdict:
 1. List files in `scopes/review/*.md`
 2. For each, extract the scope number and check `.claude/review-verdicts/{NNN}.json`
 3. If verdict exists and `verdict === "PASS"`:
-   - `mv scopes/review/{file} scopes/completed/`
-   - Update frontmatter: `status: completed`
+   - Transition: `bash .claude/hooks/scope-transition.sh --from review --to completed --scope {NNN}`
    - Update DASHBOARD: `📦 **Status**: Committed`
 4. If scope is in `scopes/review/` with **no** passing verdict:
    - Warn: "Scope {NNN} is in review but hasn't passed the review gate."

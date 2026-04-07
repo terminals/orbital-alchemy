@@ -7,6 +7,34 @@ import { createLogger } from './utils/logger.js';
 
 const log = createLogger('database');
 
+// ─── Factory (multi-project) ────────────────────────────────
+
+/**
+ * Open a project-scoped SQLite database at the given directory.
+ * Creates the directory if needed, applies schema DDL and migrations.
+ *
+ * Each call returns a NEW connection — callers manage their own lifecycle.
+ * This is the multi-project replacement for the getDatabase() singleton.
+ */
+export function openProjectDatabase(dbDir: string): Database.Database {
+  fs.mkdirSync(dbDir, { recursive: true });
+  const file = path.join(dbDir, 'orbital.db');
+
+  const database = new Database(file);
+  log.info('Database initialized', { path: file });
+
+  database.pragma('journal_mode = WAL');
+  database.pragma('synchronous = NORMAL');
+  database.pragma('foreign_keys = ON');
+
+  database.exec(SCHEMA_DDL);
+  runMigrations(database);
+
+  return database;
+}
+
+// ─── Singleton (backward compat, used by index.ts) ──────────
+
 function getDbPaths(): { dir: string; file: string } {
   const config = getConfig();
   return { dir: config.dbDir, file: path.join(config.dbDir, 'orbital.db') };
@@ -14,26 +42,10 @@ function getDbPaths(): { dir: string; file: string } {
 
 let db: Database.Database | null = null;
 
+/** @deprecated Use openProjectDatabase() for multi-project support. */
 export function getDatabase(): Database.Database {
   if (db) return db;
-
-  const { dir, file } = getDbPaths();
-  fs.mkdirSync(dir, { recursive: true });
-
-  db = new Database(file);
-  log.info('Database initialized', { path: file });
-
-  // Performance pragmas for a local dev tool
-  db.pragma('journal_mode = WAL');
-  db.pragma('synchronous = NORMAL');
-  db.pragma('foreign_keys = ON');
-
-  // Run schema migrations (SQLite db.exec, not child_process)
-  db.exec(SCHEMA_DDL);
-
-  // Incremental migrations for existing databases
-  runMigrations(db);
-
+  db = openProjectDatabase(getDbPaths().dir);
   return db;
 }
 

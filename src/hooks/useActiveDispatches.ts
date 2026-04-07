@@ -2,17 +2,20 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, us
 import { socket } from '../socket';
 import type { OrbitalEvent, Scope, DispatchResolvedPayload } from '@/types';
 import { useWorkflow } from './useWorkflow';
+import { useProjects } from './useProjectContext';
+import { scopeKey } from '@/lib/scope-key';
 
 export interface AbandonedInfo {
   from_status: string | null;
   abandoned_at: string;
+  project_id?: string;
 }
 
 interface ActiveDispatchContextValue {
-  activeScopes: Set<number>;
-  abandonedScopes: Map<number, AbandonedInfo>;
-  recoverScope: (scopeId: number, fromStatus: string) => Promise<void>;
-  dismissAbandoned: (scopeId: number) => Promise<void>;
+  activeScopes: Set<string>;
+  abandonedScopes: Map<string, AbandonedInfo>;
+  recoverScope: (scopeId: number, fromStatus: string, projectId?: string) => Promise<void>;
+  dismissAbandoned: (scopeId: number, projectId?: string) => Promise<void>;
 }
 
 const DEFAULT_VALUE: ActiveDispatchContextValue = {
@@ -28,52 +31,92 @@ export const ActiveDispatchContext = createContext<ActiveDispatchContextValue>(D
  *  Fetches initial set from REST, then maintains via socket events. */
 export function useActiveDispatchProvider(): ActiveDispatchContextValue {
   const { engine } = useWorkflow();
+  const { getApiBase, activeProjectId, isMultiProject } = useProjects();
   const terminalStatuses = useMemo(
     () => new Set(engine.getConfig().terminalStatuses ?? []),
     [engine],
   );
-  const [activeScopes, setActiveScopes] = useState<Set<number>>(new Set());
-  const [abandonedScopes, setAbandonedScopes] = useState<Map<number, AbandonedInfo>>(new Map());
+  const [activeScopes, setActiveScopes] = useState<Set<string>>(new Set());
+  const [abandonedScopes, setAbandonedScopes] = useState<Map<string, AbandonedInfo>>(new Map());
   const mountedRef = useRef(true);
 
-  const removeFromAbandoned = useCallback((scopeId: number) => {
+  // Build the fetch URL based on project context
+  // Check activeProjectId first — in central-server mode with 1 project,
+  // isMultiProject is false but the root endpoint doesn't exist.
+  const fetchUrl = useMemo(() => {
+    if (activeProjectId) return `${getApiBase(activeProjectId)}/dispatch/active-scopes`;
+    if (isMultiProject) return '/api/orbital/aggregate/dispatch/active-scopes';
+    return '/api/orbital/dispatch/active-scopes';
+  }, [isMultiProject, activeProjectId, getApiBase]);
+
+  // Build a key for a scope ID + optional project ID
+  const makeScopeKey = useCallback((id: number, projectId?: string | null) => {
+    return scopeKey({ id, project_id: projectId ?? activeProjectId ?? undefined });
+  }, [activeProjectId]);
+
+  const removeFromAbandoned = useCallback((key: string) => {
     setAbandonedScopes((prev) => {
-      if (!prev.has(scopeId)) return prev;
+      if (!prev.has(key)) return prev;
       const next = new Map(prev);
-      next.delete(scopeId);
+      next.delete(key);
       return next;
     });
   }, []);
 
-  const fetchActiveScopes = useCallback(async () => {
+  const fetchActiveScopes = useCallback(async (signal?: AbortSignal) => {
     try {
-      const res = await fetch('/api/orbital/dispatch/active-scopes');
+      const res = await fetch(fetchUrl, { signal });
       if (!res.ok) {
         console.warn('[Orbital] Failed to fetch active scopes:', res.status, res.statusText);
+        setActiveScopes(new Set());
+        setAbandonedScopes(new Map());
         return;
       }
       const data = await res.json() as {
-        scope_ids: number[];
-        abandoned_scopes?: Array<{ scope_id: number; from_status: string | null; abandoned_at: string }>;
+        scope_ids: number[] | Array<{ scope_id: number; project_id: string }>;
+        abandoned_scopes?: Array<{ scope_id: number; project_id?: string; from_status: string | null; abandoned_at: string }>;
       };
       if (!mountedRef.current) return;
-      setActiveScopes(new Set(data.scope_ids));
+
+      // Parse active scopes — handle both old (number[]) and new ({scope_id, project_id}[]) shapes
+      const newActive = new Set<string>();
+      for (const item of data.scope_ids) {
+        if (typeof item === 'number') {
+          newActive.add(makeScopeKey(item));
+        } else {
+          newActive.add(scopeKey({ id: item.scope_id, project_id: item.project_id }));
+        }
+      }
+      setActiveScopes(newActive);
 
       if (data.abandoned_scopes) {
-        const map = new Map<number, AbandonedInfo>();
+        const map = new Map<string, AbandonedInfo>();
         for (const item of data.abandoned_scopes) {
-          map.set(item.scope_id, { from_status: item.from_status, abandoned_at: item.abandoned_at });
+          const key = item.project_id
+            ? scopeKey({ id: item.scope_id, project_id: item.project_id })
+            : makeScopeKey(item.scope_id);
+          map.set(key, {
+            from_status: item.from_status,
+            abandoned_at: item.abandoned_at,
+            project_id: item.project_id,
+          });
         }
         setAbandonedScopes(map);
       }
-    } catch {
-      // Silently ignore — will retry on next reconnect
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      // Clear state on error to avoid stale data
+      setActiveScopes(new Set());
+      setAbandonedScopes(new Map());
     }
-  }, []);
+  }, [fetchUrl, makeScopeKey]);
 
-  const recoverScope = useCallback(async (scopeId: number, fromStatus: string) => {
+  const recoverScope = useCallback(async (scopeId: number, fromStatus: string, projectId?: string) => {
     try {
-      const res = await fetch(`/api/orbital/dispatch/recover/${scopeId}`, {
+      // Always target the specific project's endpoint for mutations
+      const pid = projectId ?? activeProjectId;
+      const base = pid ? getApiBase(pid) : '/api/orbital';
+      const res = await fetch(`${base}/dispatch/recover/${scopeId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ from_status: fromStatus }),
@@ -83,15 +126,18 @@ export function useActiveDispatchProvider(): ActiveDispatchContextValue {
         console.error('[Orbital] Failed to recover scope:', body.error);
         return;
       }
-      removeFromAbandoned(scopeId);
+      const key = scopeKey({ id: scopeId, project_id: pid ?? undefined });
+      removeFromAbandoned(key);
     } catch (err) {
       console.error('[Orbital] Failed to recover scope:', err);
     }
-  }, [removeFromAbandoned]);
+  }, [removeFromAbandoned, activeProjectId, getApiBase]);
 
-  const dismissAbandoned = useCallback(async (scopeId: number) => {
+  const dismissAbandoned = useCallback(async (scopeId: number, projectId?: string) => {
     try {
-      const res = await fetch(`/api/orbital/dispatch/dismiss-abandoned/${scopeId}`, {
+      const pid = projectId ?? activeProjectId;
+      const base = pid ? getApiBase(pid) : '/api/orbital';
+      const res = await fetch(`${base}/dispatch/dismiss-abandoned/${scopeId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -100,21 +146,31 @@ export function useActiveDispatchProvider(): ActiveDispatchContextValue {
         console.error('[Orbital] Failed to dismiss abandoned scope:', body.error);
         return;
       }
-      removeFromAbandoned(scopeId);
+      const key = scopeKey({ id: scopeId, project_id: pid ?? undefined });
+      removeFromAbandoned(key);
     } catch (err) {
       console.error('[Orbital] Failed to dismiss abandoned scope:', err);
     }
-  }, [removeFromAbandoned]);
+  }, [removeFromAbandoned, activeProjectId, getApiBase]);
 
   useEffect(() => {
     mountedRef.current = true;
-    fetchActiveScopes();
-    return () => { mountedRef.current = false; };
+    const controller = new AbortController();
+    fetchActiveScopes(controller.signal);
+    return () => {
+      mountedRef.current = false;
+      controller.abort();
+    };
   }, [fetchActiveScopes]);
 
   useEffect(() => {
+    function extractProjectId(payload: Record<string, unknown>): string | undefined {
+      return (payload as Record<string, unknown>)._projectId as string | undefined;
+    }
+
     function onNewEvent(event: OrbitalEvent) {
       if (event.type !== 'DISPATCH' || event.data.resolved != null) return;
+      const eventProjectId = extractProjectId(event as unknown as Record<string, unknown>);
 
       // Collect scope IDs: single dispatch uses event.scope_id, batch uses data.scope_ids
       const ids: number[] = [];
@@ -127,48 +183,55 @@ export function useActiveDispatchProvider(): ActiveDispatchContextValue {
       if (ids.length === 0) return;
 
       setActiveScopes((prev) => {
-        const toAdd = ids.filter(id => !prev.has(id));
+        const keys = ids.map(id => scopeKey({ id, project_id: eventProjectId ?? activeProjectId ?? undefined }));
+        const toAdd = keys.filter(k => !prev.has(k));
         if (toAdd.length === 0) return prev;
         const next = new Set(prev);
-        for (const id of toAdd) next.add(id);
+        for (const k of toAdd) next.add(k);
         return next;
       });
-      for (const id of ids) removeFromAbandoned(id);
+      for (const id of ids) {
+        removeFromAbandoned(scopeKey({ id, project_id: eventProjectId ?? activeProjectId ?? undefined }));
+      }
     }
 
     function onDispatchResolved(payload: DispatchResolvedPayload) {
+      const eventProjectId = extractProjectId(payload as unknown as Record<string, unknown>);
       // Collect all scope IDs: single dispatch + batch scope_ids
       const ids: number[] = [];
       if (payload.scope_id != null) ids.push(payload.scope_id);
       if (Array.isArray(payload.scope_ids)) ids.push(...payload.scope_ids);
       if (ids.length === 0) return;
 
+      const keys = ids.map(id => scopeKey({ id, project_id: eventProjectId ?? activeProjectId ?? undefined }));
+
       setActiveScopes((prev) => {
-        const toRemove = ids.filter(id => prev.has(id));
+        const toRemove = keys.filter(k => prev.has(k));
         if (toRemove.length === 0) return prev;
         const next = new Set(prev);
-        for (const id of toRemove) next.delete(id);
+        for (const k of toRemove) next.delete(k);
         return next;
       });
 
       if (payload.outcome === 'abandoned') {
         fetchActiveScopes();
       } else {
-        for (const id of ids) removeFromAbandoned(id);
+        for (const k of keys) removeFromAbandoned(k);
       }
     }
 
     function onScopeUpdated(scope: Scope) {
       if (terminalStatuses.has(scope.status)) {
-        const scopeId = scope.id;
+        const eventProjectId = extractProjectId(scope as unknown as Record<string, unknown>);
+        const key = scopeKey({ id: scope.id, project_id: eventProjectId ?? scope.project_id ?? activeProjectId ?? undefined });
         setActiveScopes((prev) => {
-          if (!prev.has(scopeId)) return prev;
+          if (!prev.has(key)) return prev;
           const next = new Set(prev);
-          next.delete(scopeId);
+          next.delete(key);
           return next;
         });
         // Terminal state clears abandoned
-        removeFromAbandoned(scopeId);
+        removeFromAbandoned(key);
       }
     }
 
@@ -187,7 +250,7 @@ export function useActiveDispatchProvider(): ActiveDispatchContextValue {
       socket.off('scope:updated', onScopeUpdated);
       socket.off('connect', onReconnect);
     };
-  }, [fetchActiveScopes, removeFromAbandoned, terminalStatuses]);
+  }, [fetchActiveScopes, removeFromAbandoned, terminalStatuses, activeProjectId]);
 
   return { activeScopes, abandonedScopes, recoverScope, dismissAbandoned };
 }

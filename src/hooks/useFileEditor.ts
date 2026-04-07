@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useProjectUrl } from './useProjectUrl';
 import type { ConfigPrimitiveType } from '@/types';
 
 interface UseFileEditorResult {
@@ -51,6 +52,7 @@ export function useFileEditor(
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const buildUrl = useProjectUrl();
 
   // Track the current fetch to avoid race conditions
   const fetchIdRef = useRef(0);
@@ -70,7 +72,7 @@ export function useFileEditor(
     setLoading(true);
     setError(null);
 
-    fetch(`/api/orbital/config/${type}/file?path=${encodeURIComponent(filePath)}`)
+    fetch(buildUrl(`/config/${type}/file?path=${encodeURIComponent(filePath)}`))
       .then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
@@ -89,7 +91,7 @@ export function useFileEditor(
       .finally(() => {
         if (id === fetchIdRef.current) setLoading(false);
       });
-  }, [type, filePath]);
+  }, [type, filePath, buildUrl]);
 
   // Update raw content when frontmatter or body changes (keep in sync)
   const updateContent = useCallback((newFields: Record<string, string>, newBody: string) => {
@@ -130,7 +132,7 @@ export function useFileEditor(
     setError(null);
 
     try {
-      const res = await fetch(`/api/orbital/config/${type}/file`, {
+      const res = await fetch(buildUrl(`/config/${type}/file`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: filePath, content }),
@@ -145,7 +147,7 @@ export function useFileEditor(
     } finally {
       setSaving(false);
     }
-  }, [type, filePath, content]);
+  }, [type, filePath, content, buildUrl]);
 
   const dirty = content !== savedContent;
 

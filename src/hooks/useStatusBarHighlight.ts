@@ -4,8 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 export function useStatusBarHighlight() {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const raw = searchParams.get('highlight');
-  const highlightedScopeId = raw != null ? Number(raw) : null;
+  const highlightedScopeKey = searchParams.get('highlight') ?? null;
 
   const clearHighlight = useCallback(() => {
     setSearchParams((prev) => {
@@ -14,5 +13,5 @@ export function useStatusBarHighlight() {
     }, { replace: true });
   }, [setSearchParams]);
 
-  return { highlightedScopeId, clearHighlight };
+  return { highlightedScopeKey, clearHighlight };
 }

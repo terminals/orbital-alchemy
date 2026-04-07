@@ -42,8 +42,7 @@ git status --porcelain
 
 Find scopes in `scopes/completed/`:
 1. For each scope file in `scopes/completed/*.md`:
-   - `mv scopes/completed/{file} scopes/dev/`
-   - Update frontmatter: `status: dev`
+   - Transition: `bash .claude/hooks/scope-transition.sh --from completed --to dev --scope {NNN}`
    - Update DASHBOARD: `🔀 **Status**: Merged to Dev`
 
 If BATCH_SCOPE_IDS is set, only transition those specific scopes.

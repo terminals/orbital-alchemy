@@ -1,10 +1,11 @@
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { Lightbulb, Sparkles, AlertTriangle, Undo2, X } from 'lucide-react';
-import type { Scope, CardDisplayConfig } from '@/types';
+import type { Scope, CardDisplayConfig, Project } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { cn, formatScopeId } from '@/lib/utils';
+import { scopeKey } from '@/lib/scope-key';
 import { useActiveDispatches } from '@/hooks/useActiveDispatches';
 import { useWorkflow } from '@/hooks/useWorkflow';
 
@@ -14,6 +15,8 @@ interface ScopeCardProps {
   isDragOverlay?: boolean;
   cardDisplay?: CardDisplayConfig;
   dimmed?: boolean;
+  /** Project info for the project badge (multi-project mode) */
+  project?: Project;
 }
 
 const PRIORITY_COLOR: Record<string, string> = {
@@ -43,12 +46,13 @@ const GHOST = 'inline-block rounded border px-1.5 py-0 text-[10px] uppercase bg-
 
 interface AbandonedPopoverProps {
   scopeId: number;
+  projectId?: string;
   info: { from_status: string | null };
-  onRecover: (scopeId: number, fromStatus: string) => Promise<void>;
-  onDismiss: (scopeId: number) => Promise<void>;
+  onRecover: (scopeId: number, fromStatus: string, projectId?: string) => Promise<void>;
+  onDismiss: (scopeId: number, projectId?: string) => Promise<void>;
 }
 
-function AbandonedPopover({ scopeId, info, onRecover, onDismiss }: AbandonedPopoverProps) {
+function AbandonedPopover({ scopeId, projectId, info, onRecover, onDismiss }: AbandonedPopoverProps) {
   return (
     <Popover>
       <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -69,7 +73,7 @@ function AbandonedPopover({ scopeId, info, onRecover, onDismiss }: AbandonedPopo
           {info.from_status && (
             <button
               className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 transition-colors"
-              onClick={() => onRecover(scopeId, info.from_status!)}
+              onClick={() => onRecover(scopeId, info.from_status!, projectId)}
             >
               <Undo2 className="h-3 w-3" />
               Revert to {info.from_status}
@@ -77,7 +81,7 @@ function AbandonedPopover({ scopeId, info, onRecover, onDismiss }: AbandonedPopo
           )}
           <button
             className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
-            onClick={() => onDismiss(scopeId)}
+            onClick={() => onDismiss(scopeId, projectId)}
           >
             <X className="h-3 w-3" />
             Keep here
@@ -103,7 +107,7 @@ function abbreviateEffort(raw: string): string {
   return 'TBD';
 }
 
-export function ScopeCard({ scope, onClick, isDragOverlay, cardDisplay, dimmed }: ScopeCardProps) {
+export function ScopeCard({ scope, onClick, isDragOverlay, cardDisplay, dimmed, project }: ScopeCardProps) {
   const {
     attributes,
     listeners,
@@ -111,7 +115,7 @@ export function ScopeCard({ scope, onClick, isDragOverlay, cardDisplay, dimmed }
     transform,
     isDragging,
   } = useDraggable({
-    id: scope.id,
+    id: scopeKey(scope),
     disabled: isDragOverlay || dimmed,
   });
 
@@ -124,21 +128,25 @@ export function ScopeCard({ scope, onClick, isDragOverlay, cardDisplay, dimmed }
   const entryPointId = engine.getEntryPoint().id;
   const isIdea = scope.status === entryPointId;
   const isGhost = isIdea && !!scope.is_ghost;
-  const isDispatched = !isIdea && activeScopes.has(scope.id);
-  const abandonedInfo = !isIdea ? abandonedScopes.get(scope.id) : undefined;
+  const key = scopeKey(scope);
+  const isDispatched = !isIdea && activeScopes.has(key);
+  const abandonedInfo = !isIdea ? abandonedScopes.get(key) : undefined;
   const isAbandoned = !!abandonedInfo && !isDispatched;
 
   return (
     <Card
       ref={setNodeRef}
-      style={style}
+      style={{
+        ...style,
+        ...(!isGhost && !isIdea && project && cardDisplay?.project !== false ? { borderLeftWidth: '2px', borderLeftColor: `hsl(${project.color})` } : {}),
+      }}
       className={cn(
         'scope-card cursor-grab transition-[colors,opacity] duration-200 hover:bg-surface-light active:cursor-grabbing',
         isGhost
           ? 'scope-card-ghost ghost-shimmer opacity-70'
           : isIdea
           ? 'border-l-2 border-dashed border-l-warning-amber/60'
-          : scope.category ? CATEGORY_BORDER[scope.category] : '',
+          : !project && scope.category ? CATEGORY_BORDER[scope.category] : '',
         isDispatched && 'scope-card-dispatched',
         isAbandoned && 'scope-card-abandoned',
         isDragging && 'opacity-30',
@@ -175,6 +183,7 @@ export function ScopeCard({ scope, onClick, isDragOverlay, cardDisplay, dimmed }
               {isAbandoned && (
                 <AbandonedPopover
                   scopeId={scope.id}
+                  projectId={scope.project_id}
                   info={abandonedInfo}
                   onRecover={recoverScope}
                   onDismiss={dismissAbandoned}

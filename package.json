@@ -47,6 +47,7 @@
   "scripts": {
     "dev": "orbital dev",
     "dev:local": "trap 'lsof -ti:4444,4445 | xargs kill 2>/dev/null' EXIT; concurrently -n server,client -c blue,green \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:launch": "trap 'lsof -ti:4444,4445 | xargs kill 2>/dev/null' EXIT; concurrently -n central,client -c magenta,green \"ORBITAL_LAUNCH_MODE=central ORBITAL_SERVER_PORT=4444 tsx watch server/launch.ts\" \"npm run dev:client\"",
     "dev:server": "tsx watch server/index.ts",
     "dev:client": "vite",
     "build": "./node_modules/.bin/vite build",

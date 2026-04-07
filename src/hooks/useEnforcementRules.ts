@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { socket } from '../socket';
 import { useReconnect } from './useReconnect';
+import { useProjectUrl } from './useProjectUrl';
 import type { EnforcementRulesData, ViolationTrendPoint, OrbitalEvent } from '../types';
 
 export function useEnforcementRules() {
+  const buildUrl = useProjectUrl();
   const [data, setData] = useState<EnforcementRulesData | null>(null);
   const [trend, setTrend] = useState<ViolationTrendPoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -11,8 +13,8 @@ export function useEnforcementRules() {
   const fetchRules = useCallback(async () => {
     try {
       const [rulesRes, trendRes] = await Promise.all([
-        fetch('/api/orbital/enforcement/rules'),
-        fetch('/api/orbital/events/violations/trend?days=30'),
+        fetch(buildUrl('/enforcement/rules')),
+        fetch(buildUrl('/events/violations/trend?days=30')),
       ]);
       if (rulesRes.ok) setData(await rulesRes.json());
       if (trendRes.ok) setTrend(await trendRes.json());
@@ -21,7 +23,7 @@ export function useEnforcementRules() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [buildUrl]);
 
   useEffect(() => {
     fetchRules();

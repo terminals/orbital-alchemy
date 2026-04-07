@@ -59,6 +59,9 @@ export interface WorkflowConfig {
   commitBranchPatterns?: string;
 }
 
+/** Semantic phase for All Projects normalization */
+export type Phase = 'queued' | 'active' | 'review' | 'shipped';
+
 export interface WorkflowList {
   id: string;
   label: string;
@@ -73,6 +76,8 @@ export interface WorkflowList {
   gitBranch?: string;
   sessionKey?: string;
   activeHooks?: string[];
+  /** Semantic phase for All Projects normalization. Inferred from group/sessionKey if omitted. */
+  phase?: Phase;
 }
 
 export interface WorkflowEdge {

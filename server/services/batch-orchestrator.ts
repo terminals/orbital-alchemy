@@ -1,11 +1,10 @@
 import type Database from 'better-sqlite3';
-import type { Server } from 'socket.io';
+import type { Emitter } from '../project-emitter.js';
 import type { SprintService } from './sprint-service.js';
 import type { ScopeService } from './scope-service.js';
 import { launchInCategorizedTerminal, escapeForAnsiC, snapshotSessionPids, discoverNewSession, isSessionPidAlive } from '../utils/terminal-launcher.js';
 import { linkPidToDispatch, resolveDispatchEvent } from '../utils/dispatch-utils.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
-import { getConfig } from '../config.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('batch');
@@ -16,10 +15,11 @@ const VALID_MERGE_MODES = ['push', 'pr'] as const;
 export class BatchOrchestrator {
   constructor(
     private db: Database.Database,
-    private io: Server,
+    private io: Emitter,
     private sprintService: SprintService,
     private scopeService: ScopeService,
     private engine: WorkflowEngine,
+    private projectRoot: string,
   ) {}
 
   /** Dispatch a batch — validates constraints and routes to column-specific handler */
@@ -70,8 +70,8 @@ export class BatchOrchestrator {
 
     // Launch single CLI session with BATCH_SCOPE_IDS prepended to command
     const escaped = escapeForAnsiC(command);
-    const fullCmd = `cd '${getConfig().projectRoot}' && BATCH_SCOPE_IDS='${scopeIdsStr}' MERGE_MODE='${mergeModeStr}' claude --dangerously-skip-permissions $'${escaped}'`;
-    const beforePids = snapshotSessionPids(getConfig().projectRoot);
+    const fullCmd = `cd '${this.projectRoot}' && BATCH_SCOPE_IDS='${scopeIdsStr}' MERGE_MODE='${mergeModeStr}' claude --dangerously-skip-permissions $'${escaped}'`;
+    const beforePids = snapshotSessionPids(this.projectRoot);
 
     try {
       await launchInCategorizedTerminal(command, fullCmd);
@@ -82,7 +82,7 @@ export class BatchOrchestrator {
       });
 
       // Fire-and-forget: discover session PID and link to dispatch
-      discoverNewSession(getConfig().projectRoot, beforePids)
+      discoverNewSession(this.projectRoot, beforePids)
         .then((session) => {
           if (!session) return;
           linkPidToDispatch(this.db, eventId, session.pid);

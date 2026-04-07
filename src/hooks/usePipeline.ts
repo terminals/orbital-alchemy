@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useProjectUrl } from './useProjectUrl';
 import { socket } from '../socket';
 import { useReconnect } from './useReconnect';
 import type { PipelineDrift, DeployFrequencyWeek, Deployment } from '../types';
 
 export function usePipeline() {
+  const buildUrl = useProjectUrl();
   const [drift, setDrift] = useState<PipelineDrift | null>(null);
   const [frequency, setFrequency] = useState<DeployFrequencyWeek[]>([]);
   const [deployments, setDeployments] = useState<Deployment[]>([]);
@@ -12,9 +14,9 @@ export function usePipeline() {
   const fetchAll = useCallback(async () => {
     try {
       const [driftRes, freqRes, deploysRes] = await Promise.all([
-        fetch('/api/orbital/pipeline/drift'),
-        fetch('/api/orbital/deployments/frequency'),
-        fetch('/api/orbital/deployments'),
+        fetch(buildUrl('/pipeline/drift')),
+        fetch(buildUrl('/deployments/frequency')),
+        fetch(buildUrl('/deployments')),
       ]);
 
       if (driftRes.ok) setDrift(await driftRes.json());
@@ -25,7 +27,7 @@ export function usePipeline() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [buildUrl]);
 
   useEffect(() => {
     fetchAll();

@@ -26,7 +26,10 @@ user-invocable: true
 
 ### 2. Implement
 
-**Before starting Phase 1**: Update scope frontmatter to `status: implementing` and DASHBOARD to `🔄 **Status**: Implementing`. Move file: `mv scopes/backlog/{file} scopes/implementing/`.
+**Before starting Phase 1**: Transition the scope and update the DASHBOARD to `🔄 **Status**: Implementing`:
+```bash
+bash .claude/hooks/scope-transition.sh --from backlog --to implementing --scope {NNN}
+```
 
 For each phase:
 

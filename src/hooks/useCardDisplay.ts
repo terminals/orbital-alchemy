@@ -8,6 +8,7 @@ const DEFAULTS: CardDisplayConfig = {
   category: true,
   priority: true,
   tags: true,
+  project: true,
 };
 
 function readPref(): CardDisplayConfig {
@@ -22,6 +23,7 @@ function readPref(): CardDisplayConfig {
       category: typeof obj.category === 'boolean' ? obj.category : true,
       priority: typeof obj.priority === 'boolean' ? obj.priority : true,
       tags: typeof obj.tags === 'boolean' ? obj.tags : true,
+      project: typeof obj.project === 'boolean' ? obj.project : true,
     };
   } catch {
     return DEFAULTS;
@@ -51,7 +53,7 @@ export function useCardDisplay() {
   }, []);
 
   const isAllVisible = display.effort && display.category && display.priority && display.tags;
-  const hiddenCount = [display.effort, display.category, display.priority, display.tags].filter((v) => !v).length;
+  const hiddenCount = [display.effort, display.category, display.priority, display.tags, display.project].filter((v) => !v).length;
 
   return { display, toggle, isAllVisible, hiddenCount } as const;
 }

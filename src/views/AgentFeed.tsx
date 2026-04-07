@@ -4,6 +4,7 @@ import { Bot, Filter } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { useEvents } from '@/hooks/useEvents';
 import { useTheme } from '@/hooks/useTheme';
+import { useProjects } from '@/hooks/useProjectContext';
 import { AgentBadge } from '@/components/AgentBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -49,12 +50,18 @@ const rowItem = {
 export function AgentFeed() {
   const { events, loading } = useEvents({ limit: 200 });
   const { neonGlass } = useTheme();
+  const { activeProjectId, isMultiProject, getProjectColor, getProjectName } = useProjects();
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [showAllEvents, setShowAllEvents] = useState(false);
 
   // Filter to agent-related events or show all
   const filteredEvents = useMemo(() => {
     let filtered = events;
+
+    // Filter by project when a specific project is selected
+    if (activeProjectId && isMultiProject) {
+      filtered = filtered.filter((e) => e.project_id === activeProjectId);
+    }
 
     if (!showAllEvents) {
       filtered = filtered.filter((e) => AGENT_EVENT_TYPES.includes(e.type));
@@ -65,7 +72,7 @@ export function AgentFeed() {
     }
 
     return filtered;
-  }, [events, agentFilter, showAllEvents]);
+  }, [events, agentFilter, showAllEvents, activeProjectId, isMultiProject]);
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
@@ -146,14 +153,23 @@ export function AgentFeed() {
           >
             {filteredEvents.map((event) => (
               <motion.div key={event.id} variants={rowItem}>
-                <EventRow event={event} />
+                <EventRow
+                  event={event}
+                  projectName={event.project_id && isMultiProject ? getProjectName(event.project_id) : undefined}
+                  projectColor={event.project_id && isMultiProject ? getProjectColor(event.project_id) : undefined}
+                />
               </motion.div>
             ))}
           </motion.div>
         ) : (
           <div className="space-y-1 pr-4">
             {filteredEvents.map((event) => (
-              <EventRow key={event.id} event={event} />
+              <EventRow
+                key={event.id}
+                event={event}
+                projectName={event.project_id && isMultiProject ? getProjectName(event.project_id) : undefined}
+                projectColor={event.project_id && isMultiProject ? getProjectColor(event.project_id) : undefined}
+              />
             ))}
           </div>
         )}
@@ -164,7 +180,7 @@ export function AgentFeed() {
 
 // ─── Event Row ─────────────────────────────────────────────
 
-function EventRow({ event }: { event: OrbitalEvent }) {
+function EventRow({ event, projectName, projectColor }: { event: OrbitalEvent; projectName?: string; projectColor?: string }) {
   const data = event.data as Record<string, unknown>;
   const severity = data.severity as string | undefined;
   const severityConfig = severity ? SEVERITY_CONFIG[severity] : null;
@@ -193,6 +209,15 @@ function EventRow({ event }: { event: OrbitalEvent }) {
           <span className="text-xs font-normal">
             {formatEventMessage(event)}
           </span>
+          {projectName && projectColor && (
+            <span
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0 text-[10px] border"
+              style={{ borderColor: `hsl(${projectColor} / 0.4)`, color: `hsl(${projectColor})` }}
+            >
+              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: `hsl(${projectColor})` }} />
+              {projectName}
+            </span>
+          )}
           {severityConfig && (
             <Badge
               className={cn(

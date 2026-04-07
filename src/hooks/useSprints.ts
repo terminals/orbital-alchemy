@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { socket } from '../socket';
 import { useReconnect } from './useReconnect';
+import { useProjectUrl } from './useProjectUrl';
 import type { Sprint, GroupType } from '../types';
 
 export interface AddScopesResult {
@@ -9,19 +10,20 @@ export interface AddScopesResult {
 }
 
 export function useSprints() {
+  const buildUrl = useProjectUrl();
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchSprints = useCallback(async () => {
     try {
-      const res = await fetch('/api/orbital/sprints');
+      const res = await fetch(buildUrl('/sprints'));
       if (!res.ok) return;
       const data = await res.json();
       setSprints(data);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [buildUrl]);
 
   useEffect(() => {
     fetchSprints();
@@ -80,63 +82,63 @@ export function useSprints() {
     name: string,
     options?: { target_column?: string; group_type?: GroupType },
   ): Promise<Sprint | null> => {
-    const res = await fetch('/api/orbital/sprints', {
+    const res = await fetch(buildUrl('/sprints'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, ...options }),
     });
     if (!res.ok) return null;
     return res.json();
-  }, []);
+  }, [buildUrl]);
 
   const renameSprint = useCallback(async (id: number, name: string): Promise<boolean> => {
-    const res = await fetch(`/api/orbital/sprints/${id}`, {
+    const res = await fetch(buildUrl(`/sprints/${id}`), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
     });
     return res.ok;
-  }, []);
+  }, [buildUrl]);
 
   const deleteSprint = useCallback(async (id: number): Promise<boolean> => {
-    const res = await fetch(`/api/orbital/sprints/${id}`, { method: 'DELETE' });
+    const res = await fetch(buildUrl(`/sprints/${id}`), { method: 'DELETE' });
     return res.ok;
-  }, []);
+  }, [buildUrl]);
 
   const addScopes = useCallback(async (sprintId: number, scopeIds: number[]): Promise<AddScopesResult | null> => {
-    const res = await fetch(`/api/orbital/sprints/${sprintId}/scopes`, {
+    const res = await fetch(buildUrl(`/sprints/${sprintId}/scopes`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scope_ids: scopeIds }),
     });
     if (!res.ok) return null;
     return res.json();
-  }, []);
+  }, [buildUrl]);
 
   const removeScopes = useCallback(async (sprintId: number, scopeIds: number[]): Promise<boolean> => {
-    const res = await fetch(`/api/orbital/sprints/${sprintId}/scopes`, {
+    const res = await fetch(buildUrl(`/sprints/${sprintId}/scopes`), {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scope_ids: scopeIds }),
     });
     return res.ok;
-  }, []);
+  }, [buildUrl]);
 
   const dispatchSprint = useCallback(async (id: number): Promise<{ ok: boolean; error?: string; layers?: number[][] }> => {
-    const res = await fetch(`/api/orbital/sprints/${id}/dispatch`, { method: 'POST' });
+    const res = await fetch(buildUrl(`/sprints/${id}/dispatch`), { method: 'POST' });
     return res.json();
-  }, []);
+  }, [buildUrl]);
 
   const cancelSprint = useCallback(async (id: number): Promise<boolean> => {
-    const res = await fetch(`/api/orbital/sprints/${id}/cancel`, { method: 'POST' });
+    const res = await fetch(buildUrl(`/sprints/${id}/cancel`), { method: 'POST' });
     return res.ok;
-  }, []);
+  }, [buildUrl]);
 
   const getGraph = useCallback(async (id: number): Promise<{ layers: number[][]; edges: Array<{ from: number; to: number }> } | null> => {
-    const res = await fetch(`/api/orbital/sprints/${id}/graph`);
+    const res = await fetch(buildUrl(`/sprints/${id}/graph`));
     if (!res.ok) return null;
     return res.json();
-  }, []);
+  }, [buildUrl]);
 
   return {
     sprints,

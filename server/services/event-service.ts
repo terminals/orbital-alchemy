@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { Server } from 'socket.io';
+import type { Emitter } from '../project-emitter.js';
 import type { RawEvent } from '../parsers/event-parser.js';
 import { createLogger } from '../utils/logger.js';
 
@@ -23,7 +23,7 @@ export class EventService {
 
   constructor(
     private db: Database.Database,
-    private io: Server
+    private io: Emitter
   ) {}
 
   /** Register a callback to be called after each successful event ingest */

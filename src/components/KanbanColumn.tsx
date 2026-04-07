@@ -1,11 +1,13 @@
+import { useRef, useEffect } from 'react';
 import { useDroppable } from '@dnd-kit/core';
-import type { Scope, ScopeStatus, Sprint, CardDisplayConfig } from '@/types';
+import type { Scope, ScopeStatus, Sprint, CardDisplayConfig, Project } from '@/types';
 import type { SortField, SortDirection } from '@/hooks/useBoardSettings';
 import { ScopeCard } from './ScopeCard';
 import { SprintContainer } from './SprintContainer';
 import { ColumnMenu } from './ColumnMenu';
 import { useTheme } from '@/hooks/useTheme';
 import { cn } from '@/lib/utils';
+import { scopeKey } from '@/lib/scope-key';
 
 interface KanbanColumnProps {
   id: ScopeStatus;
@@ -33,8 +35,10 @@ interface KanbanColumnProps {
   sortDirection?: SortDirection;
   onSetSort?: (field: SortField) => void;
   cardDisplay?: CardDisplayConfig;
-  dimmedIds?: Set<number>;
+  dimmedIds?: Set<string>;
   onAddAllToSprint?: (sprintId: number, scopeIds: number[]) => void;
+  /** Project lookup for rendering project badges on cards */
+  projectLookup?: Map<string, Project>;
 }
 
 export function KanbanColumn({
@@ -62,9 +66,18 @@ export function KanbanColumn({
   cardDisplay,
   dimmedIds,
   onAddAllToSprint,
+  projectLookup,
 }: KanbanColumnProps) {
   const { neonGlass } = useTheme();
   const { setNodeRef, isOver } = useDroppable({ id });
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll valid target columns to top when drag starts
+  useEffect(() => {
+    if (isDragActive && isValidDrop && scrollRef.current) {
+      scrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [isDragActive, isValidDrop]);
 
   // Scopes that are in a sprint/batch should not appear as loose cards.
   // Use the global set (cross-column dedup) if available, otherwise fall back to local.
@@ -82,8 +95,8 @@ export function KanbanColumn({
         'flex h-full flex-shrink-0 flex-col rounded border bg-card/50 overflow-hidden transition-[width] duration-300 ease-in-out',
         showCollapsed ? 'w-10 cursor-pointer items-center' : 'w-72',
         neonGlass && 'card-glass neon-border-blue',
-        isDragActive && isOver && isValidDrop && 'ring-2 ring-green-500/60 border-green-500/40 bg-green-500/5',
-        isDragActive && isOver && !isValidDrop && 'ring-2 ring-red-500/50 border-red-500/30 bg-red-500/5',
+        isDragActive && isOver && isValidDrop && 'ring-2 ring-inset ring-green-500/60 border-green-500/40 bg-green-500/5',
+        isDragActive && isOver && !isValidDrop && 'ring-2 ring-inset ring-red-500/50 border-red-500/30 bg-red-500/5',
         isDragActive && !isOver && isValidDrop && 'border-green-500/20',
       )}
       onClick={showCollapsed ? onToggleCollapse : undefined}
@@ -143,8 +156,18 @@ export function KanbanColumn({
           </div>
 
           {/* Cards */}
-          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-2">
             <div className="space-y-1.5">
+              {isDragActive && isValidDrop && (
+                <div className={cn(
+                  'flex h-10 items-center justify-center rounded border-2 border-dashed text-xs transition-colors',
+                  isOver
+                    ? 'border-cyan-500/60 bg-cyan-500/10 text-cyan-400'
+                    : 'border-white/20 bg-white/[0.03] text-white/30',
+                )}>
+                  Drop here
+                </div>
+              )}
               {sprints.map((sprint) => (
                 <SprintContainer
                   key={`sprint-${sprint.id}`}
@@ -168,11 +191,12 @@ export function KanbanColumn({
 
               {looseScopes.filter((s) => !s.is_ghost).map((scope) => (
                 <ScopeCard
-                  key={scope.id}
+                  key={scopeKey(scope)}
                   scope={scope}
                   onClick={onScopeClick}
                   cardDisplay={cardDisplay}
-                  dimmed={dimmedIds?.has(scope.id)}
+                  dimmed={dimmedIds?.has(scopeKey(scope))}
+                  project={scope.project_id && projectLookup ? projectLookup.get(scope.project_id) : undefined}
                 />
               ))}
               {looseScopes.some((s) => s.is_ghost) && looseScopes.some((s) => !s.is_ghost) && (
@@ -180,18 +204,14 @@ export function KanbanColumn({
               )}
               {looseScopes.filter((s) => s.is_ghost).map((scope) => (
                 <ScopeCard
-                  key={scope.id}
+                  key={scopeKey(scope)}
                   scope={scope}
                   onClick={onScopeClick}
                   cardDisplay={cardDisplay}
-                  dimmed={dimmedIds?.has(scope.id)}
+                  dimmed={dimmedIds?.has(scopeKey(scope))}
+                  project={scope.project_id && projectLookup ? projectLookup.get(scope.project_id) : undefined}
                 />
               ))}
-              {totalCount === 0 && isDragActive && isOver && isValidDrop && (
-                <p className="py-8 text-center text-xs text-muted-foreground/50">
-                  Drop here
-                </p>
-              )}
             </div>
           </div>
         </>

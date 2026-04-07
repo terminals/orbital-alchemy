@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Plus, Bot, Shield, Eye, Wrench, Search, Sparkles } from 'lucide-react';
+import { useProjectUrl } from '@/hooks/useProjectUrl';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -151,6 +152,7 @@ Describe this agent's role and responsibilities.
 export function AgentCreateDialog({ onCreated }: AgentCreateDialogProps) {
   const [open, setOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string>('security');
+  const buildUrl = useProjectUrl();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [folder, setFolder] = useState('');
@@ -177,7 +179,7 @@ export function AgentCreateDialog({ onCreated }: AgentCreateDialogProps) {
     setError(null);
 
     try {
-      const res = await fetch('/api/orbital/config/agents/file', {
+      const res = await fetch(buildUrl('/config/agents/file'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: filePath, content }),
@@ -196,7 +198,7 @@ export function AgentCreateDialog({ onCreated }: AgentCreateDialogProps) {
     } finally {
       setCreating(false);
     }
-  }, [name, description, folder, template, onCreated]);
+  }, [name, description, folder, template, onCreated, buildUrl]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

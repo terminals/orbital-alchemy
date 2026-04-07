@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { socket } from '../socket';
 import { useReconnect } from './useReconnect';
+import { useProjectUrl } from './useProjectUrl';
 import type { QualityGate } from '../types';
 
 export function useGates(scopeId?: number) {
+  const buildUrl = useProjectUrl();
   const [gates, setGates] = useState<QualityGate[]>([]);
   const [stats, setStats] = useState<{ gate_name: string; total: number; passed: number; failed: number }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -12,8 +14,8 @@ export function useGates(scopeId?: number) {
     try {
       const params = scopeId ? `?scope_id=${scopeId}` : '';
       const [gatesRes, statsRes] = await Promise.all([
-        fetch(`/api/orbital/gates${params}`),
-        fetch('/api/orbital/gates/stats'),
+        fetch(buildUrl(`/gates${params}`)),
+        fetch(buildUrl('/gates/stats')),
       ]);
 
       if (gatesRes.ok) setGates(await gatesRes.json());
@@ -23,7 +25,7 @@ export function useGates(scopeId?: number) {
     } finally {
       setLoading(false);
     }
-  }, [scopeId]);
+  }, [scopeId, buildUrl]);
 
   useEffect(() => {
     fetchGates();

@@ -1,5 +1,7 @@
 import { formatDistanceToNow } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
+import { ProjectBadge } from '@/components/ProjectBadge';
+import { CIStatusBadge } from './CIStatusBadge';
 import type { CommitEntry } from '@/types';
 
 interface Props {
@@ -9,6 +11,9 @@ interface Props {
 export function CommitRow({ commit }: Props) {
   return (
     <div className="flex items-center gap-3 rounded px-2.5 py-1.5 transition-colors hover:bg-surface-light">
+      {/* CI status */}
+      <CIStatusBadge commitSha={commit.sha} />
+
       {/* SHA */}
       <code className="shrink-0 font-mono text-xs text-primary">
         {commit.shortSha}
@@ -18,6 +23,9 @@ export function CommitRow({ commit }: Props) {
       <span className="min-w-0 flex-1 truncate text-sm">
         {commit.message}
       </span>
+
+      {/* Project badge (aggregate mode) */}
+      <ProjectBadge projectId={commit.project_id} />
 
       {/* Branch ref badge */}
       {commit.branch && (

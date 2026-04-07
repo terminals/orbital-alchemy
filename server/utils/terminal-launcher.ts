@@ -74,8 +74,8 @@ function profilesFilename(prefix: string): string {
   return `${prefix.toLowerCase()}-dispatch-profiles.json`;
 }
 
-function buildProfiles(colorMap: Map<WindowCategory, string>): { Profiles: DynamicProfile[] } {
-  const prefix = getConfig().terminal.profilePrefix;
+function buildProfiles(colorMap: Map<WindowCategory, string>, profilePrefix?: string): { Profiles: DynamicProfile[] } {
+  const prefix = profilePrefix ?? getConfig().terminal.profilePrefix;
   return {
     Profiles: CATEGORY_COLUMN_CANDIDATES.map(({ category }) => ({
       Name: `${prefix}-${category}`,
@@ -110,15 +110,15 @@ function resolveColorMap(engine: WorkflowEngine): Map<WindowCategory, string> {
 /** Write iTerm2 Dynamic Profiles for each workflow category.
  *  Derives tab colors from the active workflow's column definitions.
  *  Idempotent — safe to call on every server startup. */
-export async function ensureDynamicProfiles(engine: WorkflowEngine): Promise<void> {
+export async function ensureDynamicProfiles(engine: WorkflowEngine, profilePrefix?: string): Promise<void> {
   try {
     await fs.mkdir(DYNAMIC_PROFILES_DIR, { recursive: true });
-    const prefix = getConfig().terminal.profilePrefix;
+    const prefix = profilePrefix ?? getConfig().terminal.profilePrefix;
     const filePath = path.join(DYNAMIC_PROFILES_DIR, profilesFilename(prefix));
     const colorMap = resolveColorMap(engine);
     // Write tmp file outside DynamicProfiles/ — iTerm2 watches that dir and reads ALL files
     const tmpPath = path.join(os.tmpdir(), profilesFilename(prefix) + '.tmp');
-    await fs.writeFile(tmpPath, JSON.stringify(buildProfiles(colorMap), null, 2));
+    await fs.writeFile(tmpPath, JSON.stringify(buildProfiles(colorMap, prefix), null, 2));
     await fs.copyFile(tmpPath, filePath);
     await fs.unlink(tmpPath).catch(() => {});
   } catch (err) {
@@ -127,8 +127,8 @@ export async function ensureDynamicProfiles(engine: WorkflowEngine): Promise<voi
 }
 
 /** Maps a WindowCategory to its iTerm2 profile name. */
-function profileNameForCategory(category: string): string {
-  return `${getConfig().terminal.profilePrefix}-${category}`;
+function profileNameForCategory(category: string, profilePrefix?: string): string {
+  return `${profilePrefix ?? getConfig().terminal.profilePrefix}-${category}`;
 }
 
 // ─── Window Categorization ──────────────────────────────────
@@ -157,6 +157,12 @@ export function commandToWindowCategory(command: string): WindowCategory | null 
 
 /** In-memory registry: category → iTerm2 window ID (stable integer). Resets on server restart. */
 const windowRegistry = new Map<WindowCategory, number>();
+
+/** Escape a value for use inside single quotes in shell commands.
+ *  Replaces ' with '\'' (end quote, escaped quote, reopen quote). */
+export function shellQuote(s: string): string {
+  return s.replace(/'/g, "'\\''");
+}
 
 /**
  * Escape a string for use inside $'...' ANSI-C quoting.

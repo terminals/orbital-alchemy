@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { socket } from '../socket';
 import { useReconnect } from './useReconnect';
+import { useProjectUrl } from './useProjectUrl';
 import type { OrbitalEvent } from '../types';
 
 interface UseEventsOptions {
@@ -9,6 +10,7 @@ interface UseEventsOptions {
 }
 
 export function useEvents(options: UseEventsOptions = {}) {
+  const buildUrl = useProjectUrl();
   const { limit = 50, type } = options;
   const [events, setEvents] = useState<OrbitalEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,7 +21,7 @@ export function useEvents(options: UseEventsOptions = {}) {
       params.set('limit', String(limit));
       if (type) params.set('type', type);
 
-      const res = await fetch(`/api/orbital/events?${params}`);
+      const res = await fetch(buildUrl(`/events?${params}`));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setEvents(data);
@@ -28,7 +30,7 @@ export function useEvents(options: UseEventsOptions = {}) {
     } finally {
       setLoading(false);
     }
-  }, [limit, type]);
+  }, [limit, type, buildUrl]);
 
   useEffect(() => {
     fetchEvents();

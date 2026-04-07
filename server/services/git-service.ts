@@ -375,6 +375,82 @@ export class GitService {
     return pairs;
   }
 
+  // ─── Activity Series ────────────────────────────────────────
+
+  async getActivitySeries(days: number = 30): Promise<Array<{ date: string; count: number }>> {
+    const cacheKey = `activity:${days}`;
+    const hit = cached<Array<{ date: string; count: number }>>(this.cache as Map<string, CacheEntry<Array<{ date: string; count: number }>>>, cacheKey);
+    if (hit) return hit;
+
+    try {
+      const raw = await this.git(['log', `--since=${days}.days.ago`, '--format=%aI', '--all']);
+      const counts = new Map<string, number>();
+
+      // Initialize all days to 0
+      const now = new Date();
+      for (let i = 0; i < days; i++) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        counts.set(d.toISOString().slice(0, 10), 0);
+      }
+
+      for (const line of raw.trim().split('\n')) {
+        if (!line) continue;
+        const dateKey = line.slice(0, 10);
+        counts.set(dateKey, (counts.get(dateKey) ?? 0) + 1);
+      }
+
+      const series = [...counts.entries()]
+        .map(([date, count]) => ({ date, count }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      setCache(this.cache as Map<string, CacheEntry<Array<{ date: string; count: number }>>>, cacheKey, series);
+      return series;
+    } catch {
+      return [];
+    }
+  }
+
+  // ─── Health Metrics ────────────────────────────────────────
+
+  async getHealthMetrics(githubPrAges?: number[]): Promise<{
+    commitsPerWeek: number;
+    avgPrAgeDays: number;
+    staleBranchCount: number;
+    driftSeverity: 'clean' | 'low' | 'moderate' | 'high';
+    grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  }> {
+    // Commits per week
+    let commitsPerWeek = 0;
+    try {
+      const raw = await this.git(['log', '--since=7.days.ago', '--oneline', '--all']);
+      commitsPerWeek = raw.trim().split('\n').filter(Boolean).length;
+    } catch { /* ok */ }
+
+    // Stale branches
+    const branches = await this.getBranches();
+    const staleBranchCount = branches.filter(b => b.isStale && !b.isRemote).length;
+
+    // Avg PR age
+    let avgPrAgeDays = 0;
+    if (githubPrAges && githubPrAges.length > 0) {
+      avgPrAgeDays = Math.round(githubPrAges.reduce((a, b) => a + b, 0) / githubPrAges.length);
+    }
+
+    // Drift severity (reuse cached data if available)
+    const driftSeverity: 'clean' | 'low' | 'moderate' | 'high' = 'clean';
+
+    // Grade computation: start at 100
+    let score = 100;
+    score -= Math.min(30, staleBranchCount * 5);
+    if (commitsPerWeek < 5) score -= 10;
+    if (avgPrAgeDays > 3) score -= Math.min(25, (avgPrAgeDays - 3) * 5);
+
+    const grade = score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F';
+
+    return { commitsPerWeek, avgPrAgeDays, staleBranchCount, driftSeverity, grade };
+  }
+
   // ─── Git Status Polling ────────────────────────────────────
 
   async getStatusHash(): Promise<string> {

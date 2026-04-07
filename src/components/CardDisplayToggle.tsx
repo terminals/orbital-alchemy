@@ -15,6 +15,7 @@ const FIELDS: { key: keyof CardDisplayConfig; label: string }[] = [
   { key: 'category', label: 'Category' },
   { key: 'priority', label: 'Priority' },
   { key: 'tags', label: 'Tags' },
+  { key: 'project', label: 'Project colors' },
 ];
 
 export function CardDisplayToggle({ display, onToggle, hiddenCount }: CardDisplayToggleProps) {
@@ -28,7 +29,7 @@ export function CardDisplayToggle({ display, onToggle, hiddenCount }: CardDispla
           aria-label="Toggle card display fields"
         >
           <SlidersHorizontal className="h-3 w-3" />
-          Display
+          Cards
           {hiddenCount > 0 && (
             <span className="ml-0.5 rounded-full bg-white/10 px-1.5 text-[10px]">
               {hiddenCount}

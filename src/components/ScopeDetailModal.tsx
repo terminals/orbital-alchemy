@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ExternalLink, X as XIcon, Plus } from 'lucide-react';
+import { useProjectUrl } from '@/hooks/useProjectUrl';
+import { useProjects } from '@/hooks/useProjectContext';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
@@ -83,6 +85,15 @@ function DepEditor({ label, ids, onRemove, onAdd }: {
 
 export function ScopeDetailModal({ scope, open, onClose }: ScopeDetailModalProps) {
   const { engine } = useWorkflow();
+  const buildUrl = useProjectUrl();
+  const { getApiBase, isMultiProject } = useProjects();
+  // Route mutations to the scope's own project endpoint (for All Projects view)
+  const scopeUrl = useCallback((path: string) => {
+    if (isMultiProject && scope?.project_id) {
+      return `${getApiBase(scope.project_id)}${path}`;
+    }
+    return buildUrl(path);
+  }, [buildUrl, getApiBase, isMultiProject, scope?.project_id]);
   const { sessions, loading: sessionsLoading } = useScopeSessions(scope?.id ?? null);
   const [fields, setFields] = useState<EditableFields | null>(null);
   const [saved, setSaved] = useState<EditableFields | null>(null);
@@ -114,7 +125,7 @@ export function ScopeDetailModal({ scope, open, onClose }: ScopeDetailModalProps
         if (JSON.stringify(fields.blocked_by) !== JSON.stringify(saved.blocked_by)) payload.blocked_by = fields.blocked_by;
         if (JSON.stringify(fields.blocks) !== JSON.stringify(saved.blocks)) payload.blocks = fields.blocks;
       }
-      const res = await fetch(`/api/orbital/scopes/${scope.id}`, {
+      const res = await fetch(scopeUrl(`/scopes/${scope.id}`), {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });

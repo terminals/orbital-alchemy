@@ -4,7 +4,7 @@ import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import type { Server } from 'socket.io';
+import type { Emitter } from '../project-emitter.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('version');
@@ -12,7 +12,7 @@ const log = createLogger('version');
 const execFileAsync = promisify(execFile);
 
 interface VersionRouteDeps {
-  io: Server;
+  io: Emitter;
 }
 
 /** Resolve the root directory of the orbital-command package itself. */

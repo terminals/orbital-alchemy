@@ -1,5 +1,6 @@
 import { useState, useMemo, useDeferredValue } from 'react';
 import type { Scope } from '@/types';
+import { scopeKey } from '@/lib/scope-key';
 
 export type SearchMode = 'filter' | 'highlight';
 
@@ -32,22 +33,22 @@ export function useSearch(filteredScopes: Scope[]) {
 
   const { displayScopes, dimmedIds, matchCount } = useMemo(() => {
     if (!hasSearch) {
-      return { displayScopes: filteredScopes, dimmedIds: new Set<number>(), matchCount: filteredScopes.length };
+      return { displayScopes: filteredScopes, dimmedIds: new Set<string>(), matchCount: filteredScopes.length };
     }
 
     if (mode === 'filter') {
       const matched = filteredScopes.filter((s) => matchesSearch(s, deferredQuery));
-      return { displayScopes: matched, dimmedIds: new Set<number>(), matchCount: matched.length };
+      return { displayScopes: matched, dimmedIds: new Set<string>(), matchCount: matched.length };
     }
 
     // highlight mode: keep all scopes, dim non-matching
-    const dimmed = new Set<number>();
+    const dimmed = new Set<string>();
     let count = 0;
     for (const scope of filteredScopes) {
       if (matchesSearch(scope, deferredQuery)) {
         count++;
       } else {
-        dimmed.add(scope.id);
+        dimmed.add(scopeKey(scope));
       }
     }
     return { displayScopes: filteredScopes, dimmedIds: dimmed, matchCount: count };

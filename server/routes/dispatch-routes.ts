@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import type Database from 'better-sqlite3';
-import type { Server } from 'socket.io';
+import type { Emitter } from '../project-emitter.js';
 import type { ScopeService } from '../services/scope-service.js';
-import { launchInCategorizedTerminal, escapeForAnsiC, buildSessionName, snapshotSessionPids, discoverNewSession, renameSession } from '../utils/terminal-launcher.js';
+import { launchInCategorizedTerminal, escapeForAnsiC, shellQuote, buildSessionName, snapshotSessionPids, discoverNewSession, renameSession } from '../utils/terminal-launcher.js';
 import { resolveDispatchEvent, resolveAbandonedDispatchesForScope, getActiveScopeIds, getAbandonedScopeIds, linkPidToDispatch } from '../utils/dispatch-utils.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 import { createLogger } from '../utils/logger.js';
@@ -20,7 +20,7 @@ interface DispatchBody {
 
 interface DispatchRouteDeps {
   db: Database.Database;
-  io: Server;
+  io: Emitter;
   scopeService: ScopeService;
   projectRoot: string;
   engine: WorkflowEngine;
@@ -110,19 +110,23 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
     // Launch in iTerm — interactive TUI mode (no -p) for full visibility
     const promptText = prompt ?? command;
     const escaped = escapeForAnsiC(promptText);
-    const fullCmd = `cd '${projectRoot}' && ORBITAL_DISPATCH_ID='${eventId}' claude --dangerously-skip-permissions $'${escaped}'`;
+    const fullCmd = `cd '${shellQuote(projectRoot)}' && ORBITAL_DISPATCH_ID='${shellQuote(eventId)}' claude --dangerously-skip-permissions $'${escaped}'`;
     try {
       await launchInCategorizedTerminal(command, fullCmd, sessionName);
       res.json({ ok: true, dispatch_id: eventId, scope_id: scope_id ?? null });
 
-      // Fire-and-forget: discover session PID, link to dispatch, and rename
+      // Fire-and-forget: discover session PID, link to dispatch, and rename.
+      // If discovery fails, SESSION_START event handler will link via ORBITAL_DISPATCH_ID.
       discoverNewSession(projectRoot, beforePids)
         .then((session) => {
-          if (!session) return;
+          if (!session) {
+            log.warn('PID discovery returned null — dispatch will rely on ORBITAL_DISPATCH_ID for linkage', { dispatch_id: eventId, scope_id });
+            return;
+          }
           linkPidToDispatch(db, eventId, session.pid);
           if (sessionName) renameSession(projectRoot, session.sessionId, sessionName);
         })
-        .catch(err => log.error('PID discovery failed', { error: err.message }));
+        .catch(err => log.warn('PID discovery failed — dispatch will rely on ORBITAL_DISPATCH_ID for linkage', { dispatch_id: eventId, error: err.message }));
     } catch (err) {
       if (scope_id != null && transition?.from) {
         scopeService.updateStatus(scope_id, transition.from, 'rollback');
@@ -248,18 +252,22 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
     // Launch single CLI session
     const batchEscaped = escapeForAnsiC(command);
     const beforePids = snapshotSessionPids(projectRoot);
-    const fullCmd = `cd '${projectRoot}' && ORBITAL_DISPATCH_ID='${eventId}' claude --dangerously-skip-permissions -p $'${batchEscaped}'`;
+    const fullCmd = `cd '${shellQuote(projectRoot)}' && ORBITAL_DISPATCH_ID='${shellQuote(eventId)}' claude --dangerously-skip-permissions -p $'${batchEscaped}'`;
     try {
       await launchInCategorizedTerminal(command, fullCmd);
       res.json({ ok: true, dispatch_id: eventId, scope_ids });
 
-      // Fire-and-forget: discover session PID and link to dispatch
+      // Fire-and-forget: discover session PID and link to dispatch.
+      // If discovery fails, SESSION_START event handler will link via ORBITAL_DISPATCH_ID.
       discoverNewSession(projectRoot, beforePids)
         .then((session) => {
-          if (!session) return;
+          if (!session) {
+            log.warn('Batch PID discovery returned null — dispatch will rely on ORBITAL_DISPATCH_ID for linkage', { dispatch_id: eventId });
+            return;
+          }
           linkPidToDispatch(db, eventId, session.pid);
         })
-        .catch(err => log.error('Batch PID discovery failed', { error: err.message }));
+        .catch(err => log.warn('Batch PID discovery failed — dispatch will rely on ORBITAL_DISPATCH_ID for linkage', { dispatch_id: eventId, error: err.message }));
     } catch (err) {
       if (transition?.from) {
         for (const id of scope_ids) {

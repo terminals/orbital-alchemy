@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { ArrowRight, AlertTriangle, Terminal, ExternalLink } from 'lucide-react';
 import {
   Dialog,
@@ -15,6 +15,8 @@ interface DispatchPopoverProps {
   scope: Scope | null;
   transition: WorkflowEdge | null;
   hasActiveSession: boolean;
+  dispatching: boolean;
+  error: string | null;
   onConfirm: () => void;
   onCancel: () => void;
   onViewDetails: () => void;
@@ -25,18 +27,18 @@ export function DispatchPopover({
   scope,
   transition,
   hasActiveSession,
+  dispatching,
+  error,
   onConfirm,
   onCancel,
   onViewDetails,
 }: DispatchPopoverProps) {
   const launchRef = useRef<HTMLButtonElement>(null);
-  const [loading, setLoading] = useState(false);
 
   // Auto-focus launch button when dialog opens
   useEffect(() => {
     if (open) {
       setTimeout(() => launchRef.current?.focus(), 100);
-      setLoading(false);
     }
   }, [open]);
 
@@ -49,7 +51,6 @@ export function DispatchPopover({
   const actionLabel = isIdeaPromotion ? 'Launch' : command ? 'Launch' : 'Move';
 
   function handleConfirm() {
-    setLoading(true);
     onConfirm();
   }
 
@@ -102,22 +103,30 @@ export function DispatchPopover({
           </div>
         )}
 
+        {/* Error message */}
+        {error && (
+          <div className="mb-3 flex items-start gap-1.5 rounded border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-xxs text-red-400">
+            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
         {/* Actions */}
         <div className="flex items-center gap-2">
           <Button
             ref={launchRef}
             size="sm"
             onClick={handleConfirm}
-            disabled={loading}
+            disabled={dispatching}
             className="flex-1"
           >
-            {loading ? 'Launching...' : actionLabel}
+            {dispatching ? 'Launching...' : actionLabel}
           </Button>
           <Button
             size="sm"
             variant="ghost"
             onClick={onCancel}
-            disabled={loading}
+            disabled={dispatching}
           >
             Cancel
           </Button>

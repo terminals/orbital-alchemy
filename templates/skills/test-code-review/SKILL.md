@@ -199,12 +199,10 @@ If matching scope files are found and all tests passed:
 #### Step 4: Move Completed Scopes (If User Confirms)
 
 ```bash
-# Only after user confirmation (scopes are gitignored, use plain mv)
-mv scopes/XXX-scope-name.md scopes/completed/
-echo "✅ Moved scope XXX to completed folder"
+# Only after user confirmation — uses atomic transition (frontmatter + move)
+bash .claude/hooks/scope-transition.sh --from review --to completed --scope XXX
+echo "✅ Moved scope XXX to completed"
 ```
-
-**Note:** Scopes are gitignored — use plain `mv`, not `git mv`.
 
 ## Modes
 

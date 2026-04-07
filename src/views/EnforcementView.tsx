@@ -7,6 +7,7 @@ import {
 } from 'recharts';
 import { useViolations } from '@/hooks/useViolations';
 import { useEnforcementRules } from '@/hooks/useEnforcementRules';
+import { useProjectUrl } from '@/hooks/useProjectUrl';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -24,6 +25,7 @@ const ENFORCEMENT_STYLES: Record<string, string> = {
 };
 
 export function EnforcementView() {
+  const buildUrl = useProjectUrl();
   const { byRule, overrides, totalViolations, totalOverrides, loading: violationsLoading } = useViolations();
   const { data: rulesData, trend, loading: rulesLoading } = useEnforcementRules();
 
@@ -31,10 +33,10 @@ export function EnforcementView() {
   const [recentViolations, setRecentViolations] = useState<OrbitalEvent[]>([]);
   const fetchRecent = useCallback(async () => {
     try {
-      const res = await fetch('/api/orbital/events?type=VIOLATION&limit=20');
+      const res = await fetch(buildUrl('/events?type=VIOLATION&limit=20'));
       if (res.ok) setRecentViolations(await res.json());
     } catch { /* server may not be running */ }
-  }, []);
+  }, [buildUrl]);
   useEffect(() => { fetchRecent(); }, [fetchRecent]);
 
   const loading = violationsLoading || rulesLoading;

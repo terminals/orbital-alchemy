@@ -1,4 +1,4 @@
-import type { Scope, FilterField } from '@/types';
+import type { Scope, FilterField, SwimGroupField } from '@/types';
 
 // ─── Effort bucketing ──────────────────────────────────────
 
@@ -45,7 +45,7 @@ export function classifyDeps(scope: Scope): string[] {
 
 // ─── Field value extraction ────────────────────────────────
 
-export function getScopeFieldValues(scope: Scope, field: FilterField): string[] {
+export function getScopeFieldValues(scope: Scope, field: FilterField | SwimGroupField): string[] {
   switch (field) {
     case 'priority':
       return scope.priority ? [scope.priority] : [];
@@ -57,5 +57,7 @@ export function getScopeFieldValues(scope: Scope, field: FilterField): string[] 
       return [bucketEffort(scope.effort_estimate)];
     case 'dependencies':
       return classifyDeps(scope);
+    case 'project':
+      return scope.project_id ? [scope.project_id] : [];
   }
 }

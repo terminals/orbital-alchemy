@@ -9,15 +9,21 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import { Puzzle, Zap, Terminal, Trash2 } from 'lucide-react';
+import { Puzzle, Zap, Terminal, Trash2, Globe, FolderOpen } from 'lucide-react';
+import { useProjectUrl } from '@/hooks/useProjectUrl';
 import { useZoomModifier } from '@/hooks/useZoomModifier';
+import { useProjects } from '@/hooks/useProjectContext';
+import { useProjectSyncState, type FileSyncStatus } from '@/hooks/useSyncState';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DirectoryTree, type AgentTeamInfo } from '@/components/config/DirectoryTree';
 import { FileEditor } from '@/components/config/FileEditor';
+import { SyncMatrixView } from '@/components/config/SyncMatrixView';
+import { DriftResolutionDialog } from '@/components/config/DriftResolutionDialog';
 import { UnifiedWorkflowPipeline } from '@/components/config/UnifiedWorkflowPipeline';
 import { useWorkflowEditor } from '@/components/workflow/useWorkflowEditor';
 import { useWorkflow } from '@/hooks/useWorkflow';
+import { ProjectTabBar } from '@/components/ProjectTabBar';
 import { useConfigTree } from '@/hooks/useConfigTree';
 import { usePipelineData } from '@/hooks/usePipelineData';
 import { useFileEditor } from '@/hooks/useFileEditor';
@@ -38,8 +44,19 @@ function extractIdFromPath(path: string): string {
 
 export function PrimitivesConfig() {
   const [activeTab, setActiveTab] = useState<ConfigPrimitiveType>('agents');
+  const buildUrl = useProjectUrl();
   const [selectedFile, setSelectedFile] = useState<{ type: ConfigPrimitiveType; path: string } | null>(null);
   const [activeDrag, setActiveDrag] = useState<{ type: string; name: string } | null>(null);
+  const [showSyncMatrix, setShowSyncMatrix] = useState(false);
+  const [driftFile, setDriftFile] = useState<FileSyncStatus | null>(null);
+
+  const { activeProjectId, isMultiProject } = useProjects();
+  const { report: syncReport, refetch: refetchSync } = useProjectSyncState(
+    isMultiProject ? activeProjectId : null,
+  );
+
+  // Check for any drifted files to surface drift resolution
+  const hasDrift = syncReport?.files.some(f => f.state === 'drifted') ?? false;
 
   const { tree, loading: treeLoading, refresh } = useConfigTree(activeTab);
 
@@ -232,7 +249,7 @@ export function PrimitivesConfig() {
     setSavingWorkflow(true);
     setWorkflowSaveError(null);
     try {
-      const res = await fetch('/api/orbital/workflow', {
+      const res = await fetch(buildUrl('/workflow'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editor.editConfig),
@@ -249,7 +266,7 @@ export function PrimitivesConfig() {
     } finally {
       setSavingWorkflow(false);
     }
-  }, [editor, savingWorkflow]);
+  }, [editor, savingWorkflow, buildUrl]);
 
   const { activePaths, hookCategoryMap } = useMemo(() => {
     const activeHookPaths = new Set<string>();
@@ -389,6 +406,9 @@ export function PrimitivesConfig() {
       onDragCancel={handleDragCancel}
     >
       <div className="flex flex-1 min-h-0 flex-col">
+        {/* Project Tab Bar (multi-project only) */}
+        <ProjectTabBar />
+
         {/* Header */}
         <div className="mb-4 flex items-center gap-3">
           <Puzzle className="h-4 w-4 text-primary" />
@@ -396,7 +416,51 @@ export function PrimitivesConfig() {
           <Badge variant="secondary" className="ml-2">
             {fileCount} {activeTab}
           </Badge>
+          {isMultiProject && (
+            <>
+              <div className="ml-auto flex items-center gap-2">
+                {activeProjectId ? (
+                  <Badge variant="outline" className="gap-1.5">
+                    <FolderOpen className="h-3 w-3" />
+                    Project scope
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="gap-1.5">
+                    <Globe className="h-3 w-3" />
+                    Global scope
+                  </Badge>
+                )}
+                <Button
+                  variant={showSyncMatrix ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setShowSyncMatrix(!showSyncMatrix)}
+                >
+                  Sync Status
+                  {hasDrift && <span className="ml-1.5 h-2 w-2 rounded-full bg-amber-500 animate-pulse" />}
+                </Button>
+              </div>
+            </>
+          )}
         </div>
+
+        {/* Sync Matrix (when toggled) */}
+        {showSyncMatrix && isMultiProject && (
+          <div className="mb-4 rounded border border-border bg-card p-2">
+            <SyncMatrixView />
+          </div>
+        )}
+
+        {/* Drift Resolution */}
+        {driftFile && activeProjectId && (
+          <div className="mb-4">
+            <DriftResolutionDialog
+              projectId={activeProjectId}
+              relativePath={driftFile.relativePath}
+              onResolved={() => { setDriftFile(null); refetchSync(); }}
+              onCancel={() => setDriftFile(null)}
+            />
+          </div>
+        )}
 
         {/* Save bar */}
         {editor.editMode && editor.changeCount > 0 && (

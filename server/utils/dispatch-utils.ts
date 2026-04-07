@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { Server } from 'socket.io';
+import type { Emitter } from '../project-emitter.js';
 import type { ScopeService } from '../services/scope-service.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 import { isSessionPidAlive } from './terminal-launcher.js';
@@ -15,7 +15,7 @@ interface DispatchRow {
 /** Mark a DISPATCH event as resolved and emit socket notification. */
 export function resolveDispatchEvent(
   db: Database.Database,
-  io: Server,
+  io: Emitter,
   eventId: string,
   outcome: 'completed' | 'failed' | 'abandoned',
   error?: string,
@@ -45,7 +45,7 @@ export function resolveDispatchEvent(
 /** Resolve all unresolved DISPATCH events for a given scope */
 export function resolveActiveDispatchesForScope(
   db: Database.Database,
-  io: Server,
+  io: Emitter,
   scopeId: number,
   outcome: 'completed' | 'failed' | 'abandoned',
 ): void {
@@ -63,7 +63,7 @@ export function resolveActiveDispatchesForScope(
  *  Used by both recover and dismiss-abandoned routes to clear abandoned state. */
 export function resolveAbandonedDispatchesForScope(
   db: Database.Database,
-  io: Server,
+  io: Emitter,
   scopeId: number,
 ): number {
   const rows = db.prepare(
@@ -110,7 +110,7 @@ export function linkPidToDispatch(
  *  Reverting on session end was destroying completed work and deleting scope files. */
 export function resolveDispatchesByPid(
   db: Database.Database,
-  io: Server,
+  io: Emitter,
   pid: number,
 ): number {
   const rows = db.prepare(
@@ -133,7 +133,7 @@ export function resolveDispatchesByPid(
  *  which resolves via inferScopeStatus as 'completed'. */
 export function resolveDispatchesByDispatchId(
   db: Database.Database,
-  io: Server,
+  io: Emitter,
   dispatchId: string,
 ): number {
   const row = db.prepare(
@@ -146,8 +146,8 @@ export function resolveDispatchesByDispatchId(
   return 1;
 }
 
-/** Fallback age threshold for dispatches without a linked PID (30 minutes). */
-const STALE_AGE_MS = 30 * 60 * 1000;
+/** Fallback age threshold for dispatches without a linked PID (10 minutes). */
+const STALE_AGE_MS = 10 * 60 * 1000;
 
 /** Get all scope IDs that have actively running DISPATCH events.
  *  Uses PID liveness (process.kill(pid, 0)) when available, falls back to
@@ -246,7 +246,7 @@ export function getActiveScopeIds(db: Database.Database, scopeService: ScopeServ
  *  keep scopes at the transition target after completion. Auto-reverting was
  *  destroying completed work and deleting scope files. Users can manually
  *  move scopes back from the dashboard if needed. */
-export function resolveStaleDispatches(db: Database.Database, io: Server, scopeService: ScopeService, engine: WorkflowEngine): number {
+export function resolveStaleDispatches(db: Database.Database, io: Emitter, scopeService: ScopeService, engine: WorkflowEngine): number {
   const cutoff = new Date(Date.now() - STALE_AGE_MS).toISOString();
 
   // Single query on events only — split by cache status

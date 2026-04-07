@@ -62,13 +62,16 @@ export class ScopeCache {
 
   /** Get the maximum raw scope number excluding icebox scopes (for next-ID generation).
    *  Cache keys use encoded IDs (suffixed scopes like 047a → 1047, 075x → 9075),
-   *  but next-ID generation needs the raw scope number (047, 075, 087). */
+   *  but next-ID generation needs the raw scope number (047, 075, 087).
+   *  Skips IDs >= 500 to handle legacy icebox-origin files during migration. */
   maxNonIceboxId(): number {
     let max = 0;
     for (const [id, scope] of this.byId) {
       if (scope.status === 'icebox') continue;
       // Decode: encoded IDs ≥1000 have a suffix offset — raw number is id % 1000
       const raw = id >= 1000 ? id % 1000 : id;
+      // Skip legacy icebox-origin IDs (500+) to prevent namespace pollution
+      if (raw >= 500) continue;
       if (raw > max) max = raw;
     }
     return max;

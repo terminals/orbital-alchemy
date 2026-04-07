@@ -1,6 +1,9 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { ProjectProvider } from '@/hooks/useProjectContext';
+import { WorkflowProvider } from '@/hooks/useWorkflow';
+import { ActiveDispatchContext, useActiveDispatchProvider } from '@/hooks/useActiveDispatches';
 import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { ScopeBoard } from '@/views/ScopeBoard';
 import { PrimitivesConfig } from '@/views/PrimitivesConfig';
@@ -11,9 +14,11 @@ import { Settings } from '@/views/Settings';
 
 const WorkflowVisualizer = lazy(() => import('@/views/WorkflowVisualizer'));
 
-export default function App() {
+function AppInner() {
+  const activeDispatchCtx = useActiveDispatchProvider();
+
   return (
-    <BrowserRouter>
+    <ActiveDispatchContext.Provider value={activeDispatchCtx}>
       <TooltipProvider>
         <Routes>
           <Route element={<DashboardLayout />}>
@@ -28,6 +33,18 @@ export default function App() {
           </Route>
         </Routes>
       </TooltipProvider>
+    </ActiveDispatchContext.Provider>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <ProjectProvider>
+      <WorkflowProvider>
+        <AppInner />
+      </WorkflowProvider>
+      </ProjectProvider>
     </BrowserRouter>
   );
 }

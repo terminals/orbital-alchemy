@@ -12,9 +12,13 @@ import '@xyflow/react/dist/style.css';
 
 import { Workflow, Zap, Pencil, LayoutGrid } from 'lucide-react';
 import type { WorkflowHook, UnifiedHook } from '../../shared/workflow-config';
+import { allEnginesMatch } from '../../shared/workflow-normalizer';
 import { useWorkflow } from '@/hooks/useWorkflow';
 import { useScopes } from '@/hooks/useScopes';
 import { useCcHooks } from '@/hooks/useCcHooks';
+import { useProjects } from '@/hooks/useProjectContext';
+import { ProjectTabBar } from '@/components/ProjectTabBar';
+import { WorkflowComparisonView } from '@/components/workflow/WorkflowComparisonView';
 import { WorkflowNode } from '@/components/workflow/WorkflowNode';
 import type { WorkflowNodeType } from '@/components/workflow/WorkflowNode';
 import { WorkflowEdgeComponent } from '@/components/workflow/WorkflowEdgeComponent';
@@ -56,8 +60,16 @@ export default function WorkflowVisualizer() {
   const { engine } = useWorkflow();
   const { scopes } = useScopes();
   const { ccHooks } = useCcHooks();
+  const { activeProjectId, isMultiProject, projectEngines } = useProjects();
+  const isAllProjects = isMultiProject && activeProjectId === null;
   const config = engine.getConfig();
   const editor = useWorkflowEditor(config);
+
+  // Determine if all projects share the same workflow
+  const isDivergent = useMemo(() => {
+    if (!isAllProjects || projectEngines.size === 0) return false;
+    return !allEnginesMatch([...projectEngines.values()]);
+  }, [isAllProjects, projectEngines]);
 
   // The config to display: either the edit draft or the live config
   const displayConfig = editor.editMode ? editor.editConfig : config;
@@ -166,11 +178,19 @@ export default function WorkflowVisualizer() {
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
+      {/* Project Tab Bar (multi-project only) */}
+      <ProjectTabBar />
+
       {/* Header */}
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Workflow className="h-4 w-4 text-primary" />
           <h1 className="text-xl font-light">Workflow</h1>
+          {isAllProjects && (
+            <span className="rounded bg-zinc-500/20 px-2 py-0.5 text-[10px] font-semibold text-zinc-400">
+              READ-ONLY
+            </span>
+          )}
           {editor.editMode && (
             <span className="rounded bg-cyan-500/20 px-2 py-0.5 text-[10px] font-semibold text-cyan-400">
               EDIT MODE
@@ -197,7 +217,7 @@ export default function WorkflowVisualizer() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {!editor.editMode && (
+          {!editor.editMode && !isAllProjects && (
             <button
               onClick={editor.enterEditMode}
               className="flex items-center gap-1.5 rounded border border-zinc-800 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:border-cyan-500/40 hover:text-cyan-400"
@@ -206,7 +226,7 @@ export default function WorkflowVisualizer() {
               Edit
             </button>
           )}
-          {!editor.editMode && <PresetSelector activeConfigName={config.name} />}
+          {!editor.editMode && !isAllProjects && <PresetSelector activeConfigName={config.name} />}
         </div>
       </div>
 
@@ -232,7 +252,10 @@ export default function WorkflowVisualizer() {
       )}
 
       {/* ─── Graph Tab ────────────────────────────────── */}
-      {(activeTab === 'graph' || editor.editMode) && (
+      {(activeTab === 'graph' || editor.editMode) && isAllProjects && isDivergent && (
+        <WorkflowComparisonView engines={projectEngines} />
+      )}
+      {(activeTab === 'graph' || editor.editMode) && !(isAllProjects && isDivergent) && (
         <div className="flex min-h-0 flex-1 gap-3">
           {/* React Flow Canvas */}
           <div

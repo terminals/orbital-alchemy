@@ -1,5 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { AgentConfig } from '../types/index.js';
+import { useProjects } from './useProjectContext';
+import { useProjectUrl } from './useProjectUrl';
+import { useReconnect } from './useReconnect';
 
 export interface OrbitalConfig {
   projectName: string;
@@ -23,32 +26,48 @@ const DEFAULT_CONFIG: OrbitalConfig = {
   clientPort: 4445,
 };
 
-let cachedConfig: OrbitalConfig | null = null;
+/** Per-project config cache to avoid redundant fetches within a session */
+const configCache = new Map<string, OrbitalConfig>();
 
 /**
  * Fetch project config from the server and inject CSS variables
  * for category and agent colors. Returns the config for rendering.
  */
 export function useOrbitalConfig(): OrbitalConfig {
-  const [config, setConfig] = useState<OrbitalConfig>(cachedConfig ?? DEFAULT_CONFIG);
+  const [config, setConfig] = useState<OrbitalConfig>(DEFAULT_CONFIG);
+  const { activeProjectId } = useProjects();
+  const buildUrl = useProjectUrl();
+
+  const fetchConfig = useCallback(async () => {
+    const cacheKey = activeProjectId ?? '__default__';
+    const cached = configCache.get(cacheKey);
+    if (cached) {
+      setConfig(cached);
+      return;
+    }
+
+    try {
+      const res = await fetch(buildUrl('/config'));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: OrbitalConfig = await res.json();
+      configCache.set(cacheKey, data);
+      setConfig(data);
+
+      // Inject CSS variables for agent colors
+      const root = document.documentElement;
+      for (const agent of data.agents) {
+        root.style.setProperty(`--agent-${agent.id}`, agent.color);
+      }
+    } catch (err) {
+      console.warn('[Orbital] Config fetch failed:', err);
+    }
+  }, [buildUrl, activeProjectId]);
 
   useEffect(() => {
-    if (cachedConfig) return;
+    fetchConfig();
+  }, [fetchConfig]);
 
-    fetch('/api/orbital/config')
-      .then(res => res.json())
-      .then((data: OrbitalConfig) => {
-        cachedConfig = data;
-        setConfig(data);
-
-        // Inject CSS variables for agent colors
-        const root = document.documentElement;
-        for (const agent of data.agents) {
-          root.style.setProperty(`--agent-${agent.id}`, agent.color);
-        }
-      })
-      .catch(err => console.warn('[Orbital] Config fetch failed:', err));
-  }, []);
+  useReconnect(fetchConfig);
 
   return config;
 }

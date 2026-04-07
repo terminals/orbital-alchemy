@@ -3,7 +3,7 @@ import { execFile } from 'child_process';
 import path from 'path';
 import { promisify } from 'util';
 import type Database from 'better-sqlite3';
-import type { Server } from 'socket.io';
+import type { Emitter } from '../project-emitter.js';
 import type { GateService } from '../services/gate-service.js';
 import type { DeployService } from '../services/deploy-service.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
@@ -54,7 +54,7 @@ function parseHead(raw: string): BranchHead {
 
 interface DataRouteDeps {
   db: Database.Database;
-  io: Server;
+  io: Emitter;
   gateService: GateService;
   deployService: DeployService;
   engine: WorkflowEngine;
@@ -417,7 +417,7 @@ export function createDataRoutes({
     let stats: SessionStats | null = null;
 
     if (parsed.claude_session_id && typeof parsed.claude_session_id === 'string') {
-      const claudeSessions = await getClaudeSessions();
+      const claudeSessions = await getClaudeSessions(undefined, projectRoot);
       const match = claudeSessions.find(s => s.id === parsed.claude_session_id);
       if (match) {
         meta = {
@@ -429,7 +429,7 @@ export function createDataRoutes({
           lastActiveAt: match.lastActiveAt,
         };
       }
-      stats = getSessionStats(parsed.claude_session_id as string);
+      stats = getSessionStats(parsed.claude_session_id as string, projectRoot);
     }
 
     if (!content) {

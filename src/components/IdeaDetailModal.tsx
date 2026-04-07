@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Trash2, Check, X, Sparkles } from 'lucide-react';
+import { useProjectUrl } from '@/hooks/useProjectUrl';
 import {
   Dialog,
   DialogContent,
@@ -12,12 +13,13 @@ interface IdeaDetailModalProps {
   scope: Scope | null;
   open: boolean;
   onClose: () => void;
-  onDelete: (id: number) => void;
-  onApprove: (id: number) => void;
-  onReject: (id: number) => void;
+  onDelete: (slug: string) => void;
+  onApprove: (slug: string) => void;
+  onReject: (slug: string) => void;
 }
 
 export function IdeaDetailModal({ scope, open, onClose, onDelete, onApprove, onReject }: IdeaDetailModalProps) {
+  const buildUrl = useProjectUrl();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [savedTitle, setSavedTitle] = useState('');
@@ -44,10 +46,10 @@ export function IdeaDetailModal({ scope, open, onClose, onDelete, onApprove, onR
   }, [scope?.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = useCallback(async () => {
-    if (!scope || !isDirty || saving || isGhost) return;
+    if (!scope?.slug || !isDirty || saving || isGhost) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/orbital/ideas/${scope.id}`, {
+      const res = await fetch(buildUrl(`/ideas/${scope.slug}`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, description }),
@@ -55,11 +57,13 @@ export function IdeaDetailModal({ scope, open, onClose, onDelete, onApprove, onR
       if (res.ok) {
         setSavedTitle(title);
         setSavedDescription(description);
+      } else {
+        console.error('[Orbital] Failed to save idea:', res.status, res.statusText);
       }
     } finally {
       setSaving(false);
     }
-  }, [scope, title, description, isDirty, saving, isGhost]);
+  }, [scope, title, description, isDirty, saving, isGhost, buildUrl]);
 
   // Auto-save every 10s when dirty (not for ghosts)
   useEffect(() => {
@@ -83,7 +87,7 @@ export function IdeaDetailModal({ scope, open, onClose, onDelete, onApprove, onR
       setConfirmDelete(true);
       return;
     }
-    if (scope) onDelete(scope.id);
+    if (scope?.slug) onDelete(scope.slug);
   }
 
   if (!scope) return null;
@@ -159,7 +163,8 @@ export function IdeaDetailModal({ scope, open, onClose, onDelete, onApprove, onR
             <Button
               size="sm"
               className="flex-1 bg-green-600/20 border border-green-500/30 text-green-400 hover:bg-green-600/30 hover:text-green-300"
-              onClick={() => onApprove(scope.id)}
+              onClick={() => scope.slug && onApprove(scope.slug)}
+              disabled={!scope.slug}
             >
               <Check className="h-3.5 w-3.5 mr-1.5" />
               Approve
@@ -168,7 +173,8 @@ export function IdeaDetailModal({ scope, open, onClose, onDelete, onApprove, onR
               size="sm"
               variant="ghost"
               className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
-              onClick={() => onReject(scope.id)}
+              onClick={() => scope.slug && onReject(scope.slug)}
+              disabled={!scope.slug}
             >
               <X className="h-3.5 w-3.5 mr-1.5" />
               Reject

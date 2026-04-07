@@ -3,6 +3,7 @@ import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { X, Layers, Package, Play } from 'lucide-react';
 import type { Sprint, Scope, CardDisplayConfig } from '@/types';
+import { scopeKey } from '@/lib/scope-key';
 import { ScopeCard } from './ScopeCard';
 import { cn, formatScopeId } from '@/lib/utils';
 import { useWorkflow } from '@/hooks/useWorkflow';
@@ -16,7 +17,7 @@ interface SprintContainerProps {
   onRename?: (id: number, name: string) => void;
   onScopeClick?: (scope: Scope) => void;
   cardDisplay?: CardDisplayConfig;
-  dimmedIds?: Set<number>;
+  dimmedIds?: Set<string>;
   /** Number of loose (non-batched) scopes in the column — drives "Add all" button visibility */
   looseCount?: number;
   /** Bulk-add all loose column scopes into this batch */
@@ -226,7 +227,7 @@ export function SprintContainer({ sprint, scopeLookup, onDelete, onDispatch, onR
             );
           }
           return (
-            <ScopeCard key={scopeId} scope={scope} onClick={onScopeClick} cardDisplay={cardDisplay} dimmed={dimmedIds?.has(scopeId)} />
+            <ScopeCard key={scopeKey(scope)} scope={scope} onClick={onScopeClick} cardDisplay={cardDisplay} dimmed={dimmedIds?.has(scopeKey(scope))} />
           );
         })}
         {totalScopes === 0 && isAssembling && isOver && (

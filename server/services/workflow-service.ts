@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import type { Server } from 'socket.io';
+import type { Emitter } from '../project-emitter.js';
 import type { WorkflowConfig } from '../../shared/workflow-config.js';
 import { createLogger } from '../utils/logger.js';
 
@@ -53,7 +53,7 @@ export class WorkflowService {
   private engine: WorkflowEngine;
   private defaultConfigPath: string;
   private manifestPath: string;
-  private io: Server | null = null;
+  private io: Emitter | null = null;
 
   constructor(configDir: string, engine: WorkflowEngine, scopesDir: string, defaultConfigPath: string) {
     this.presetsDir = path.join(configDir, 'workflows');
@@ -102,7 +102,7 @@ export class WorkflowService {
     fs.writeFileSync(defaultPresetPath, JSON.stringify(preset, null, 2));
   }
 
-  setSocketServer(io: Server): void {
+  setSocketServer(io: Emitter): void {
     this.io = io;
   }
 

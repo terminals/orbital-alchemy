@@ -5,7 +5,7 @@ import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 import { isSessionPidAlive } from './terminal-launcher.js';
 import { createLogger } from './logger.js';
 
-const log = createLogger('dispatch');
+const log = createLogger('dispatch-utils');
 
 interface DispatchRow {
   data: string;
@@ -40,6 +40,69 @@ export function resolveDispatchEvent(
     scope_ids: data.scope_ids ?? null,
     outcome,
   });
+}
+
+/** Auto-revert scope status when a dispatch is abandoned, if the forward edge
+ *  has autoRevert=true and the scope is still at the dispatch target.
+ *  Safe: only reverts if the scope hasn't been moved since the dispatch.
+ *  Returns true if revert was successful. */
+function autoRevertAbandonedScope(
+  scopeService: ScopeService,
+  engine: WorkflowEngine,
+  scopeId: number,
+  data: Record<string, unknown>,
+): boolean {
+  try {
+    const transition = data.transition as { from: string; to: string } | null;
+    if (!transition?.from || !transition?.to) return false;
+
+    const scope = scopeService.getById(scopeId);
+    // Only revert if scope is still at the dispatch target (hasn't been moved)
+    if (!scope || scope.status !== transition.to) return false;
+
+    const edge = engine.findEdge(transition.from, transition.to);
+    if (!edge?.autoRevert) return false;
+
+    const result = scopeService.updateStatus(scopeId, transition.from, 'rollback');
+    if (!result.ok) return false;
+    log.info('Auto-reverted abandoned dispatch', {
+      scopeId, from: transition.to, to: transition.from,
+    });
+    return true;
+  } catch (err) {
+    log.error('Auto-revert failed', { scopeId, error: String(err) });
+    return false;
+  }
+}
+
+/** Attempt auto-revert for an abandoned dispatch and clear the abandoned state if successful.
+ *  Loads the dispatch event data, tries auto-revert, and re-resolves as 'completed' if the
+ *  scope was successfully reverted. Returns true if auto-revert + clear succeeded. */
+export function tryAutoRevertAndClear(
+  db: Database.Database,
+  io: Emitter,
+  scopeService: ScopeService,
+  engine: WorkflowEngine,
+  eventId: string,
+): boolean {
+  const row = db.prepare('SELECT data, scope_id FROM events WHERE id = ?')
+    .get(eventId) as DispatchRow | undefined;
+  if (!row || row.scope_id == null) return false;
+
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(row.data);
+  } catch {
+    return false;
+  }
+
+  const reverted = autoRevertAbandonedScope(scopeService, engine, row.scope_id, data);
+  if (reverted) {
+    // Clear the abandoned state so getAbandonedScopeIds won't return this scope
+    resolveDispatchEvent(db, io, eventId, 'completed');
+    log.info('Cleared abandoned dispatch after auto-revert', { eventId, scope_id: row.scope_id });
+  }
+  return reverted;
 }
 
 /** Resolve all unresolved DISPATCH events for a given scope */
@@ -104,15 +167,13 @@ export function linkPidToDispatch(
 /** Resolve all unresolved DISPATCH events linked to a specific PID.
  *  Called when a SESSION_END event is received, indicating the Claude session
  *  process has exited and its dispatches should be cleared.
- *
- *  NOTE: Does NOT revert scope status. Skills like /scope-implement intentionally
- *  keep scopes at the transition target (e.g. "implementing") after completion.
- *  Reverting on session end was destroying completed work and deleting scope files. */
+ *  Returns the resolved event IDs so callers can attempt auto-revert. */
 export function resolveDispatchesByPid(
   db: Database.Database,
   io: Emitter,
   pid: number,
-): number {
+  outcome: 'completed' | 'abandoned' = 'abandoned',
+): string[] {
   const rows = db.prepare(
     `SELECT id FROM events
      WHERE type = 'DISPATCH'
@@ -121,29 +182,30 @@ export function resolveDispatchesByPid(
   ).all(pid) as Array<{ id: string }>;
 
   for (const row of rows) {
-    resolveDispatchEvent(db, io, row.id, 'abandoned');
+    resolveDispatchEvent(db, io, row.id, outcome);
   }
 
-  return rows.length;
+  return rows.map(r => r.id);
 }
 
 /** Resolve all unresolved DISPATCH events linked to a specific dispatch ID.
  *  Called when a SESSION_END event includes dispatch_id from ORBITAL_DISPATCH_ID env var.
- *  Defaults to 'abandoned' — successful completions emit AGENT_COMPLETED first
- *  which resolves via inferScopeStatus as 'completed'. */
+ *  Outcome depends on how the session ended: normal_exit → completed, otherwise → abandoned.
+ *  Returns the resolved event IDs so callers can attempt auto-revert. */
 export function resolveDispatchesByDispatchId(
   db: Database.Database,
   io: Emitter,
   dispatchId: string,
-): number {
+  outcome: 'completed' | 'abandoned' = 'abandoned',
+): string[] {
   const row = db.prepare(
     `SELECT id FROM events
      WHERE id = ? AND type = 'DISPATCH' AND JSON_EXTRACT(data, '$.resolved') IS NULL`,
   ).get(dispatchId) as { id: string } | undefined;
 
-  if (!row) return 0;
-  resolveDispatchEvent(db, io, row.id, 'abandoned');
-  return 1;
+  if (!row) return [];
+  resolveDispatchEvent(db, io, row.id, outcome);
+  return [row.id];
 }
 
 /** Fallback age threshold for dispatches without a linked PID (10 minutes). */
@@ -209,6 +271,7 @@ export function getActiveScopeIds(db: Database.Database, scopeService: ScopeServ
     try {
       batchData = JSON.parse(batchRow.data);
     } catch {
+      log.warn('Skipping unparseable batch dispatch event data', { data: batchRow.data });
       continue;
     }
 
@@ -242,10 +305,11 @@ export function getActiveScopeIds(db: Database.Database, scopeService: ScopeServ
  *  3. No linked PID and dispatch older than STALE_AGE_MS (fallback)
  *  Called once at startup and periodically to clean up unresolved dispatches.
  *
- *  NOTE: Does NOT revert scope status. Skills like /scope-implement intentionally
- *  keep scopes at the transition target after completion. Auto-reverting was
- *  destroying completed work and deleting scope files. Users can manually
- *  move scopes back from the dashboard if needed. */
+ *  When a dispatch is abandoned, auto-reverts scope status if the forward edge
+ *  has autoRevert=true AND the scope is still at the dispatch target. This allows
+ *  safe recovery for edges like backlog→implementing where the session crashed
+ *  before doing meaningful work. Edges without autoRevert leave the scope in place
+ *  for manual recovery from the dashboard. */
 export function resolveStaleDispatches(db: Database.Database, io: Emitter, scopeService: ScopeService, engine: WorkflowEngine): number {
   const cutoff = new Date(Date.now() - STALE_AGE_MS).toISOString();
 
@@ -288,6 +352,8 @@ export function resolveStaleDispatches(db: Database.Database, io: Emitter, scope
 
     if (isStale) {
       resolveDispatchEvent(db, io, row.id, 'abandoned');
+      // Try auto-revert; if successful, clear the abandoned state
+      tryAutoRevertAndClear(db, io, scopeService, engine, row.id);
       resolved++;
     }
   }
@@ -306,6 +372,7 @@ export function resolveStaleDispatches(db: Database.Database, io: Emitter, scope
     try {
       batchData = JSON.parse(batchRow.data);
     } catch {
+      log.warn('Skipping unparseable batch dispatch event data', { eventId: batchRow.id });
       continue;
     }
 
@@ -387,6 +454,9 @@ export function getAbandonedScopeIds(
     const resolved = data.resolved as Record<string, unknown> | null;
     const fromStatus = transition?.from as string ?? null;
     const abandonedAt = resolved?.at as string ?? row.timestamp;
+
+    // Defense-in-depth: skip scopes already at their pre-dispatch status (already reverted)
+    if (fromStatus && scope.status === fromStatus) continue;
 
     result.push({ scope_id: row.scope_id, from_status: fromStatus, abandoned_at: abandonedAt });
   }

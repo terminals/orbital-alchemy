@@ -16,7 +16,7 @@ interface UpdateCheck {
   branch: string;
 }
 
-type UpdateStage = 'idle' | 'checking' | 'pulling' | 'installing' | 'done' | 'error';
+type UpdateStage = 'idle' | 'checking' | 'checked' | 'pulling' | 'installing' | 'done' | 'error';
 
 interface UseVersionReturn {
   version: VersionInfo | null;
@@ -61,7 +61,7 @@ export function useVersion(): UseVersionReturn {
   // Fetch current version
   useEffect(() => {
     fetchVersionInfo();
-  }, []);
+  }, [fetchVersionInfo]);
 
   useReconnect(fetchVersionInfo);
 
@@ -74,7 +74,7 @@ export function useVersion(): UseVersionReturn {
     }, 5 * 60 * 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [doCheckForUpdate]);
 
   // Socket listeners for update progress
   useEffect(() => {
@@ -106,7 +106,8 @@ export function useVersion(): UseVersionReturn {
     setUpdateError(null);
     try {
       await doCheckForUpdate();
-      setUpdateStage('idle');
+      setUpdateStage('checked');
+      setTimeout(() => setUpdateStage('idle'), 4000);
     } catch (err) {
       setUpdateStage('error');
       setUpdateError((err as Error).message);

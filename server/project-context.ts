@@ -24,8 +24,9 @@ import type { WorkflowConfig } from '../shared/workflow-config.js';
 import defaultWorkflow from '../shared/default-workflow.json' with { type: 'json' };
 import { startScopeWatcher } from './watchers/scope-watcher.js';
 import { startEventWatcher } from './watchers/event-watcher.js';
-import { resolveStaleDispatches, resolveActiveDispatchesForScope, resolveDispatchesByPid, resolveDispatchesByDispatchId, linkPidToDispatch } from './utils/dispatch-utils.js';
+import { resolveStaleDispatches, resolveActiveDispatchesForScope, resolveDispatchesByPid, resolveDispatchesByDispatchId, linkPidToDispatch, tryAutoRevertAndClear } from './utils/dispatch-utils.js';
 import { syncClaudeSessionsToDB } from './services/claude-session-service.js';
+import { TelemetryService } from './services/telemetry-service.js';
 import { ensureDynamicProfiles } from './utils/terminal-launcher.js';
 import { createLogger } from './utils/logger.js';
 
@@ -60,6 +61,7 @@ export interface ProjectContext {
   workflowService: WorkflowService;
   gitService: GitService;
   githubService: GitHubService;
+  telemetryService: TelemetryService;
 
   // Watchers
   scopeWatcher: FSWatcher;
@@ -87,8 +89,7 @@ function getDefaultConfigPath(): string {
 /**
  * Create a fully wired ProjectContext for a single project.
  *
- * This mirrors the service construction block from startServer() in index.ts
- * but scoped to a specific project root. Each ProjectContext has its own
+ * Create a fully wired context for a single project. Each ProjectContext has its own
  * database, services, watchers, and intervals.
  */
 export async function createProjectContext(
@@ -96,8 +97,6 @@ export async function createProjectContext(
   projectRoot: string,
   emitter: ProjectEmitter,
 ): Promise<ProjectContext> {
-  log.info('Initializing project context', { id: projectId, root: projectRoot });
-
   // Load project config
   const config = loadConfig(projectRoot);
 
@@ -133,6 +132,7 @@ export async function createProjectContext(
   workflowEngine.reload(workflowService.getActive());
   const gitService = new GitService(config.projectRoot, scopeCache);
   const githubService = new GitHubService(config.projectRoot);
+  const telemetryService = new TelemetryService(db, config.telemetry, config.projectName, config.projectRoot);
 
   // Wire active-group guard
   scopeService.setActiveGroupCheck((scopeId) => sprintService.getActiveGroupForScope(scopeId));
@@ -141,20 +141,35 @@ export async function createProjectContext(
   eventService.onIngest((eventType, scopeId, data) => {
     if (eventType === 'SESSION_START' && typeof data.dispatch_id === 'string' && typeof data.pid === 'number') {
       linkPidToDispatch(db, data.dispatch_id, data.pid);
-      log.info('SESSION_START: linked PID to dispatch', { pid: data.pid, dispatch_id: data.dispatch_id });
+      log.debug('Linked PID to dispatch', { pid: data.pid, dispatch_id: data.dispatch_id });
+      return;
+    }
+    if (eventType === 'SCOPE_GATE_LIFTED' && scopeId != null) {
+      const id = Number(scopeId);
+      if (!isNaN(id) && id > 0) {
+        resolveActiveDispatchesForScope(db, emitter, id, 'completed');
+        log.debug('Resolved dispatches for scope gate lift', { scope_id: id });
+      }
       return;
     }
     if (eventType === 'SESSION_END') {
-      let count = 0;
+      const outcome = data.normal_exit === true ? 'completed' : 'abandoned';
+      let resolvedIds: string[] = [];
       if (typeof data.dispatch_id === 'string') {
-        count = resolveDispatchesByDispatchId(db, emitter, data.dispatch_id);
-        if (count > 0) log.info('SESSION_END: resolved dispatches', { count, dispatch_id: data.dispatch_id });
+        resolvedIds = resolveDispatchesByDispatchId(db, emitter, data.dispatch_id, outcome);
       }
-      if (count === 0 && typeof data.pid === 'number') {
-        count = resolveDispatchesByPid(db, emitter, data.pid);
-        if (count > 0) log.info('SESSION_END: resolved dispatches by PID fallback', { count, pid: data.pid });
+      if (resolvedIds.length === 0 && typeof data.pid === 'number') {
+        resolvedIds = resolveDispatchesByPid(db, emitter, data.pid, outcome);
       }
-      if (count > 0) batchOrchestrator.resolveStaleBatches();
+      if (resolvedIds.length > 0) log.info('Session resolved', { count: resolvedIds.length, outcome });
+      // For abandoned dispatches, immediately try auto-revert so the scope
+      // returns to its pre-dispatch status without requiring user interaction
+      if (outcome === 'abandoned') {
+        for (const eventId of resolvedIds) {
+          tryAutoRevertAndClear(db, emitter, scopeService, workflowEngine, eventId);
+        }
+      }
+      if (resolvedIds.length > 0) batchOrchestrator.resolveStaleBatches();
       return;
     }
     // Status inference
@@ -184,9 +199,10 @@ export async function createProjectContext(
     }
   });
 
-  // Load scopes from filesystem
+  // Load scopes from filesystem and reconcile directory mismatches
   const scopeCount = scopeService.syncFromFilesystem();
-  log.info('Scopes loaded', { id: projectId, count: scopeCount });
+  const reconciled = scopeService.reconcileDirectories();
+  if (reconciled > 0) log.info('Reconciled scope directories', { id: projectId, count: reconciled });
 
   // Start watchers
   const scopeWatcher = startScopeWatcher(config.scopesDir, scopeService);
@@ -208,9 +224,12 @@ export async function createProjectContext(
 
   // Initial session sync + legacy purge (Fix 7)
   syncClaudeSessionsToDB(db, scopeService, config.projectRoot).then((count) => {
-    log.info('Synced frontmatter sessions', { count });
+    if (count > 0) log.info('Synced sessions', { id: projectId, count });
     const purged = db.prepare("DELETE FROM sessions WHERE action IS NULL AND id LIKE 'claude-%'").run();
     if (purged.changes > 0) log.info('Purged legacy session rows', { count: purged.changes });
+    if (telemetryService.enabled) {
+      telemetryService.uploadChangedSessions().catch(() => {});
+    }
   }).catch(err => log.error('Session sync failed', { error: err.message }));
 
   // Start periodic intervals
@@ -232,6 +251,9 @@ export async function createProjectContext(
   intervals.push(setInterval(async () => {
     const count = await syncClaudeSessionsToDB(db, scopeService, config.projectRoot);
     if (count > 0) emitter.emit('session:updated', { type: 'resync', count });
+    if (telemetryService.enabled) {
+      telemetryService.uploadChangedSessions().catch(() => {});
+    }
   }, 5 * 60_000));
 
   let lastGitHash = '';
@@ -246,7 +268,7 @@ export async function createProjectContext(
     } catch { /* ok */ }
   }, 10_000));
 
-  log.info('Project context ready', { id: projectId });
+  log.info('Project ready', { id: projectId, scopes: scopeCount });
 
   const ctx: ProjectContext = {
     id: projectId,
@@ -266,6 +288,7 @@ export async function createProjectContext(
     workflowService,
     gitService,
     githubService,
+    telemetryService,
     scopeWatcher,
     eventWatcher,
     intervals,

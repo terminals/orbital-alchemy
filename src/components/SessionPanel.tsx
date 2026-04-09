@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { ArrowLeft, Terminal, ChevronRight } from 'lucide-react';
 import { useProjectUrl } from '@/hooks/useProjectUrl';
 import { format } from 'date-fns';
@@ -54,6 +54,9 @@ export function SessionPanel({ sessions, loading }: SessionPanelProps) {
   const [content, setContent] = useState<SessionContent | null>(null);
   const [contentLoading, setContentLoading] = useState(false);
   const [resuming, setResuming] = useState(false);
+  const resumeTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => () => { clearTimeout(resumeTimerRef.current); }, []);
 
   const selectSession = useCallback(async (session: EnrichedSession) => {
     setSelected(session);
@@ -82,7 +85,7 @@ export function SessionPanel({ sessions, loading }: SessionPanelProps) {
     } catch {
       // silent
     } finally {
-      setTimeout(() => setResuming(false), 2000);
+      resumeTimerRef.current = setTimeout(() => setResuming(false), 2000);
     }
   }, [selected, buildUrl]);
 
@@ -197,8 +200,8 @@ export function SessionPanel({ sessions, loading }: SessionPanelProps) {
                     <td>Completed</td>
                     <td>
                       <ul className="space-y-0.5">
-                        {discoveries.map((item, idx) => (
-                          <li key={idx} className="text-muted-foreground">
+                        {discoveries.map((item) => (
+                          <li key={item} className="text-muted-foreground">
                             <span className="text-bid-green mr-1">{'•'}</span>{item}
                           </li>
                         ))}
@@ -213,8 +216,8 @@ export function SessionPanel({ sessions, loading }: SessionPanelProps) {
                     <td>Next steps</td>
                     <td>
                       <ul className="space-y-0.5">
-                        {nextSteps.map((item, idx) => (
-                          <li key={idx} className="text-muted-foreground">
+                        {nextSteps.map((item) => (
+                          <li key={item} className="text-muted-foreground">
                             <span className="text-accent-blue mr-1">{'•'}</span>{item}
                           </li>
                         ))}

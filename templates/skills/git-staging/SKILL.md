@@ -58,10 +58,16 @@ gh pr create --base staging --head dev \
 - [ ] Files under 400 lines"
 ```
 
-### Step 4: Signal Completion
+### Step 4: Signal Completion (REQUIRED)
+
+**Always emit after a successful PR creation** — this is not optional:
 
 ```bash
+# With a scope:
 bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"pr_staging"}' --scope "{NNN}"
+
+# Without a scope:
+bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"pr_staging"}'
 ```
 
 ### Step 5: Monitor CI

@@ -152,11 +152,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // Apply on mount
-  useEffect(() => {
-    applySettingsToDOM(settings);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Apply on mount only — updateSetting already calls applySettingsToDOM on each change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { applySettingsToDOM(settings); }, []);
 
   // Cross-tab sync
   useEffect(() => {

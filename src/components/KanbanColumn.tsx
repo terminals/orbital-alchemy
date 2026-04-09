@@ -1,5 +1,6 @@
 import { useRef, useEffect } from 'react';
 import { useDroppable } from '@dnd-kit/core';
+import { AnimatePresence, motion } from 'framer-motion';
 import type { Scope, ScopeStatus, Sprint, CardDisplayConfig, Project } from '@/types';
 import type { SortField, SortDirection } from '@/hooks/useBoardSettings';
 import { ScopeCard } from './ScopeCard';
@@ -91,6 +92,7 @@ export function KanbanColumn({
   return (
     <div
       ref={setNodeRef}
+      data-tour="kanban-column"
       className={cn(
         'flex h-full flex-shrink-0 flex-col rounded border bg-card/50 overflow-hidden transition-[width] duration-300 ease-in-out',
         showCollapsed ? 'w-10 cursor-pointer items-center' : 'w-72',
@@ -141,7 +143,7 @@ export function KanbanColumn({
             <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
               {totalCount}
             </span>
-            {headerExtra && <span onClick={(e) => e.stopPropagation()}>{headerExtra}</span>}
+            {headerExtra && <span className="flex items-center" onClick={(e) => e.stopPropagation()}>{headerExtra}</span>}
             {sortField && sortDirection && onSetSort && onToggleCollapse && (
               <span onClick={(e) => e.stopPropagation()}>
                 <ColumnMenu
@@ -189,29 +191,35 @@ export function KanbanColumn({
                 />
               ))}
 
-              {looseScopes.filter((s) => !s.is_ghost).map((scope) => (
-                <ScopeCard
-                  key={scopeKey(scope)}
-                  scope={scope}
-                  onClick={onScopeClick}
-                  cardDisplay={cardDisplay}
-                  dimmed={dimmedIds?.has(scopeKey(scope))}
-                  project={scope.project_id && projectLookup ? projectLookup.get(scope.project_id) : undefined}
-                />
-              ))}
+              <AnimatePresence initial={false}>
+                {looseScopes.filter((s) => !s.is_ghost).map((scope) => (
+                  <motion.div key={scopeKey(scope)} layout transition={{ duration: 0.25, ease: 'easeInOut' }}>
+                    <ScopeCard
+                      scope={scope}
+                      onClick={onScopeClick}
+                      cardDisplay={cardDisplay}
+                      dimmed={dimmedIds?.has(scopeKey(scope))}
+                      project={scope.project_id && projectLookup ? projectLookup.get(scope.project_id) : undefined}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
               {looseScopes.some((s) => s.is_ghost) && looseScopes.some((s) => !s.is_ghost) && (
                 <div className="my-2 border-t border-dashed border-purple-500/20" />
               )}
-              {looseScopes.filter((s) => s.is_ghost).map((scope) => (
-                <ScopeCard
-                  key={scopeKey(scope)}
-                  scope={scope}
-                  onClick={onScopeClick}
-                  cardDisplay={cardDisplay}
-                  dimmed={dimmedIds?.has(scopeKey(scope))}
-                  project={scope.project_id && projectLookup ? projectLookup.get(scope.project_id) : undefined}
-                />
-              ))}
+              <AnimatePresence initial={false}>
+                {looseScopes.filter((s) => s.is_ghost).map((scope) => (
+                  <motion.div key={scopeKey(scope)} layout transition={{ duration: 0.25, ease: 'easeInOut' }}>
+                    <ScopeCard
+                      scope={scope}
+                      onClick={onScopeClick}
+                      cardDisplay={cardDisplay}
+                      dimmed={dimmedIds?.has(scopeKey(scope))}
+                      project={scope.project_id && projectLookup ? projectLookup.get(scope.project_id) : undefined}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
           </div>
         </>

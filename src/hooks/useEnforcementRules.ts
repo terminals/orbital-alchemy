@@ -18,8 +18,8 @@ export function useEnforcementRules() {
       ]);
       if (rulesRes.ok) setData(await rulesRes.json());
       if (trendRes.ok) setTrend(await trendRes.json());
-    } catch {
-      // Server may not be running
+    } catch (err) {
+      console.warn('[Orbital] Failed to fetch enforcement rules:', err);
     } finally {
       setLoading(false);
     }

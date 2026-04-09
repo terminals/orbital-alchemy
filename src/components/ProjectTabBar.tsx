@@ -4,12 +4,17 @@ import { useProjects } from '@/hooks/useProjectContext';
 import { cn } from '@/lib/utils';
 import { ProjectSettingsModal } from './ProjectSettingsModal';
 
-export function ProjectTabBar() {
-  const { projects, activeProjectId, setActiveProjectId, isMultiProject } = useProjects();
+interface ProjectTabBarProps {
+  /** Optional per-project count overrides (keyed by project ID). When provided, these replace scopeCount in the badges. */
+  countOverrides?: Record<string, number>;
+}
+
+export function ProjectTabBar({ countOverrides }: ProjectTabBarProps = {}) {
+  const { projects, activeProjectId, setActiveProjectId, hasMultipleProjects } = useProjects();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Don't render if there's only one project
-  if (!isMultiProject) return null;
+  if (!hasMultipleProjects) return null;
 
   const isAllActive = activeProjectId === null;
 
@@ -37,7 +42,9 @@ export function ProjectTabBar() {
           'ml-1 rounded-full px-1.5 py-0.5 text-[10px] tabular-nums border',
           isAllActive ? 'glass-pill' : 'bg-muted border-transparent',
         )}>
-          {projects.filter(p => p.enabled).reduce((sum, p) => sum + p.scopeCount, 0)}
+          {countOverrides
+            ? projects.filter(p => p.enabled).reduce((sum, p) => sum + (countOverrides[p.id] ?? 0), 0)
+            : projects.filter(p => p.enabled).reduce((sum, p) => sum + p.scopeCount, 0)}
         </span>
       </button>
 
@@ -73,7 +80,7 @@ export function ProjectTabBar() {
               'ml-1 rounded-full px-1.5 py-0.5 text-[10px] tabular-nums border',
               isActive ? 'glass-pill' : 'bg-muted border-transparent',
             )}>
-              {project.scopeCount}
+              {countOverrides ? (countOverrides[project.id] ?? 0) : project.scopeCount}
             </span>
             {project.status === 'offline' && (
               <span className="text-[10px] text-muted-foreground/60">(offline)</span>

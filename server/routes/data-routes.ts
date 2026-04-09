@@ -4,24 +4,19 @@ import path from 'path';
 import { promisify } from 'util';
 import type Database from 'better-sqlite3';
 import type { Emitter } from '../project-emitter.js';
+import type { EventService } from '../services/event-service.js';
 import type { GateService } from '../services/gate-service.js';
 import type { DeployService } from '../services/deploy-service.js';
+import type { GitService } from '../services/git-service.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 import { getHookEnforcement } from '../../shared/workflow-config.js';
 import { getClaudeSessions, getSessionStats, type SessionStats } from '../services/claude-session-service.js';
 import { launchInTerminal } from '../utils/terminal-launcher.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('server');
 
 const execFileAsync = promisify(execFile);
-
-// ─── Types & Helpers ────────────────────────────────────────
-
-interface DriftCommit { sha: string; message: string; author: string; date: string }
-interface BranchHead { sha: string; date: string; message: string }
-interface PipelineDriftData {
-  devToStaging: { count: number; commits: DriftCommit[]; oldestDate: string | null };
-  stagingToMain: { count: number; commits: DriftCommit[]; oldestDate: string | null };
-  heads: { dev: BranchHead; staging: BranchHead; main: BranchHead };
-}
 
 const JSON_FIELDS = ['tags', 'blocked_by', 'blocks', 'data', 'discoveries', 'next_steps', 'details'];
 
@@ -37,100 +32,32 @@ function parseJsonFields(row: Row): Row {
   return parsed;
 }
 
-function parseDriftCommits(raw: string): DriftCommit[] {
-  if (!raw) return [];
-  return raw.split('\n').map((line) => {
-    const [sha, date, message, author] = line.split('|');
-    return { sha, date, message: message ?? '', author: author ?? '' };
-  });
-}
-
-function parseHead(raw: string): BranchHead {
-  const [sha, date, message] = raw.split('|');
-  return { sha: sha ?? '', date: date ?? '', message: message ?? '' };
-}
-
 // ─── Route Factory ──────────────────────────────────────────
 
 interface DataRouteDeps {
   db: Database.Database;
   io: Emitter;
+  eventService: EventService;
   gateService: GateService;
   deployService: DeployService;
+  gitService: GitService;
   engine: WorkflowEngine;
   projectRoot: string;
   inferScopeStatus: (type: string, scopeId: unknown, data: Record<string, unknown>) => void;
 }
 
 export function createDataRoutes({
-  db, io, gateService, deployService, engine, projectRoot, inferScopeStatus,
+  db, io, eventService, gateService, deployService, gitService, engine, projectRoot, inferScopeStatus,
 }: DataRouteDeps): Router {
   const router = Router();
-
-  // ─── Pipeline Drift (cached) ─────────────────────────────
-
-  let driftCache: { data: PipelineDriftData; ts: number } | null = null;
-  const DRIFT_CACHE_MS = 60_000;
-
-  async function gitLog(args: string[]): Promise<string> {
-    const { stdout } = await execFileAsync('git', args, { cwd: projectRoot });
-    return stdout.trim();
-  }
-
-  async function computeDrift(): Promise<PipelineDriftData> {
-    if (driftCache && Date.now() - driftCache.ts < DRIFT_CACHE_MS) return driftCache.data;
-
-    const [devToStagingRaw, stagingToMainRaw, devHead, stagingHead, mainHead] =
-      await Promise.all([
-        gitLog(['log', 'origin/dev', '--not', 'origin/staging', '--reverse', '--format=%H|%aI|%s|%an']),
-        gitLog(['log', 'origin/staging', '--not', 'origin/main', '--reverse', '--format=%H|%aI|%s|%an']),
-        gitLog(['log', 'origin/dev', '-1', '--format=%H|%aI|%s']),
-        gitLog(['log', 'origin/staging', '-1', '--format=%H|%aI|%s']),
-        gitLog(['log', 'origin/main', '-1', '--format=%H|%aI|%s']),
-      ]);
-
-    const devToStaging = parseDriftCommits(devToStagingRaw);
-    const stagingToMain = parseDriftCommits(stagingToMainRaw);
-
-    const data: PipelineDriftData = {
-      devToStaging: {
-        count: devToStaging.length,
-        commits: devToStaging,
-        oldestDate: devToStaging[0]?.date ?? null,
-      },
-      stagingToMain: {
-        count: stagingToMain.length,
-        commits: stagingToMain,
-        oldestDate: stagingToMain[0]?.date ?? null,
-      },
-      heads: {
-        dev: parseHead(devHead),
-        staging: parseHead(stagingHead),
-        main: parseHead(mainHead),
-      },
-    };
-
-    driftCache = { data, ts: Date.now() };
-    return data;
-  }
 
   // ─── Event Routes ──────────────────────────────────────────
 
   router.get('/events', (req, res) => {
     const limit = Number(req.query.limit) || 50;
     const type = req.query.type as string | undefined;
-    const scopeId = req.query.scope_id as string | undefined;
-
-    let query = 'SELECT * FROM events WHERE 1=1';
-    const params: unknown[] = [];
-
-    if (type) { query += ' AND type = ?'; params.push(type); }
-    if (scopeId) { query += ' AND scope_id = ?'; params.push(Number(scopeId)); }
-
-    query += ' ORDER BY timestamp DESC LIMIT ?';
-    params.push(limit);
-
-    const events = db.prepare(query).all(...params) as Row[];
+    const scopeId = req.query.scope_id ? Number(req.query.scope_id) : undefined;
+    const events = eventService.getFiltered({ limit, type, scopeId }) as unknown as Row[];
     res.json(events.map(parseJsonFields));
   });
 
@@ -167,23 +94,9 @@ export function createDataRoutes({
 
   router.get('/events/violations/summary', (_req, res) => {
     try {
-      const byRule = db.prepare(
-        `SELECT JSON_EXTRACT(data, '$.rule') as rule, COUNT(*) as count, MAX(timestamp) as last_seen
-         FROM events WHERE type = 'VIOLATION' GROUP BY rule ORDER BY count DESC`
-      ).all();
-      const byFile = db.prepare(
-        `SELECT JSON_EXTRACT(data, '$.file') as file, COUNT(*) as count FROM events
-         WHERE type = 'VIOLATION' AND JSON_EXTRACT(data, '$.file') IS NOT NULL AND JSON_EXTRACT(data, '$.file') != ''
-         GROUP BY file ORDER BY count DESC LIMIT 20`
-      ).all();
-      const overrides = db.prepare(
-        `SELECT JSON_EXTRACT(data, '$.rule') as rule, JSON_EXTRACT(data, '$.reason') as reason, timestamp as date
-         FROM events WHERE type = 'OVERRIDE' ORDER BY timestamp DESC LIMIT 50`
-      ).all();
-      const totalViolations = db.prepare(`SELECT COUNT(*) as count FROM events WHERE type = 'VIOLATION'`).get() as { count: number };
-      const totalOverrides = db.prepare(`SELECT COUNT(*) as count FROM events WHERE type = 'OVERRIDE'`).get() as { count: number };
-      res.json({ byRule, byFile, overrides, totalViolations: totalViolations.count, totalOverrides: totalOverrides.count });
-    } catch {
+      res.json(eventService.getViolationSummary());
+    } catch (err) {
+      log.error('Violations summary failed', { error: String(err) });
       res.status(500).json({ error: 'Failed to query violations summary' });
     }
   });
@@ -204,19 +117,7 @@ export function createDataRoutes({
         }
       }
 
-      // Query violation and override stats per rule
-      const violationStats = db.prepare(
-        `SELECT JSON_EXTRACT(data, '$.rule') as rule, COUNT(*) as count, MAX(timestamp) as last_seen
-         FROM events WHERE type = 'VIOLATION' GROUP BY rule`
-      ).all() as Array<{ rule: string; count: number; last_seen: string }>;
-
-      const overrideStats = db.prepare(
-        `SELECT JSON_EXTRACT(data, '$.rule') as rule, COUNT(*) as count
-         FROM events WHERE type = 'OVERRIDE' GROUP BY rule`
-      ).all() as Array<{ rule: string; count: number }>;
-
-      const violationMap = new Map(violationStats.map((v) => [v.rule, v]));
-      const overrideMap = new Map(overrideStats.map((o) => [o.rule, o]));
+      const { violations: violationMap, overrides: overrideMap } = eventService.getViolationStatsByRule();
 
       // Build summary counts
       const summary = { guards: 0, gates: 0, lifecycle: 0, observers: 0 };
@@ -239,7 +140,8 @@ export function createDataRoutes({
       }));
 
       res.json({ summary, rules, totalEdges: allEdges.length });
-    } catch {
+    } catch (err) {
+      log.error('Enforcement rules failed', { error: String(err) });
       res.status(500).json({ error: 'Failed to query enforcement rules' });
     }
   });
@@ -248,14 +150,10 @@ export function createDataRoutes({
 
   router.get('/events/violations/trend', (req, res) => {
     try {
-      const days = Number(req.query.days) || 30;
-      const trend = db.prepare(
-        `SELECT date(timestamp) as day, JSON_EXTRACT(data, '$.rule') as rule, COUNT(*) as count
-         FROM events WHERE type = 'VIOLATION' AND timestamp >= datetime('now', ? || ' days')
-         GROUP BY day, rule ORDER BY day ASC`
-      ).all(`-${days}`) as Array<{ day: string; rule: string; count: number }>;
-      res.json(trend);
-    } catch {
+      const days = Math.max(1, Math.min(365, Number(req.query.days) || 30));
+      res.json(eventService.getViolationTrend(days));
+    } catch (err) {
+      log.error('Violation trends failed', { error: String(err) });
       res.status(500).json({ error: 'Failed to query violation trends' });
     }
   });
@@ -330,8 +228,7 @@ export function createDataRoutes({
 
   router.get('/pipeline/drift', async (_req, res) => {
     try {
-      const drift = await computeDrift();
-      res.json(drift);
+      res.json(await gitService.getPipelineDrift());
     } catch (err) {
       res.status(500).json({ error: 'Failed to compute drift', details: String(err) });
     }
@@ -339,19 +236,9 @@ export function createDataRoutes({
 
   router.get('/deployments/frequency', (_req, res) => {
     try {
-      const rows = db.prepare(
-        `SELECT environment, strftime('%Y-W%W', started_at) as week, COUNT(*) as count
-         FROM deployments WHERE started_at > datetime('now', '-56 days') GROUP BY environment, week ORDER BY week ASC`
-      ).all() as Array<{ environment: string; week: string; count: number }>;
-      const weekMap = new Map<string, { week: string; staging: number; production: number }>();
-      for (const row of rows) {
-        if (!weekMap.has(row.week)) weekMap.set(row.week, { week: row.week, staging: 0, production: 0 });
-        const entry = weekMap.get(row.week)!;
-        if (row.environment === 'staging') entry.staging = row.count;
-        if (row.environment === 'production') entry.production = row.count;
-      }
-      res.json([...weekMap.values()]);
-    } catch {
+      res.json(eventService.getDeployFrequency());
+    } catch (err) {
+      log.error('Deploy frequency query failed', { error: String(err) });
       res.status(500).json({ error: 'Failed to query deployment frequency' });
     }
   });

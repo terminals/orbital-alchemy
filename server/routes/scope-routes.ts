@@ -71,7 +71,7 @@ export function createScopeRoutes({ db, io, scopeService, readinessService, proj
 
   router.patch('/scopes/:id', (req, res) => {
     const id = Number(req.params.id);
-    const result = scopeService.updateScopeFrontmatter(id, req.body);
+    const result = scopeService.updateFields(id, req.body);
     if (!result.ok) {
       const code = result.code === 'NOT_FOUND' ? 404 : 400;
       res.status(code).json({ error: result.error, code: result.code });

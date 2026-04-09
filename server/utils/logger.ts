@@ -33,8 +33,14 @@ const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 const c = {
   reset: useColor ? '\x1b[0m' : '',
   dim: useColor ? '\x1b[2m' : '',
-  gray: useColor ? '\x1b[90m' : '',
+  green: useColor ? '\x1b[32m' : '',
+  blue: useColor ? '\x1b[34m' : '',
+  magenta: useColor ? '\x1b[35m' : '',
   cyan: useColor ? '\x1b[36m' : '',
+  white: useColor ? '\x1b[37m' : '',
+  gray: useColor ? '\x1b[90m' : '',
+  brightMagenta: useColor ? '\x1b[95m' : '',
+  brightCyan: useColor ? '\x1b[96m' : '',
   yellow: useColor ? '\x1b[33m' : '',
   red: useColor ? '\x1b[31m' : '',
 };
@@ -52,6 +58,34 @@ const LEVEL_LABEL: Record<LogLevel, string> = {
   warn: 'WARN ',
   error: 'ERROR',
 };
+
+// ─── Component Colors ───────────────────────────────────────
+
+const COMPONENT_COLOR: Record<string, string> = {
+  // Scope (green)
+  'scope': c.green, 'scope-watcher': c.green,
+  // Dispatch (magenta)
+  'dispatch': c.magenta, 'dispatch-utils': c.magenta, 'batch': c.magenta,
+  // Git (blue)
+  'git': c.blue, 'worktree': c.blue,
+  // Workflow (cyan)
+  'workflow': c.cyan, 'sprint': c.cyan,
+  // Sync / Config (yellow)
+  'sync': c.yellow, 'config': c.yellow, 'manifest': c.yellow, 'global-config': c.yellow,
+  // Events (white)
+  'event': c.white, 'event-watcher': c.white, 'global-watcher': c.white,
+  // Infrastructure (white)
+  'server': c.white, 'central': c.white, 'database': c.white,
+  'project-context': c.white, 'project-manager': c.white, 'launch': c.white,
+  // Terminal (bright magenta)
+  'terminal': c.brightMagenta,
+  // Services (bright cyan)
+  'gate': c.brightCyan, 'deploy': c.brightCyan, 'telemetry': c.brightCyan, 'version': c.brightCyan,
+};
+
+function componentColor(name: string): string {
+  return COMPONENT_COLOR[name] ?? c.dim;
+}
 
 // ─── Formatting ─────────────────────────────────────────────
 
@@ -87,10 +121,13 @@ export interface Logger {
 function write(level: LogLevel, component: string, msg: string, data?: Record<string, unknown>): void {
   if (LEVEL_VALUE[level] < LEVEL_VALUE[currentLevel]) return;
 
-  const color = LEVEL_COLOR[level];
+  const lvl = LEVEL_COLOR[level];
   const label = LEVEL_LABEL[level];
   const kv = formatData(data);
-  const line = `${c.dim}${timestamp()}${c.reset} ${color}${label}${c.reset} ${c.dim}[${component}]${c.reset} ${msg}${kv}\n`;
+  const cc = componentColor(component);
+  // Message uses level color for warn/error (urgency), component color otherwise
+  const mc = (level === 'warn' || level === 'error') ? lvl : cc;
+  const line = `${c.dim}${timestamp()}${c.reset} ${lvl}${label}${c.reset} ${cc}[${component}]${c.reset} ${mc}${msg}${c.reset}${c.dim}${kv}${c.reset}\n`;
 
   if (level === 'warn' || level === 'error') {
     process.stderr.write(line);

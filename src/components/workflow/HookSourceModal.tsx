@@ -49,7 +49,8 @@ export function HookSourceModal({ hook, open, onClose }: HookSourceModalProps) {
       .finally(() => { if (!cancelled) setLoading(false); });
 
     return () => { cancelled = true; };
-  }, [hook?.id, hook?.scriptPath, open, buildUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- hook?.id and hook?.scriptPath are the relevant deps; adding the full hook object would refetch on unrelated property changes
+  }, [hook?.id, hook?.scriptPath, open, buildUrl]);
 
   if (!hook) return null;
 

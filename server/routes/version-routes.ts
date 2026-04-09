@@ -3,31 +3,16 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
-import type { Emitter } from '../project-emitter.js';
+import type { Server } from 'socket.io';
 import { createLogger } from '../utils/logger.js';
+import { getOrbitalRoot } from '../utils/package-info.js';
 
 const log = createLogger('version');
 
 const execFileAsync = promisify(execFile);
 
 interface VersionRouteDeps {
-  io: Emitter;
-}
-
-/** Resolve the root directory of the orbital-command package itself. */
-function getOrbitalRoot(): string {
-  const __selfDir = path.dirname(fileURLToPath(import.meta.url));
-  // Walk up until we find package.json (handles both dev and compiled paths)
-  let dir = __selfDir;
-  for (let i = 0; i < 6; i++) {
-    if (fs.existsSync(path.join(dir, 'package.json'))) {
-      return dir;
-    }
-    dir = path.dirname(dir);
-  }
-  // Fallback: assume dev layout (server/routes/ → 2 levels up)
-  return path.resolve(__selfDir, '../..');
+  io: Server;
 }
 
 async function git(args: string[], cwd: string, timeoutMs = 15_000): Promise<string> {

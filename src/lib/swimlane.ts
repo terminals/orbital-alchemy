@@ -9,6 +9,7 @@ import {
 import { getScopeFieldValues } from '@/lib/scope-fields';
 import { sortScopes } from '@/hooks/useBoardSettings';
 import type { SortField, SortDirection } from '@/hooks/useBoardSettings';
+import { partitionByFavourites } from '@/lib/favourite-sort';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -114,7 +115,7 @@ export function computeSwimLanes(
   // Sort scopes within each cell
   for (const cells of laneMap.values()) {
     for (const status of Object.keys(cells) as ScopeStatus[]) {
-      cells[status] = sortScopes(cells[status], sortField, sortDirection);
+      cells[status] = partitionByFavourites(sortScopes(cells[status], sortField, sortDirection));
     }
   }
 

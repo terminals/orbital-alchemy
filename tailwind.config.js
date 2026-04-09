@@ -66,7 +66,9 @@ export default {
         'accent-blue': '#06b6d4',
         'warning-amber': '#ffab00',
         'info-cyan': '#40c4ff',
-        // Status colors — dynamic CSS variables injected by WorkflowProvider
+        // Status colors — mapped to CSS variables defined in index.css.
+        // Custom workflows adding new statuses must add corresponding entries here
+        // and define matching --status-<name> CSS variables in index.css.
         'status': {
           'icebox': 'hsl(var(--status-icebox))',
           'planning': 'hsl(var(--status-planning))',

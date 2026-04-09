@@ -1,9 +1,11 @@
 import { execFile as execFileCb } from 'child_process';
 import { promisify } from 'util';
 import { listWorktrees } from '../utils/worktree-manager.js';
+import { createLogger } from '../utils/logger.js';
 import type { ScopeCache } from './scope-cache.js';
 
 const execFile = promisify(execFileCb);
+const log = createLogger('git');
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -182,7 +184,8 @@ export class GitService {
     let raw: string;
     try {
       raw = await this.git(args);
-    } catch {
+    } catch (err) {
+      log.debug('Commits query failed', { branch: branch ?? 'all', error: String(err) });
       return [];
     }
 
@@ -241,7 +244,8 @@ export class GitService {
         'branch', '-a',
         '--format=%(HEAD)|%(refname:short)|%(objectname:short)|%(committerdate:iso-strict)|%(subject)',
       ]);
-    } catch {
+    } catch (err) {
+      log.debug('Branch listing failed', { error: String(err) });
       return [];
     }
 
@@ -304,7 +308,8 @@ export class GitService {
     let wts: Array<{ path: string; branch: string; scopeId: number }>;
     try {
       wts = await listWorktrees(this.projectRoot);
-    } catch {
+    } catch (err) {
+      log.warn('Failed to list worktrees', { error: String(err) });
       return [];
     }
 
@@ -366,7 +371,8 @@ export class GitService {
           return { sha, date, message: rest.slice(0, -1).join('|'), author: rest[rest.length - 1] };
         });
         pairs.push({ from, to, count: commits.length, commits });
-      } catch {
+      } catch (err) {
+        log.debug('Drift query failed', { from, to, error: String(err) });
         pairs.push({ from, to, count: 0, commits: [] });
       }
     }
@@ -406,7 +412,8 @@ export class GitService {
 
       setCache(this.cache as Map<string, CacheEntry<Array<{ date: string; count: number }>>>, cacheKey, series);
       return series;
-    } catch {
+    } catch (err) {
+      log.debug('Activity series query failed', { days, error: String(err) });
       return [];
     }
   }
@@ -459,6 +466,56 @@ export class GitService {
       this.git(['status', '--porcelain']).catch(() => ''),
     ]);
     return `${head.trim()}:${dirty.trim().length > 0 ? 'dirty' : 'clean'}`;
+  }
+
+  // ─── Pipeline Drift ─────────────────────────────────────────
+
+  async getPipelineDrift(): Promise<{
+    devToStaging: { count: number; commits: Array<{ sha: string; message: string; author: string; date: string }>; oldestDate: string | null };
+    stagingToMain: { count: number; commits: Array<{ sha: string; message: string; author: string; date: string }>; oldestDate: string | null };
+    heads: { dev: { sha: string; date: string; message: string }; staging: { sha: string; date: string; message: string }; main: { sha: string; date: string; message: string } };
+  }> {
+    type DriftCommit = { sha: string; message: string; author: string; date: string };
+    type BranchHead = { sha: string; date: string; message: string };
+
+    const cacheKey = 'pipeline-drift';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const hit = cached<any>(this.cache as Map<string, CacheEntry<any>>, cacheKey);
+    if (hit) return hit;
+
+    function parseDriftCommits(raw: string): DriftCommit[] {
+      if (!raw) return [];
+      return raw.split('\n').map((line) => {
+        const [sha, date, message, author] = line.split('|');
+        return { sha, date, message: message ?? '', author: author ?? '' };
+      });
+    }
+
+    function parseHead(raw: string): BranchHead {
+      const [sha, date, message] = raw.split('|');
+      return { sha: sha ?? '', date: date ?? '', message: message ?? '' };
+    }
+
+    const [devToStagingRaw, stagingToMainRaw, devHead, stagingHead, mainHead] =
+      await Promise.all([
+        this.git(['log', 'origin/dev', '--not', 'origin/staging', '--reverse', '--format=%H|%aI|%s|%an']).catch(() => ''),
+        this.git(['log', 'origin/staging', '--not', 'origin/main', '--reverse', '--format=%H|%aI|%s|%an']).catch(() => ''),
+        this.git(['log', 'origin/dev', '-1', '--format=%H|%aI|%s']).catch(() => ''),
+        this.git(['log', 'origin/staging', '-1', '--format=%H|%aI|%s']).catch(() => ''),
+        this.git(['log', 'origin/main', '-1', '--format=%H|%aI|%s']).catch(() => ''),
+      ]);
+
+    const devToStaging = parseDriftCommits(devToStagingRaw);
+    const stagingToMain = parseDriftCommits(stagingToMainRaw);
+
+    const data = {
+      devToStaging: { count: devToStaging.length, commits: devToStaging, oldestDate: devToStaging[0]?.date ?? null },
+      stagingToMain: { count: stagingToMain.length, commits: stagingToMain, oldestDate: stagingToMain[0]?.date ?? null },
+      heads: { dev: parseHead(devHead), staging: parseHead(stagingHead), main: parseHead(mainHead) },
+    };
+
+    setCache(this.cache as Map<string, CacheEntry<typeof data>>, cacheKey, data);
+    return data;
   }
 
   clearCache(): void {

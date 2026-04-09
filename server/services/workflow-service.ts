@@ -81,13 +81,19 @@ export class WorkflowService {
       this.engine.reload(defaultConfig);
       fs.writeFileSync(this.manifestPath, this.engine.generateShellManifest(), 'utf-8');
     } else {
-      const active = JSON.parse(fs.readFileSync(this.activeConfigPath, 'utf-8')) as WorkflowConfig & { _defaultDigest?: string };
+      const active = JSON.parse(fs.readFileSync(this.activeConfigPath, 'utf-8')) as WorkflowConfig & { _defaultDigest?: string; _customized?: boolean };
       if (!active._defaultDigest) {
-        // Legacy file without digest marker. If content matches current default, stamp it.
-        // If different, it's user-customized — leave it alone.
         if (configDigest(active) === currentDigest) {
+          // Exact content match — just stamp it with the digest
           this.writeWithDigest(this.activeConfigPath, defaultConfig, currentDigest);
+        } else if (this.isLikelyOldDefault(active, defaultConfig)) {
+          // Same list structure but different edges — old default that needs updating
+          log.info('Upgrading legacy workflow config to current default');
+          this.writeWithDigest(this.activeConfigPath, defaultConfig, currentDigest);
+          this.engine.reload(defaultConfig);
+          fs.writeFileSync(this.manifestPath, this.engine.generateShellManifest(), 'utf-8');
         }
+        // else: genuinely user-customized (different list structure), leave alone
       } else if (active._defaultDigest !== currentDigest) {
         // Bundled default changed since last sync — refresh + regenerate manifest
         this.writeWithDigest(this.activeConfigPath, defaultConfig, currentDigest);
@@ -96,10 +102,14 @@ export class WorkflowService {
       }
     }
 
-    // Always keep the "default" preset in sync with the bundled default
+    // Always keep the "default" preset in sync with the bundled default.
+    // Copy the raw template bytes to preserve formatting (avoid hash drift from re-serialization).
     const defaultPresetPath = path.join(this.presetsDir, 'default.json');
-    const preset = { _preset: { name: 'default', savedAt: new Date().toISOString(), savedFrom: 'bundled' }, ...defaultConfig };
-    fs.writeFileSync(defaultPresetPath, JSON.stringify(preset, null, 2));
+    const templateBytes = fs.readFileSync(this.defaultConfigPath, 'utf-8');
+    const existing = fs.existsSync(defaultPresetPath) ? fs.readFileSync(defaultPresetPath, 'utf-8') : '';
+    if (existing !== templateBytes) {
+      fs.writeFileSync(defaultPresetPath, templateBytes);
+    }
   }
 
   setSocketServer(io: Emitter): void {
@@ -108,6 +118,16 @@ export class WorkflowService {
 
   getEngine(): WorkflowEngine {
     return this.engine;
+  }
+
+  /** Check if a legacy config (no digest) is structurally an old default rather than
+   *  a user customization. If it has the same list IDs in the same order, it was
+   *  almost certainly seeded from an older version of the bundled default. */
+  private isLikelyOldDefault(active: WorkflowConfig, currentDefault: WorkflowConfig): boolean {
+    if (active.name !== currentDefault.name) return false;
+    const activeListIds = active.lists.map(l => l.id).join(',');
+    const defaultListIds = currentDefault.lists.map(l => l.id).join(',');
+    return activeListIds === defaultListIds;
   }
 
   // ─── Validation ──────────────────────────────────────

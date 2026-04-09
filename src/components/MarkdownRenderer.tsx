@@ -12,7 +12,7 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
     <div className={cn(
       'space-y-4 text-[13px] leading-[1.7]',
       className,
-    )} style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+    )}>
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{

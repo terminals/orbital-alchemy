@@ -50,9 +50,9 @@ export function PrimitivesConfig() {
   const [showSyncMatrix, setShowSyncMatrix] = useState(false);
   const [driftFile, setDriftFile] = useState<FileSyncStatus | null>(null);
 
-  const { activeProjectId, isMultiProject } = useProjects();
+  const { activeProjectId, hasMultipleProjects } = useProjects();
   const { report: syncReport, refetch: refetchSync } = useProjectSyncState(
-    isMultiProject ? activeProjectId : null,
+    hasMultipleProjects ? activeProjectId : null,
   );
 
   // Check for any drifted files to surface drift resolution
@@ -416,7 +416,7 @@ export function PrimitivesConfig() {
           <Badge variant="secondary" className="ml-2">
             {fileCount} {activeTab}
           </Badge>
-          {isMultiProject && (
+          {hasMultipleProjects && (
             <>
               <div className="ml-auto flex items-center gap-2">
                 {activeProjectId ? (
@@ -444,7 +444,7 @@ export function PrimitivesConfig() {
         </div>
 
         {/* Sync Matrix (when toggled) */}
-        {showSyncMatrix && isMultiProject && (
+        {showSyncMatrix && hasMultipleProjects && (
           <div className="mb-4 rounded border border-border bg-card p-2">
             <SyncMatrixView />
           </div>

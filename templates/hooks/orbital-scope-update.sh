@@ -15,7 +15,7 @@ set -e
 SCOPE_IDS="${1:?Usage: orbital-scope-update SCOPE_ID[,SCOPE_ID,...] STATUS}"
 STATUS="${2:?Usage: orbital-scope-update SCOPE_ID STATUS}"
 
-ORBITAL_API="http://localhost:4444/api/orbital"
+ORBITAL_API="${ORBITAL_URL:-http://localhost:4444}/api/orbital"
 
 # Try the REST API first (fastest, real-time)
 if command -v curl &>/dev/null; then

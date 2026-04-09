@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# scope-create-cleanup.sh — PostToolUse:Write cleanup
+# scope-create-cleanup.sh — PostToolUse:Write|Edit cleanup
 #
-# After a successful Write, checks if the written file is a scope document.
+# After a successful Write or Edit, checks if the file is a scope document.
 # If so, removes the .scope-create-session marker to lift the write gate.
 #
 set -e

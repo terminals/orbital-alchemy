@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useProjectUrl } from './useProjectUrl';
+import { useReconnect } from './useReconnect';
 import { socket } from '../socket';
 import type {
   GitOverview,
@@ -44,16 +45,16 @@ export function useSourceControl(): SourceControlState {
   const [hasMoreCommits, setHasMoreCommits] = useState(true);
   const offsetRef = useRef(0);
 
-  const fetchCore = useCallback(async () => {
+  const fetchCore = useCallback(async (signal?: AbortSignal) => {
     try {
       const [overviewRes, commitsRes, branchesRes, worktreesRes, driftRes, healthRes, activityRes] = await Promise.all([
-        fetch(buildUrl('/git/overview')),
-        fetch(buildUrl(`/git/commits?limit=${COMMIT_PAGE_SIZE}&offset=0`)),
-        fetch(buildUrl('/git/branches')),
-        fetch(buildUrl('/git/worktrees')),
-        fetch(buildUrl('/git/drift')),
-        fetch(buildUrl('/git/health')),
-        fetch(buildUrl('/git/activity?days=30')),
+        fetch(buildUrl('/git/overview'), { signal }),
+        fetch(buildUrl(`/git/commits?limit=${COMMIT_PAGE_SIZE}&offset=0`), { signal }),
+        fetch(buildUrl('/git/branches'), { signal }),
+        fetch(buildUrl('/git/worktrees'), { signal }),
+        fetch(buildUrl('/git/drift'), { signal }),
+        fetch(buildUrl('/git/health'), { signal }),
+        fetch(buildUrl('/git/activity?days=30'), { signal }),
       ]);
 
       if (overviewRes.ok) setOverview(await overviewRes.json());
@@ -68,19 +69,22 @@ export function useSourceControl(): SourceControlState {
       if (driftRes.ok) setDrift(await driftRes.json());
       if (healthRes.ok) setHealth(await healthRes.json());
       if (activityRes.ok) setActivity(await activityRes.json());
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       // Non-critical — dashboard degrades gracefully
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [buildUrl]);
 
   // GitHub status fetched separately (can be slow)
-  const fetchGitHub = useCallback(async () => {
+  const fetchGitHub = useCallback(async (signal?: AbortSignal) => {
     try {
-      const res = await fetch(buildUrl('/github/status'));
+      const res = await fetch(buildUrl('/github/status'), { signal });
       if (res.ok) setGitHub(await res.json());
-    } catch { /* ok */ }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+    }
   }, [buildUrl]);
 
   const refetch = useCallback(() => {
@@ -101,9 +105,13 @@ export function useSourceControl(): SourceControlState {
   }, [buildUrl]);
 
   useEffect(() => {
-    fetchCore();
-    fetchGitHub();
+    const controller = new AbortController();
+    fetchCore(controller.signal);
+    fetchGitHub(controller.signal);
+    return () => controller.abort();
   }, [fetchCore, fetchGitHub]);
+
+  useReconnect(refetch);
 
   // Real-time: refetch on git status change
   useEffect(() => {

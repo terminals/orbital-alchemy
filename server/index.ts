@@ -4,440 +4,29 @@ import { Server } from 'socket.io';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { openProjectDatabase } from './database.js';
-import { getConfig, resetConfig } from './config.js';
-import { ScopeCache } from './services/scope-cache.js';
-import { ScopeService } from './services/scope-service.js';
-import { EventService } from './services/event-service.js';
-import { GateService } from './services/gate-service.js';
 import type { GateRow } from './services/gate-service.js';
-import { DeployService } from './services/deploy-service.js';
-import { SprintService } from './services/sprint-service.js';
-import { SprintOrchestrator } from './services/sprint-orchestrator.js';
-import { BatchOrchestrator } from './services/batch-orchestrator.js';
-import { ReadinessService } from './services/readiness-service.js';
-import { startScopeWatcher } from './watchers/scope-watcher.js';
-import { startEventWatcher } from './watchers/event-watcher.js';
-import { ensureDynamicProfiles, launchInTerminal } from './utils/terminal-launcher.js';
-import { syncClaudeSessionsToDB, setSessionProjectRoot, getClaudeSessions, getSessionStats } from './services/claude-session-service.js';
-import { resolveStaleDispatches, resolveActiveDispatchesForScope, resolveDispatchesByPid, resolveDispatchesByDispatchId, linkPidToDispatch, getActiveScopeIds, getAbandonedScopeIds } from './utils/dispatch-utils.js';
-import { createScopeRoutes } from './routes/scope-routes.js';
-import { createDataRoutes } from './routes/data-routes.js';
-import { createDispatchRoutes } from './routes/dispatch-routes.js';
-import { createSprintRoutes } from './routes/sprint-routes.js';
-import { createWorkflowRoutes } from './routes/workflow-routes.js';
-import { createConfigRoutes } from './routes/config-routes.js';
+import { launchInTerminal } from './utils/terminal-launcher.js';
+import { getClaudeSessions, getSessionStats } from './services/claude-session-service.js';
+import { getActiveScopeIds, getAbandonedScopeIds } from './utils/dispatch-utils.js';
 import { ConfigService, isValidPrimitiveType } from './services/config-service.js';
 import { GLOBAL_PRIMITIVES_DIR } from './global-config.js';
-import { createGitRoutes } from './routes/git-routes.js';
 import { createVersionRoutes } from './routes/version-routes.js';
-import { WorkflowService } from './services/workflow-service.js';
-import { GitService } from './services/git-service.js';
-import { GitHubService } from './services/github-service.js';
 import { WorkflowEngine } from '../shared/workflow-engine.js';
-import defaultWorkflow from '../shared/default-workflow.json' with { type: 'json' };
 import { getHookEnforcement } from '../shared/workflow-config.js';
-import type { WorkflowConfig } from '../shared/workflow-config.js';
 import { createLogger, setLogLevel } from './utils/logger.js';
 import type { LogLevel } from './utils/logger.js';
 
 import type http from 'http';
-import type Database from 'better-sqlite3';
 
-// ─── Types ──────────────────────────────────────────────────
-
-export interface ServerOverrides {
-  port?: number;
-  projectRoot?: string;
-}
-
-export interface ServerInstance {
-  app: express.Application;
-  io: Server;
-  db: Database.Database;
-  workflowEngine: WorkflowEngine;
-  httpServer: http.Server;
-  shutdown: () => Promise<void>;
-}
-
-// ─── Server Factory ─────────────────────────────────────────
-
-export async function startServer(overrides?: ServerOverrides): Promise<ServerInstance> {
-  // Apply project root override before config loads
-  if (overrides?.projectRoot) {
-    process.env.ORBITAL_PROJECT_ROOT = overrides.projectRoot;
-    resetConfig();
-  }
-
-  const config = getConfig();
-  setSessionProjectRoot(config.projectRoot);
-  const envLevel = process.env.ORBITAL_LOG_LEVEL;
-  if (envLevel && ['debug', 'info', 'warn', 'error'].includes(envLevel)) {
-    setLogLevel(envLevel as LogLevel);
-  } else {
-    setLogLevel(config.logLevel);
-  }
-  const log = createLogger('server');
-  const port = overrides?.port ?? config.serverPort;
-
-  const workflowEngine = new WorkflowEngine(defaultWorkflow as WorkflowConfig);
-
-  // Generate shell manifest for bash hooks (config-driven lifecycle)
-  const MANIFEST_PATH = path.join(config.configDir, 'workflow-manifest.sh');
-  if (!fs.existsSync(config.configDir)) fs.mkdirSync(config.configDir, { recursive: true });
-  fs.writeFileSync(MANIFEST_PATH, workflowEngine.generateShellManifest(), 'utf-8');
-
-  const ICEBOX_DIR = path.join(config.scopesDir, 'icebox');
-  // Resolve path to the bundled default workflow config.
-  const __selfDir2 = path.dirname(fileURLToPath(import.meta.url));
-  const DEFAULT_CONFIG_PATH = path.resolve(__selfDir2, '../shared/default-workflow.json');
-
-  // Ensure icebox directory exists for idea files
-  if (!fs.existsSync(ICEBOX_DIR)) fs.mkdirSync(ICEBOX_DIR, { recursive: true });
-
-  const app = express();
-  const httpServer = createServer(app);
-
-  const io = new Server(httpServer, {
-    cors: {
-      origin: (origin, callback) => {
-        // Allow all localhost origins (dev tool, not production)
-        if (!origin || origin.startsWith('http://localhost:')) {
-          callback(null, true);
-        } else {
-          callback(new Error('CORS not allowed'));
-        }
-      },
-      methods: ['GET', 'POST'],
-    },
-  });
-
-  // Middleware
-  app.use(express.json());
-
-  // Initialize database
-  const db = openProjectDatabase(config.dbDir);
-
-  // Initialize services
-  const scopeCache = new ScopeCache();
-  const scopeService = new ScopeService(scopeCache, io, config.scopesDir, workflowEngine);
-  const eventService = new EventService(db, io);
-  const gateService = new GateService(db, io);
-  const deployService = new DeployService(db, io);
-  const sprintService = new SprintService(db, io, scopeService);
-  const sprintOrchestrator = new SprintOrchestrator(db, io, sprintService, scopeService, workflowEngine, config.projectRoot);
-  const batchOrchestrator = new BatchOrchestrator(db, io, sprintService, scopeService, workflowEngine, config.projectRoot);
-  const readinessService = new ReadinessService(scopeService, gateService, workflowEngine, config.projectRoot);
-  const workflowService = new WorkflowService(config.configDir, workflowEngine, config.scopesDir, DEFAULT_CONFIG_PATH);
-  workflowService.setSocketServer(io);
-
-  // Ensure in-memory engine reflects the actual active config (may differ from bundled default
-  // if the user applied a custom preset)
-  workflowEngine.reload(workflowService.getActive());
-  const gitService = new GitService(config.projectRoot, scopeCache);
-  const githubService = new GitHubService(config.projectRoot);
-
-  // Wire active-group guard into scope service (blocks manual moves for scopes in active batches/sprints)
-  scopeService.setActiveGroupCheck((scopeId) => sprintService.getActiveGroupForScope(scopeId));
-
-  // ─── Event Wiring ──────────────────────────────────────────
-
-  function inferScopeStatus(
-    eventType: string,
-    scopeId: unknown,
-    data: Record<string, unknown>
-  ): void {
-    if (scopeId == null) return;
-    const id = Number(scopeId);
-    if (isNaN(id) || id <= 0) return;
-
-    // Don't infer status for icebox idea cards
-    const current = scopeService.getById(id);
-    if (current?.status === 'icebox') return;
-
-    const currentStatus = current?.status ?? '';
-    const result = workflowEngine.inferStatus(eventType, currentStatus, data);
-    if (result === null) return;
-
-    // Handle dispatch resolution (AGENT_COMPLETED with outcome)
-    if (typeof result === 'object' && 'dispatchResolution' in result) {
-      resolveActiveDispatchesForScope(
-        db, io, id,
-        result.resolution as 'completed' | 'failed',
-      );
-      return;
-    }
-
-    scopeService.updateStatus(id, result, 'event');
-  }
-
-  eventService.onIngest((eventType, scopeId, data) => {
-    // Handle SESSION_START: link PID to dispatch via dispatch_id env var
-    if (eventType === 'SESSION_START' && typeof data.dispatch_id === 'string' && typeof data.pid === 'number') {
-      linkPidToDispatch(db, data.dispatch_id, data.pid);
-      log.info('SESSION_START: linked PID to dispatch', { pid: data.pid, dispatch_id: data.dispatch_id });
-      return;
-    }
-
-    // Handle SESSION_END: resolve dispatches by dispatch_id (preferred) or PID (fallback)
-    if (eventType === 'SESSION_END') {
-      let count = 0;
-      if (typeof data.dispatch_id === 'string') {
-        count = resolveDispatchesByDispatchId(db, io, data.dispatch_id);
-        if (count > 0) {
-          log.info('SESSION_END: resolved dispatches', { count, dispatch_id: data.dispatch_id });
-        }
-      }
-      // PID fallback for old hooks without dispatch_id
-      if (count === 0 && typeof data.pid === 'number') {
-        count = resolveDispatchesByPid(db, io, data.pid);
-        if (count > 0) {
-          log.info('SESSION_END: resolved dispatches by PID fallback', { count, pid: data.pid });
-        }
-      }
-      // Immediately resolve any batches/sprints whose session just ended,
-      // rather than waiting for the next stale-check interval
-      if (count > 0) {
-        batchOrchestrator.resolveStaleBatches();
-      }
-      return;
-    }
-
-    inferScopeStatus(eventType, scopeId, data);
-  });
-
-  scopeService.onStatusChange((scopeId, newStatus) => {
-    if (newStatus === 'dev') {
-      sprintOrchestrator.onScopeReachedDev(scopeId);
-    }
-    // Batch orchestrator tracks all status transitions (dev, staging, production)
-    batchOrchestrator.onScopeStatusChanged(scopeId, newStatus);
-  });
-
-  scopeService.onStatusChange((scopeId, newStatus) => {
-    if (workflowEngine.isTerminalStatus(newStatus)) {
-      resolveActiveDispatchesForScope(db, io, scopeId, 'completed');
-    }
-  });
-
-  // ─── Routes ────────────────────────────────────────────────
-
-  app.get('/api/orbital/health', (_req, res) => {
-    res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
-  });
-
-  // Serve dynamic config to the frontend
-  app.get('/api/orbital/config', (_req, res) => {
-    res.json({
-      projectName: config.projectName,
-      categories: config.categories,
-      agents: config.agents,
-      serverPort: config.serverPort,
-      clientPort: config.clientPort,
-    });
-  });
-
-  app.use('/api/orbital', createScopeRoutes({ db, io, scopeService, readinessService, projectRoot: config.projectRoot, projectName: config.projectName, engine: workflowEngine }));
-  app.use('/api/orbital', createDataRoutes({ db, io, gateService, deployService, engine: workflowEngine, projectRoot: config.projectRoot, inferScopeStatus }));
-  app.use('/api/orbital', createDispatchRoutes({ db, io, scopeService, projectRoot: config.projectRoot, engine: workflowEngine }));
-  app.use('/api/orbital', createSprintRoutes({ sprintService, sprintOrchestrator, batchOrchestrator }));
-  app.use('/api/orbital', createWorkflowRoutes({ workflowService, projectRoot: config.projectRoot }));
-  app.use('/api/orbital', createConfigRoutes({ projectRoot: config.projectRoot, workflowService, io }));
-  app.use('/api/orbital', createGitRoutes({ gitService, githubService, engine: workflowEngine }));
-  app.use('/api/orbital', createVersionRoutes({ io }));
-
-  // ─── Static File Serving (production) ───────────────────────
-
-  // Resolve the Vite-built frontend dist directory (server/ → ../dist).
-  const __selfDir = path.dirname(fileURLToPath(import.meta.url));
-  const distDir = path.resolve(__selfDir, '../dist');
-  if (fs.existsSync(path.join(distDir, 'index.html'))) {
-    app.use(express.static(distDir));
-    app.get('*', (req, res, next) => {
-      if (req.path.startsWith('/api/') || req.path.startsWith('/socket.io')) return next();
-      res.sendFile(path.join(distDir, 'index.html'));
-    });
-  } else {
-    // Dev mode: redirect root to Vite dev server
-    app.get('/', (_req, res) => res.redirect(`http://localhost:${config.clientPort}`));
-  }
-
-  // ─── Socket.io ──────────────────────────────────────────────
-
-  io.on('connection', (socket) => {
-    log.debug('Client connected', { socketId: socket.id });
-
-    socket.on('disconnect', () => {
-      log.debug('Client disconnected', { socketId: socket.id });
-    });
-  });
-
-  // ─── Startup ───────────────────────────────────────────────
-
-  // References for graceful shutdown
-  let scopeWatcher: ReturnType<typeof startScopeWatcher>;
-  let eventWatcher: ReturnType<typeof startEventWatcher>;
-  let batchRecoveryInterval: ReturnType<typeof setInterval>;
-  let staleCleanupInterval: ReturnType<typeof setInterval>;
-  let sessionSyncInterval: ReturnType<typeof setInterval>;
-  let gitPollInterval: ReturnType<typeof setInterval>;
-
-  const actualPort = await new Promise<number>((resolve, reject) => {
-    let attempt = 0;
-    const maxAttempts = 10;
-
-    httpServer.on('error', (err: NodeJS.ErrnoException) => {
-      if (err.code === 'EADDRINUSE' && attempt < maxAttempts) {
-        attempt++;
-        const nextPort = port + attempt;
-        log.warn('Port in use, trying next', { tried: port + attempt - 1, next: nextPort });
-        httpServer.listen(nextPort);
-      } else {
-        reject(new Error(`Failed to start server: ${err.message}`));
-      }
-    });
-
-    httpServer.on('listening', () => {
-      const addr = httpServer.address();
-      const listenPort = typeof addr === 'object' && addr ? addr.port : port;
-      resolve(listenPort);
-    });
-
-    httpServer.listen(port);
-  });
-
-  // ─── Post-listen initialization ────────────────────────────
-
-  // Sync scopes from filesystem on startup (populates in-memory cache)
-  const scopeCount = scopeService.syncFromFilesystem();
-
-  // Resolve stale dispatch events (terminal scopes + age-based)
-  const staleResolved = resolveStaleDispatches(db, io, scopeService, workflowEngine);
-  if (staleResolved > 0) {
-    log.info('Resolved stale dispatch events', { count: staleResolved });
-  }
-
-  // Write iTerm2 dispatch profiles (idempotent, fire-and-forget)
-  ensureDynamicProfiles(workflowEngine);
-
-  // Start file watchers
-  scopeWatcher = startScopeWatcher(config.scopesDir, scopeService);
-  eventWatcher = startEventWatcher(config.eventsDir, eventService);
-
-  // Recover any active sprints/batches from before server restart
-  sprintOrchestrator.recoverActiveSprints().catch(err => log.error('Sprint recovery failed', { error: err.message }));
-  batchOrchestrator.recoverActiveBatches().catch(err => log.error('Batch recovery failed', { error: err.message }));
-
-  // Resolve stale batches on startup (catches stuck dispatches from previous runs)
-  const staleBatchesResolved = batchOrchestrator.resolveStaleBatches();
-  if (staleBatchesResolved > 0) {
-    log.info('Resolved stale batches', { count: staleBatchesResolved });
-  }
-
-  // Poll active batch PIDs every 30s for two-phase completion (B-1)
-  batchRecoveryInterval = setInterval(() => {
-    batchOrchestrator.recoverActiveBatches().catch(err => log.error('Batch recovery failed', { error: err.message }));
-  }, 30_000);
-
-  // Periodic stale dispatch + batch cleanup (crash recovery — catches SIGKILL'd sessions)
-  staleCleanupInterval = setInterval(() => {
-    const count = resolveStaleDispatches(db, io, scopeService, workflowEngine);
-    if (count > 0) {
-      log.info('Periodic cleanup: resolved stale dispatches', { count });
-    }
-    const batchCount = batchOrchestrator.resolveStaleBatches();
-    if (batchCount > 0) {
-      log.info('Periodic cleanup: resolved stale batches', { count: batchCount });
-    }
-  }, 30_000);
-
-  // Sync frontmatter-derived sessions into DB (non-blocking)
-  syncClaudeSessionsToDB(db, scopeService, config.projectRoot).then((count) => {
-    log.info('Synced frontmatter sessions', { count });
-
-    // Purge legacy pattern-matched rows (no action = old regex system)
-    const purged = db.prepare(
-      "DELETE FROM sessions WHERE action IS NULL AND id LIKE 'claude-%'"
-    ).run();
-    if (purged.changes > 0) {
-      log.info('Purged legacy pattern-matched session rows', { count: purged.changes });
-    }
-  }).catch(err => log.error('Session sync failed', { error: err.message }));
-
-  // Re-sync every 5 minutes so new sessions appear without restart
-  sessionSyncInterval = setInterval(() => {
-    syncClaudeSessionsToDB(db, scopeService, config.projectRoot)
-      .then((count) => {
-        if (count > 0) io.emit('session:updated', { type: 'resync', count });
-      })
-      .catch(err => log.error('Session resync failed', { error: err.message }));
-  }, 5 * 60 * 1000);
-
-  // Poll git status every 10s — emit socket event on change
-  let lastGitHash = '';
-  gitPollInterval = setInterval(async () => {
-    try {
-      const hash = await gitService.getStatusHash();
-      if (lastGitHash && hash !== lastGitHash) {
-        gitService.clearCache();
-        io.emit('git:status:changed');
-      }
-      lastGitHash = hash;
-    } catch { /* ok */ }
-  }, 10_000);
-
-  // eslint-disable-next-line no-console
-  console.log(`
-╔══════════════════════════════════════════════════════╗
-║         Orbital Command                              ║
-║         ${config.projectName.padEnd(42)} ║
-║                                                      ║
-║  >>> Open: http://localhost:${actualPort} <<<                 ║
-║                                                      ║
-╠══════════════════════════════════════════════════════╣
-║  Scopes:    ${String(scopeCount).padEnd(3)} loaded from filesystem          ║
-║  API:       http://localhost:${actualPort}/api/orbital/*       ║
-║  Socket.io: ws://localhost:${actualPort}                      ║
-╚══════════════════════════════════════════════════════╝
-`);
-
-  // ─── Graceful Shutdown ─────────────────────────────────────
-
-  let shuttingDown = false;
-  function shutdown(): Promise<void> {
-    if (shuttingDown) return Promise.resolve();
-    shuttingDown = true;
-    log.info('Shutting down');
-    scopeWatcher.close();
-    eventWatcher.close();
-    clearInterval(batchRecoveryInterval);
-    clearInterval(staleCleanupInterval);
-    clearInterval(sessionSyncInterval);
-    clearInterval(gitPollInterval);
-
-    return new Promise<void>((resolve) => {
-      const forceTimeout = setTimeout(() => {
-        db.close();
-        resolve();
-      }, 2000);
-
-      io.close(() => {
-        clearTimeout(forceTimeout);
-        db.close();
-        resolve();
-      });
-    });
-  }
-
-  return { app, io, db, workflowEngine, httpServer, shutdown };
-}
-
-// ─── Central Server (multi-project) ─────────────────────────
+// ─── Central Server ─────────────────────────────────────────
 
 import { ProjectManager } from './project-manager.js';
 import { SyncService } from './services/sync-service.js';
 import { startGlobalWatcher } from './watchers/global-watcher.js';
 import { createSyncRoutes } from './routes/sync-routes.js';
+import { seedGlobalPrimitives, runUpdate } from './init.js';
+import { loadManifest, refreshFileStatuses, summarizeManifest } from './manifest.js';
+import { getPackageVersion } from './utils/package-info.js';
 import {
   ensureOrbitalHome,
   loadGlobalConfig,
@@ -447,6 +36,7 @@ import {
 
 export interface CentralServerOverrides {
   port?: number;
+  clientPort?: number;
   /** If set, auto-register this project on first launch */
   autoRegisterPath?: string;
 }
@@ -469,6 +59,7 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
   }
   const log = createLogger('central');
   const port = overrides?.port ?? (Number(process.env.ORBITAL_SERVER_PORT) || 4444);
+  const clientPort = overrides?.clientPort ?? (Number(process.env.ORBITAL_CLIENT_PORT) || 4445);
 
   // Auto-register current project if registry is empty
   const globalConfig = loadGlobalConfig();
@@ -498,6 +89,16 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
   // Initialize ProjectManager and boot all registered projects
   const projectManager = new ProjectManager(io);
   await projectManager.initializeAll();
+
+  // Seed global primitives if empty (lazy fallback for first launch)
+  const globalPrimitivesEmpty = ['agents', 'skills', 'hooks'].every(t => {
+    const dir = path.join(GLOBAL_PRIMITIVES_DIR, t);
+    return !fs.existsSync(dir) || fs.readdirSync(dir).filter(f => !f.startsWith('.')).length === 0;
+  });
+  if (globalPrimitivesEmpty) {
+    seedGlobalPrimitives();
+    log.info('Seeded global primitives from package templates');
+  }
 
   // Initialize SyncService and global watcher
   const syncService = new SyncService();
@@ -709,6 +310,7 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
       await launchInTerminal(resumeCmd);
       res.json({ ok: true, session_id: claude_session_id });
     } catch (err) {
+      log.error('Terminal launch failed', { error: String(err) });
       res.status(500).json({ error: 'Failed to launch terminal', details: String(err) });
     }
   });
@@ -769,7 +371,8 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
       allOverrides.sort((a, b) => b.date.localeCompare(a.date));
 
       res.json({ byRule, byFile, overrides: allOverrides.slice(0, 50), totalViolations, totalOverrides });
-    } catch {
+    } catch (err) {
+      log.error('Violations summary failed', { error: String(err) });
       res.status(500).json({ error: 'Failed to aggregate violations summary' });
     }
   });
@@ -858,7 +461,8 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
       }
 
       res.json({ summary, rules: [...hookMap.values()], totalEdges });
-    } catch {
+    } catch (err) {
+      log.error('Enforcement rules failed', { error: String(err) });
       res.status(500).json({ error: 'Failed to aggregate enforcement rules' });
     }
   });
@@ -887,7 +491,8 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
 
       const result = [...merged.values()].sort((a, b) => a.day.localeCompare(b.day));
       res.json(result);
-    } catch {
+    } catch (err) {
+      log.error('Violation trends failed', { error: String(err) });
       res.status(500).json({ error: 'Failed to aggregate violation trends' });
     }
   });
@@ -912,7 +517,8 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
       }
 
       res.json([...mergedGates.values()]);
-    } catch {
+    } catch (err) {
+      log.error('Gates aggregation failed', { error: String(err) });
       res.status(500).json({ error: 'Failed to aggregate gates' });
     }
   });
@@ -936,7 +542,8 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
       }
 
       res.json([...merged.values()]);
-    } catch {
+    } catch (err) {
+      log.error('Gate stats failed', { error: String(err) });
       res.status(500).json({ error: 'Failed to aggregate gate stats' });
     }
   });
@@ -975,7 +582,8 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
       });
 
       res.json(overviews);
-    } catch {
+    } catch (err) {
+      log.error('Git overviews failed', { error: String(err) });
       res.status(500).json({ error: 'Failed to aggregate git overviews' });
     }
   });
@@ -1005,7 +613,8 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
       }
       allCommits.sort((a, b) => String(b.date).localeCompare(String(a.date)));
       res.json(allCommits.slice(0, limit));
-    } catch {
+    } catch (err) {
+      log.error('Commits aggregation failed', { error: String(err) });
       res.status(500).json({ error: 'Failed to aggregate commits' });
     }
   });
@@ -1034,7 +643,8 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
       }
       allPrs.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
       res.json(allPrs);
-    } catch {
+    } catch (err) {
+      log.error('PRs aggregation failed', { error: String(err) });
       res.status(500).json({ error: 'Failed to aggregate PRs' });
     }
   });
@@ -1075,7 +685,8 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
         if (r.status === 'fulfilled') health.push(r.value);
       }
       res.json(health);
-    } catch {
+    } catch (err) {
+      log.error('Branch health failed', { error: String(err) });
       res.status(500).json({ error: 'Failed to aggregate branch health' });
     }
   });
@@ -1099,7 +710,8 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
         if (r.status === 'fulfilled') activity.push(r.value);
       }
       res.json(activity);
-    } catch {
+    } catch (err) {
+      log.error('Activity aggregation failed', { error: String(err) });
       res.status(500).json({ error: 'Failed to aggregate activity' });
     }
   });
@@ -1176,6 +788,138 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
     res.json({ active: null });
   });
 
+  // ─── Aggregate: Manifest Health ────────────────────────────
+
+  app.get('/api/orbital/aggregate/manifest/status', (_req, res) => {
+    try {
+      const projects = projectManager.getProjectList().filter(p => p.enabled);
+      const pkgVersion = getPackageVersion();
+
+      const projectOverviews = projects.map((proj) => {
+        const ctx = projectManager.getContext(proj.id);
+        if (!ctx) {
+          return {
+            projectId: proj.id,
+            projectName: proj.name,
+            projectColor: proj.color,
+            status: 'error' as const,
+            manifest: null,
+            error: 'Project offline',
+          };
+        }
+
+        try {
+          const manifest = loadManifest(ctx.config.projectRoot);
+          if (!manifest) {
+            return {
+              projectId: proj.id,
+              projectName: proj.name,
+              projectColor: proj.color,
+              status: 'no-manifest' as const,
+              manifest: null,
+            };
+          }
+
+          const claudeDir = path.join(ctx.config.projectRoot, '.claude');
+          refreshFileStatuses(manifest, claudeDir);
+          const summary = summarizeManifest(manifest);
+
+          return {
+            projectId: proj.id,
+            projectName: proj.name,
+            projectColor: proj.color,
+            status: 'ok' as const,
+            manifest: {
+              exists: true,
+              packageVersion: pkgVersion,
+              installedVersion: manifest.packageVersion,
+              needsUpdate: manifest.packageVersion !== pkgVersion,
+              preset: manifest.preset,
+              files: summary,
+              lastUpdated: manifest.updatedAt,
+            },
+          };
+        } catch (err) {
+          return {
+            projectId: proj.id,
+            projectName: proj.name,
+            projectColor: proj.color,
+            status: 'error' as const,
+            manifest: null,
+            error: String(err),
+          };
+        }
+      });
+
+      const projectsUpToDate = projectOverviews.filter(p => p.status === 'ok' && !p.manifest?.needsUpdate).length;
+      const projectsOutdated = projectOverviews.filter(p => p.status === 'ok' && p.manifest?.needsUpdate).length;
+      const noManifest = projectOverviews.filter(p => p.status === 'no-manifest').length;
+      const totalOutdated = projectOverviews.reduce((sum, p) => sum + (p.manifest?.files.outdated ?? 0), 0);
+      const totalModified = projectOverviews.reduce((sum, p) => sum + (p.manifest?.files.modified ?? 0), 0);
+      const totalPinned = projectOverviews.reduce((sum, p) => sum + (p.manifest?.files.pinned ?? 0), 0);
+      const totalMissing = projectOverviews.reduce((sum, p) => sum + (p.manifest?.files.missing ?? 0), 0);
+      const totalSynced = projectOverviews.reduce((sum, p) => sum + (p.manifest?.files.synced ?? 0), 0);
+      const totalUserOwned = projectOverviews.reduce((sum, p) => sum + (p.manifest?.files.userOwned ?? 0), 0);
+
+      res.json({
+        total: projects.length,
+        projectsUpToDate,
+        projectsOutdated,
+        noManifest,
+        totalOutdated,
+        totalModified,
+        totalPinned,
+        totalMissing,
+        totalSynced,
+        totalUserOwned,
+        projects: projectOverviews,
+      });
+    } catch (err) {
+      log.error('Manifest status failed', { error: String(err) });
+      res.status(500).json({ error: 'Failed to aggregate manifest status' });
+    }
+  });
+
+  app.post('/api/orbital/aggregate/manifest/update-all', (_req, res) => {
+    try {
+      const projects = projectManager.getProjectList().filter(p => p.enabled);
+      const pkgVersion = getPackageVersion();
+      const results: Array<{ projectId: string; success: boolean; error?: string }> = [];
+
+      for (const proj of projects) {
+        const ctx = projectManager.getContext(proj.id);
+        if (!ctx) {
+          results.push({ projectId: proj.id, success: false, error: 'Project offline' });
+          continue;
+        }
+
+        const manifest = loadManifest(ctx.config.projectRoot);
+        if (!manifest) continue; // uninitialized — skip
+
+        // Refresh statuses and check if there's anything to update
+        const claudeDir = path.join(ctx.config.projectRoot, '.claude');
+        refreshFileStatuses(manifest, claudeDir);
+        const manifestSummary = summarizeManifest(manifest);
+        if (manifest.packageVersion === pkgVersion && manifestSummary.outdated === 0 && manifestSummary.missing === 0) {
+          continue; // fully up to date
+        }
+
+        try {
+          runUpdate(ctx.config.projectRoot, { dryRun: false });
+          ctx.emitter.emit('manifest:changed', { action: 'updated' });
+          results.push({ projectId: proj.id, success: true });
+        } catch (err) {
+          results.push({ projectId: proj.id, success: false, error: String(err) });
+        }
+      }
+
+      res.json({ success: true, results });
+    } catch (err) {
+      log.error('Update all projects failed', { error: String(err) });
+      res.status(500).json({ error: 'Failed to update all projects' });
+    }
+  });
+
   // ─── Aggregate: Config Primitives (Global) ────────────────
   // In aggregate mode, config reads/writes target ~/.orbital/primitives/
   // Writes propagate to all synced (non-overridden) projects via SyncService.
@@ -1192,7 +936,8 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
       const basePath = path.join(GLOBAL_PRIMITIVES_DIR, type);
       const tree = globalConfigService.scanDirectory(basePath);
       res.json({ success: true, data: tree });
-    } catch {
+    } catch (err) {
+      log.error('Config tree read failed', { type, error: String(err) });
       res.status(500).json({ success: false, error: 'Failed to read global config tree' });
     }
   });
@@ -1248,7 +993,8 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
 
   const __selfDir = path.dirname(fileURLToPath(import.meta.url));
   const distDir = path.resolve(__selfDir, '../dist');
-  const hasBuiltFrontend = fs.existsSync(path.join(distDir, 'index.html'));
+  const devMode = clientPort !== port;
+  const hasBuiltFrontend = !devMode && fs.existsSync(path.join(distDir, 'index.html'));
   if (hasBuiltFrontend) {
     app.use(express.static(distDir));
     app.get('*', (req, res, next) => {
@@ -1256,7 +1002,7 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
       res.sendFile(path.join(distDir, 'index.html'));
     });
   } else {
-    app.get('/', (_req, res) => res.redirect(`http://localhost:4445`));
+    app.get('/', (_req, res) => res.redirect(`http://localhost:${clientPort}`));
   }
 
   // ─── Socket.io ───────────────────────────────────────────
@@ -1283,6 +1029,17 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
     socket.on('disconnect', () => {
       log.debug('Client disconnected', { socketId: socket.id });
     });
+  });
+
+  // ─── Error Handling Middleware ─────────────────────────────
+  // Catches unhandled errors thrown from route handlers.
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    log.error('Unhandled route error', { error: err.message, stack: err.stack });
+    if (!res.headersSent) {
+      res.status(500).json({ ok: false, error: 'Internal server error' });
+    }
   });
 
   // ─── Start Listening ─────────────────────────────────────
@@ -1313,12 +1070,14 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
     `║  ${p.status === 'active' ? '●' : '○'} ${p.name.padEnd(20)} ${String(p.scopeCount).padStart(3)} scopes    ${p.status.padEnd(8)} ║`
   ).join('\n');
 
+  const dashboardPort = devMode ? clientPort : actualPort;
+
   // eslint-disable-next-line no-console
   console.log(`
 ╔══════════════════════════════════════════════════════╗
 ║         Orbital Command — Central Server             ║
 ║                                                      ║
-║  >>> Open: http://localhost:${hasBuiltFrontend ? actualPort : 4445} <<<                 ║
+║  >>> Open: http://localhost:${String(dashboardPort).padEnd(25)} <<<║
 ║                                                      ║
 ╠══════════════════════════════════════════════════════╣
 ${projectLines}
@@ -1361,7 +1120,11 @@ const isDirectRun = process.argv[1] && (
 );
 
 if (isDirectRun) {
-  startServer().then(({ shutdown }) => {
+  const projectRoot = process.env.ORBITAL_PROJECT_ROOT || process.cwd();
+  startCentralServer({
+    port: Number(process.env.ORBITAL_SERVER_PORT) || 4444,
+    autoRegisterPath: projectRoot,
+  }).then(({ shutdown }) => {
     process.on('SIGINT', async () => {
       await shutdown();
       process.exit(0);

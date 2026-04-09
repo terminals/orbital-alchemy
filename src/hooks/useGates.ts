@@ -10,25 +10,28 @@ export function useGates(scopeId?: number) {
   const [stats, setStats] = useState<{ gate_name: string; total: number; passed: number; failed: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchGates = useCallback(async () => {
+  const fetchGates = useCallback(async (signal?: AbortSignal) => {
     try {
       const params = scopeId ? `?scope_id=${scopeId}` : '';
       const [gatesRes, statsRes] = await Promise.all([
-        fetch(buildUrl(`/gates${params}`)),
-        fetch(buildUrl('/gates/stats')),
+        fetch(buildUrl(`/gates${params}`), { signal }),
+        fetch(buildUrl('/gates/stats'), { signal }),
       ]);
 
       if (gatesRes.ok) setGates(await gatesRes.json());
       if (statsRes.ok) setStats(await statsRes.json());
-    } catch {
-      // Silently fail
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      console.warn('[Orbital] Failed to fetch gates:', err);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [scopeId, buildUrl]);
 
   useEffect(() => {
-    fetchGates();
+    const controller = new AbortController();
+    fetchGates(controller.signal);
+    return () => controller.abort();
   }, [fetchGates]);
 
   useReconnect(fetchGates);

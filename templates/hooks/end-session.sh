@@ -12,7 +12,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PID="$PPID"
 
 # Emit session end event to Orbital dashboard (non-blocking)
-SESSION_DATA="{\"pid\":$PID"
+# normal_exit=true tells the server this was a clean shutdown, so dispatches
+# should resolve as "completed" rather than "abandoned".
+SESSION_DATA="{\"pid\":$PID,\"normal_exit\":true"
 # Include dispatch ID if this session was launched by Orbital dispatch
 if [ -n "$ORBITAL_DISPATCH_ID" ]; then
   SESSION_DATA="${SESSION_DATA},\"dispatch_id\":\"$ORBITAL_DISPATCH_ID\""

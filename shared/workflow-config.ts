@@ -92,6 +92,8 @@ export interface WorkflowEdge {
   skipServerTransition?: boolean;
   dispatchOnly?: boolean;
   humanOnly?: boolean;
+  /** When true, revert scope status to `from` if the dispatch session is abandoned */
+  autoRevert?: boolean;
   hooks?: string[];
   agents?: string[];
 }

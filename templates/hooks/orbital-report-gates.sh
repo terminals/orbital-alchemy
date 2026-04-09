@@ -25,10 +25,10 @@ SCOPE_ID="${ORBITAL_GATE_SCOPE_ID:-null}"
 JQ_ARGS=(--arg gate_name "$GATE_NAME" --arg status "$STATUS")
 JQ_EXPR='{gate_name: $gate_name, status: $status}'
 
-[ "$SCOPE_ID" != "null" ] && JQ_ARGS+=(--argjson scope_id "$SCOPE_ID") && JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, scope_id: $scope_id}/')
-[ "$DURATION_MS" != "null" ] && JQ_ARGS+=(--argjson duration_ms "$DURATION_MS") && JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, duration_ms: $duration_ms}/')
-[ -n "$COMMIT_SHA" ] && JQ_ARGS+=(--arg commit_sha "$COMMIT_SHA") && JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, commit_sha: $commit_sha}/')
-[ -n "$DETAILS" ] && JQ_ARGS+=(--arg details "$DETAILS") && JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, details: $details}/')
+[ "$SCOPE_ID" != "null" ] && JQ_ARGS+=(--argjson scope_id "$SCOPE_ID") && JQ_EXPR="${JQ_EXPR%\}}, scope_id: \$scope_id}"
+[ "$DURATION_MS" != "null" ] && JQ_ARGS+=(--argjson duration_ms "$DURATION_MS") && JQ_EXPR="${JQ_EXPR%\}}, duration_ms: \$duration_ms}"
+[ -n "$COMMIT_SHA" ] && JQ_ARGS+=(--arg commit_sha "$COMMIT_SHA") && JQ_EXPR="${JQ_EXPR%\}}, commit_sha: \$commit_sha}"
+[ -n "$DETAILS" ] && JQ_ARGS+=(--arg details "$DETAILS") && JQ_EXPR="${JQ_EXPR%\}}, details: \$details}"
 
 PAYLOAD=$(jq -n "${JQ_ARGS[@]}" "$JQ_EXPR")
 

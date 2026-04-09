@@ -59,18 +59,9 @@ export interface SessionStats {
   };
 }
 
-/** Module-level projectRoot fallback for single-project mode. */
-let _projectRoot: string | null = null;
-
-/** Set the project root fallback (single-project mode only). */
-export function setSessionProjectRoot(projectRoot: string): void {
-  _projectRoot = projectRoot;
-}
-
 function getSessionsDir(projectRoot?: string): string {
-  const root = projectRoot ?? _projectRoot;
-  if (!root) throw new Error('Session project root not set — pass projectRoot or call setSessionProjectRoot()');
-  return getClaudeSessionsDir(root);
+  if (!projectRoot) throw new Error('projectRoot is required for getSessionsDir');
+  return getClaudeSessionsDir(projectRoot);
 }
 
 const cacheByDir = new Map<string, { sessions: ClaudeSession[]; expiry: number }>();

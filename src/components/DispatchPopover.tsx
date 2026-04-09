@@ -37,9 +37,9 @@ export function DispatchPopover({
 
   // Auto-focus launch button when dialog opens
   useEffect(() => {
-    if (open) {
-      setTimeout(() => launchRef.current?.focus(), 100);
-    }
+    if (!open) return;
+    const t = setTimeout(() => launchRef.current?.focus(), 100);
+    return () => clearTimeout(t);
   }, [open]);
 
   if (!scope || !transition) return null;

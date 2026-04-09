@@ -64,7 +64,7 @@ export function SprintPreflightModal({
         {/* Execution Graph */}
         <div className="my-3 space-y-3 max-h-64 overflow-y-auto">
           {layers.map((layer, idx) => (
-            <div key={idx}>
+            <div key={layer.join('-')}>
               <div className="flex items-center gap-2 mb-1">
                 <Badge variant="outline" className="text-[10px]">Layer {idx}</Badge>
                 {idx === 0 && <span className="text-[10px] text-cyan-400">Launches first</span>}

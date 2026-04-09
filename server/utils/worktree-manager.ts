@@ -2,8 +2,10 @@ import { execFile as execFileCb } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
 import path from 'path';
+import { createLogger } from './logger.js';
 
 const execFile = promisify(execFileCb);
+const log = createLogger('worktree');
 
 export interface WorktreeInfo {
   path: string;
@@ -15,6 +17,7 @@ export async function createWorktree(projectRoot: string, scopeId: number): Prom
   const wtPath = path.join(projectRoot, '.worktrees', `scope-${scopeId}`);
   const branch = `feat/scope-${scopeId}`;
 
+  log.info('Creating worktree', { scopeId, branch });
   await execFile('git', ['worktree', 'add', wtPath, '-b', branch], { cwd: projectRoot });
 
   // Ensure scopes/ and .claude/ are in .gitignore (for user projects)
@@ -50,13 +53,14 @@ export async function removeWorktree(projectRoot: string, scopeId: number): Prom
   const wtPath = path.join(projectRoot, '.worktrees', `scope-${scopeId}`);
   const branch = `feat/scope-${scopeId}`;
 
+  log.info('Removing worktree', { scopeId });
   try {
     await execFile('git', ['worktree', 'remove', wtPath, '--force'], { cwd: projectRoot });
-  } catch { /* worktree may already be gone */ }
+  } catch { log.debug('Worktree already removed', { scopeId }); }
 
   try {
     await execFile('git', ['branch', '-d', branch], { cwd: projectRoot });
-  } catch { /* branch may not exist or not be merged */ }
+  } catch { log.debug('Branch not deleted', { branch, scopeId }); }
 }
 
 export async function listWorktrees(projectRoot: string): Promise<WorktreeInfo[]> {
@@ -73,7 +77,7 @@ export async function listWorktrees(projectRoot: string): Promise<WorktreeInfo[]
     } else if (line === '' && currentPath) {
       const match = currentPath.match(/scope-(\d+)$/);
       if (match) {
-        results.push({ path: currentPath, branch: currentBranch, scopeId: parseInt(match[1]) });
+        results.push({ path: currentPath, branch: currentBranch, scopeId: parseInt(match[1], 10) });
       }
       currentPath = '';
       currentBranch = '';
@@ -82,7 +86,7 @@ export async function listWorktrees(projectRoot: string): Promise<WorktreeInfo[]
   if (currentPath) {
     const match = currentPath.match(/scope-(\d+)$/);
     if (match) {
-      results.push({ path: currentPath, branch: currentBranch, scopeId: parseInt(match[1]) });
+      results.push({ path: currentPath, branch: currentBranch, scopeId: parseInt(match[1], 10) });
     }
   }
 
@@ -96,6 +100,7 @@ export async function cleanupStaleWorktrees(projectRoot: string): Promise<number
     try {
       await fs.access(wt.path);
     } catch {
+      log.info('Cleaning stale worktree', { scopeId: wt.scopeId, path: wt.path });
       await removeWorktree(projectRoot, wt.scopeId);
       cleaned++;
     }

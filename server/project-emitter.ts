@@ -20,10 +20,10 @@ export class ProjectEmitter {
 
   /** Emit an event to this project's room and the all-projects room. */
   emit(event: string, ...args: unknown[]): boolean {
-    // Inject project ID into the first data argument if it's an object
+    // Inject project_id into the first data argument if it's an object
     const enrichedArgs = args.map((arg, i) => {
       if (i === 0 && arg !== null && typeof arg === 'object' && !Array.isArray(arg)) {
-        return { ...(arg as Record<string, unknown>), _projectId: this.projectId };
+        return { ...(arg as Record<string, unknown>), project_id: this.projectId };
       }
       return arg;
     });
@@ -45,9 +45,6 @@ export class ProjectEmitter {
 }
 
 /**
- * Type alias used by services and routes that accept either a raw Server
- * (backward compat / single-project mode) or a ProjectEmitter.
- *
- * Both have an emit(event, ...args) method, so services work with either.
+ * Type alias used by services and routes for the project-scoped emitter.
  */
-export type Emitter = ProjectEmitter | Server;
+export type Emitter = ProjectEmitter;

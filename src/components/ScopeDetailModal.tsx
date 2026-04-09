@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ExternalLink, X as XIcon, Plus } from 'lucide-react';
 import { useProjectUrl } from '@/hooks/useProjectUrl';
 import { useProjects } from '@/hooks/useProjectContext';
@@ -11,6 +11,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { SessionPanel } from '@/components/SessionPanel';
+import { ScopeSectionList } from '@/components/scope-sections/ScopeSectionList';
+import { parseScopeSections } from '@/lib/scope-sections';
 import { useScopeSessions } from '@/hooks/useScopeSessions';
 import { useWorkflow } from '@/hooks/useWorkflow';
 import { formatScopeId } from '@/lib/utils';
@@ -34,7 +36,8 @@ interface EditableFields {
   blocks: number[];
 }
 
-const SELECT_CLS = 'h-6 rounded border border-border bg-muted/30 px-1.5 text-xxs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50';
+const SELECT_CLS = 'h-7 w-full rounded border border-border bg-muted/30 px-2 text-xxs text-foreground/80 focus:outline-none focus:ring-1 focus:ring-primary/50';
+const LABEL_CLS = 'text-xxs font-medium uppercase tracking-wide text-muted-foreground/70 mb-1';
 
 function fieldsFromScope(scope: Scope): EditableFields {
   return {
@@ -60,40 +63,44 @@ function DepEditor({ label, ids, onRemove, onAdd }: {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState('');
   return (
-    <span className="inline-flex items-center gap-1">
-      {label}:
-      {ids.map((id) => (
-        <span key={id} className="group inline-flex items-center gap-0.5 rounded bg-muted px-1 py-0.5">
-          {formatScopeId(id)}
-          <button onClick={() => onRemove(id)} className="opacity-0 group-hover:opacity-100 transition-opacity">
-            <XIcon className="h-2.5 w-2.5" />
+    <div>
+      <p className={LABEL_CLS}>{label}</p>
+      <div className="flex flex-wrap items-center gap-1">
+        {ids.map((id) => (
+          <span key={id} className="group inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-xxs text-foreground/70">
+            {formatScopeId(id)}
+            <button onClick={() => onRemove(id)} className="opacity-0 group-hover:opacity-100 transition-opacity">
+              <XIcon className="h-2.5 w-2.5" />
+            </button>
+          </span>
+        ))}
+        {editing ? (
+          <input autoFocus className="h-5 w-12 rounded bg-muted/50 px-1 text-xxs border border-primary/30 focus:outline-none"
+            placeholder="ID" value={val}
+            onChange={(e) => setVal(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { onAdd(val); setEditing(false); setVal(''); } if (e.key === 'Escape') setEditing(false); }}
+            onBlur={() => setEditing(false)} />
+        ) : (
+          <button onClick={() => setEditing(true)} className="hover:text-foreground transition-colors text-muted-foreground">
+            <Plus className="h-3 w-3" />
           </button>
-        </span>
-      ))}
-      {editing ? (
-        <input autoFocus className="h-5 w-12 rounded bg-muted/50 px-1 text-xxs border border-primary/30 focus:outline-none"
-          placeholder="ID" value={val}
-          onChange={(e) => setVal(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { onAdd(val); setEditing(false); setVal(''); } if (e.key === 'Escape') setEditing(false); }}
-          onBlur={() => setEditing(false)} />
-      ) : (
-        <button onClick={() => setEditing(true)} className="hover:text-foreground transition-colors"><Plus className="h-3 w-3" /></button>
-      )}
-    </span>
+        )}
+        {ids.length === 0 && !editing && <span className="text-xxs text-muted-foreground/50">None</span>}
+      </div>
+    </div>
   );
 }
 
 export function ScopeDetailModal({ scope, open, onClose }: ScopeDetailModalProps) {
   const { engine } = useWorkflow();
   const buildUrl = useProjectUrl();
-  const { getApiBase, isMultiProject } = useProjects();
-  // Route mutations to the scope's own project endpoint (for All Projects view)
+  const { getApiBase, hasMultipleProjects } = useProjects();
   const scopeUrl = useCallback((path: string) => {
-    if (isMultiProject && scope?.project_id) {
+    if (hasMultipleProjects && scope?.project_id) {
       return `${getApiBase(scope.project_id)}${path}`;
     }
     return buildUrl(path);
-  }, [buildUrl, getApiBase, isMultiProject, scope?.project_id]);
+  }, [buildUrl, getApiBase, hasMultipleProjects, scope?.project_id]);
   const { sessions, loading: sessionsLoading } = useScopeSessions(scope?.id ?? null);
   const [fields, setFields] = useState<EditableFields | null>(null);
   const [saved, setSaved] = useState<EditableFields | null>(null);
@@ -103,12 +110,16 @@ export function ScopeDetailModal({ scope, open, onClose }: ScopeDetailModalProps
 
   const isDirty = fields && saved ? !fieldsEqual(fields, saved) : false;
 
+  // Parse sections from raw content
+  const sections = useMemo(() => parseScopeSections(scope?.raw_content), [scope?.raw_content]);
+
   useEffect(() => {
     if (scope && open) {
       const f = fieldsFromScope(scope);
       setFields(f); setSaved(f); setError(null); setTagInput('');
     }
-  }, [scope?.id, scope?.updated_at, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- scope?.id and scope?.updated_at are the relevant change triggers
+  }, [scope?.id, scope?.updated_at, open]);
 
   const save = useCallback(async () => {
     if (!scope || !fields || !isDirty || saving) return;
@@ -136,7 +147,7 @@ export function ScopeDetailModal({ scope, open, onClose }: ScopeDetailModalProps
       setSaved({ ...fields });
     } catch { setError('Network error — could not save'); }
     finally { setSaving(false); }
-  }, [scope, fields, saved, isDirty, saving]);
+  }, [scope, fields, saved, isDirty, saving, scopeUrl]);
 
   function handleClose() {
     if (isDirty && window.confirm('Save changes before closing?')) { save().then(onClose); return; }
@@ -168,6 +179,7 @@ export function ScopeDetailModal({ scope, open, onClose }: ScopeDetailModalProps
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) handleClose(); }}>
       <DialogContent className="max-w-[min(72rem,calc(100vw_-_2rem))] h-[85vh] flex flex-col p-0 gap-0 overflow-hidden">
+        {/* ── Header: scope ID + title + file path ── */}
         <DialogHeader className="px-4 pt-3 pb-2">
           <div className="flex items-start gap-3 pr-8">
             <span className="font-mono text-xxs text-muted-foreground mt-1.5">{formatScopeId(scope.id)}</span>
@@ -177,49 +189,12 @@ export function ScopeDetailModal({ scope, open, onClose }: ScopeDetailModalProps
                   value={fields.title} onChange={(e) => update({ title: e.target.value })} placeholder="Scope title..." />
               </DialogTitle>
               <DialogDescription asChild>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <select className={SELECT_CLS} value={fields.status} onChange={(e) => update({ status: e.target.value })}>
-                    {statusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                  <select className={SELECT_CLS} value={fields.priority} onChange={(e) => update({ priority: e.target.value })}>
-                    <option value="">priority</option>
-                    {PRIORITY_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                  <select className={SELECT_CLS} value={fields.effort_estimate} onChange={(e) => update({ effort_estimate: e.target.value })}>
-                    <option value="">effort</option>
-                    {EFFORT_BUCKETS.map((e) => <option key={e} value={e}>{e}</option>)}
-                  </select>
-                  <select className={SELECT_CLS} value={fields.category} onChange={(e) => update({ category: e.target.value })}>
-                    <option value="">category</option>
-                    {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                  {fields.tags.map((tag) => (
-                    <span key={tag} className="group inline-flex items-center gap-0.5 glass-pill rounded bg-muted px-1.5 py-0.5 text-xxs text-muted-foreground">
-                      {tag}
-                      <button onClick={() => update({ tags: fields.tags.filter((t) => t !== tag) })} className="opacity-0 group-hover:opacity-100 transition-opacity">
-                        <XIcon className="h-2.5 w-2.5" />
-                      </button>
-                    </span>
-                  ))}
-                  <input className="h-5 w-16 rounded bg-transparent text-xxs text-muted-foreground placeholder:text-muted-foreground/50 border-none focus:outline-none"
-                    placeholder="+tag" value={tagInput} onChange={(e) => setTagInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); } }}
-                    onBlur={() => { if (tagInput.trim()) addTag(tagInput); }} />
-                </div>
+                <span className="mt-1 flex items-center gap-1 text-xxs text-muted-foreground">
+                  <ExternalLink className="h-3 w-3" />
+                  <span className="truncate max-w-[400px]">{scope.file_path}</span>
+                </span>
               </DialogDescription>
             </div>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xxs text-muted-foreground">
-            <DepEditor label="Blocked by" ids={fields.blocked_by}
-              onRemove={(id) => update({ blocked_by: fields.blocked_by.filter((d) => d !== id) })}
-              onAdd={(v) => addDep('blocked_by', v)} />
-            <DepEditor label="Blocks" ids={fields.blocks}
-              onRemove={(id) => update({ blocks: fields.blocks.filter((d) => d !== id) })}
-              onAdd={(v) => addDep('blocks', v)} />
-            <span className="flex items-center gap-1">
-              <ExternalLink className="h-3 w-3" />
-              <span className="truncate max-w-[300px]">{scope.file_path}</span>
-            </span>
           </div>
         </DialogHeader>
 
@@ -232,23 +207,99 @@ export function ScopeDetailModal({ scope, open, onClose }: ScopeDetailModalProps
           </div>
         )}
 
+        {/* ── Body: content (left) + right rail ── */}
         <div className="flex flex-1 min-h-0">
-          <div className="flex-[6] min-w-0 border-r bg-[#0a0a12]">
+          {/* Left panel — sectioned content or fallback markdown */}
+          <div className="flex-[65] min-w-0 border-r">
             <ScrollArea className="h-full">
-              <div className="px-6 py-5">
-                {scope.raw_content ? <MarkdownRenderer content={scope.raw_content} /> : (
-                  <p className="text-xs text-muted-foreground italic">No content available</p>
-                )}
+              {sections ? (
+                <div className="py-2">
+                  <ScopeSectionList sections={sections} />
+                </div>
+              ) : (
+                <div className="px-6 py-5">
+                  {scope.raw_content ? <MarkdownRenderer content={scope.raw_content} /> : (
+                    <p className="text-xs text-muted-foreground italic">No content available</p>
+                  )}
+                </div>
+              )}
+            </ScrollArea>
+          </div>
+
+          {/* Right rail — metadata + sessions */}
+          <div className="flex-[35] min-w-0 flex flex-col">
+            <ScrollArea className="h-full">
+              {/* Metadata editor */}
+              <div className="p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className={LABEL_CLS}>Status</p>
+                    <select className={SELECT_CLS} value={fields.status} onChange={(e) => update({ status: e.target.value })}>
+                      {statusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <p className={LABEL_CLS}>Priority</p>
+                    <select className={SELECT_CLS} value={fields.priority} onChange={(e) => update({ priority: e.target.value })}>
+                      <option value="">—</option>
+                      {PRIORITY_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <p className={LABEL_CLS}>Effort</p>
+                    <select className={SELECT_CLS} value={fields.effort_estimate} onChange={(e) => update({ effort_estimate: e.target.value })}>
+                      <option value="">—</option>
+                      {EFFORT_BUCKETS.map((e) => <option key={e} value={e}>{e}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <p className={LABEL_CLS}>Category</p>
+                    <select className={SELECT_CLS} value={fields.category} onChange={(e) => update({ category: e.target.value })}>
+                      <option value="">—</option>
+                      {CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Tags */}
+                <div>
+                  <p className={LABEL_CLS}>Tags</p>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {fields.tags.map((tag) => (
+                      <span key={tag} className="group inline-flex items-center gap-0.5 glass-pill rounded bg-muted px-1.5 py-0.5 text-xxs text-muted-foreground">
+                        {tag}
+                        <button onClick={() => update({ tags: fields.tags.filter((t) => t !== tag) })} className="opacity-0 group-hover:opacity-100 transition-opacity">
+                          <XIcon className="h-2.5 w-2.5" />
+                        </button>
+                      </span>
+                    ))}
+                    <input className="h-5 w-16 rounded bg-transparent text-xxs text-muted-foreground placeholder:text-muted-foreground/50 border-none focus:outline-none"
+                      placeholder="+tag" value={tagInput} onChange={(e) => setTagInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); } }}
+                      onBlur={() => { if (tagInput.trim()) addTag(tagInput); }} />
+                  </div>
+                </div>
+
+                {/* Dependencies */}
+                <DepEditor label="Blocked by" ids={fields.blocked_by}
+                  onRemove={(id) => update({ blocked_by: fields.blocked_by.filter((d) => d !== id) })}
+                  onAdd={(v) => addDep('blocked_by', v)} />
+                <DepEditor label="Blocks" ids={fields.blocks}
+                  onRemove={(id) => update({ blocks: fields.blocks.filter((d) => d !== id) })}
+                  onAdd={(v) => addDep('blocks', v)} />
+              </div>
+
+              <Separator />
+
+              {/* Session history */}
+              <div className="p-4 flex-1">
+                <SessionPanel sessions={sessions} loading={sessionsLoading} />
               </div>
             </ScrollArea>
           </div>
-          <div className="flex-[4] min-w-0">
-            <div className="flex h-full flex-col p-4">
-              <SessionPanel sessions={sessions} loading={sessionsLoading} />
-            </div>
-          </div>
         </div>
 
+        {/* ── Unsaved changes bar ── */}
         {isDirty && (
           <div className="mx-4 mb-2 flex items-center gap-2 rounded border border-border bg-card px-3 py-2">
             <Badge variant="outline">Unsaved changes</Badge>

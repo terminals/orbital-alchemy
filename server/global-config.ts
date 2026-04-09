@@ -26,6 +26,7 @@ export interface ProjectRegistration {
 export interface OrbitalGlobalConfig {
   version: 1;
   projects: ProjectRegistration[];
+  privateMode?: boolean;
 }
 
 // ─── Constants ──────────────────────────────────────────────

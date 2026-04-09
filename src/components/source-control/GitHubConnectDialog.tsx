@@ -27,6 +27,7 @@ export function GitHubConnectDialog({ error, onConnected }: Props) {
   const [token, setToken] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const pollRef = useRef<ReturnType<typeof setInterval>>();
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   const isNotInstalled = error?.includes('not installed');
 
@@ -38,7 +39,10 @@ export function GitHubConnectDialog({ error, onConnected }: Props) {
   }, []);
 
   // Cleanup on unmount
-  useEffect(() => stopPolling, [stopPolling]);
+  useEffect(() => () => {
+    stopPolling();
+    clearTimeout(timeoutRef.current);
+  }, [stopPolling]);
 
   const handleOAuth = async () => {
     setState('connecting');
@@ -59,6 +63,7 @@ export function GitHubConnectDialog({ error, onConnected }: Props) {
             const status = await statusRes.json();
             if (status.authenticated) {
               stopPolling();
+              clearTimeout(timeoutRef.current);
               setState('success');
               setTimeout(() => {
                 setOpen(false);
@@ -69,7 +74,7 @@ export function GitHubConnectDialog({ error, onConnected }: Props) {
         }, 2000);
 
         // Auto-stop after 2 minutes
-        setTimeout(() => {
+        timeoutRef.current = setTimeout(() => {
           if (pollRef.current) {
             stopPolling();
             setState('error');

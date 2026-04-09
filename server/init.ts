@@ -6,6 +6,30 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { GLOBAL_PRIMITIVES_DIR, ensureOrbitalHome, unregisterProject } from './global-config.js';
+import {
+  loadManifest,
+  saveManifest,
+  createManifest,
+  hashFile,
+  buildTemplateInventory,
+  templateFileRecord,
+  userFileRecord,
+  isSelfHosting,
+  getSymlinkTarget,
+  createBackup,
+  refreshFileStatuses,
+  reverseRemapPath,
+  safeBackupFile,
+  safeCopyTemplate,
+} from './manifest.js';
+import type { OrbitalManifest } from './manifest-types.js';
+import { needsLegacyMigration, migrateFromLegacy } from './migrate-legacy.js';
+import { computeUpdatePlan, loadRenameMap, formatPlan, getFilesToBackup } from './update-planner.js';
+import { syncSettingsHooks, removeAllOrbitalHooks, getTemplateChecksum } from './settings-sync.js';
+import { migrateConfig } from './config-migrator.js';
+import { validate, formatValidationReport } from './validator.js';
+import { getPackageVersion as _getPackageVersionUtil } from './utils/package-info.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -489,20 +513,147 @@ function cleanEmptyDirs(dir: string): void {
   }
 }
 
+// ─── Manifest Building ──────────────────────────────────────
+
+/** Build a manifest by scanning .claude/ and classifying files against templates. */
+function buildInitManifest(
+  projectRoot: string,
+  claudeDir: string,
+  preset: string,
+): OrbitalManifest {
+  const selfHosting = isSelfHosting(projectRoot);
+  const templateInventory = buildTemplateInventory(TEMPLATES_DIR);
+  const pkg = getPackageVersion();
+
+  const manifest = createManifest(pkg, preset);
+
+  // Classify all template files
+  for (const [relPath, templateHash] of templateInventory) {
+    const absPath = path.join(claudeDir, relPath);
+
+    if (selfHosting) {
+      const symlinkTarget = getSymlinkTarget(claudeDir, relPath);
+      if (symlinkTarget) {
+        manifest.files[relPath] = templateFileRecord(templateHash, symlinkTarget);
+        continue;
+      }
+    }
+
+    if (fs.existsSync(absPath)) {
+      const fileHash = hashFile(absPath);
+      if (fileHash === templateHash) {
+        manifest.files[relPath] = templateFileRecord(templateHash);
+      } else {
+        // File exists but doesn't match template — classify as outdated
+        // (no prior install to compare against, so we can't know if user edited it)
+        manifest.files[relPath] = {
+          origin: 'template',
+          status: 'outdated',
+          templateHash,
+          installedHash: fileHash,
+        };
+      }
+    }
+    // File doesn't exist — it may not have been copied (e.g. skipped on non-force init)
+  }
+
+  // Scan managed directories for user-created files
+  for (const dir of ['hooks', 'skills', 'agents']) {
+    const dirPath = path.join(claudeDir, dir);
+    if (!fs.existsSync(dirPath)) continue;
+
+    walkDirForManifest(dirPath, dir, (relPath, absPath) => {
+      if (manifest.files[relPath]) return; // Already classified
+      const fileHash = hashFile(absPath);
+      manifest.files[relPath] = userFileRecord(fileHash);
+    });
+  }
+
+  // Record settings hooks checksum
+  const settingsHooksPath = path.join(TEMPLATES_DIR, 'settings-hooks.json');
+  if (fs.existsSync(settingsHooksPath)) {
+    manifest.settingsHooksChecksum = getTemplateChecksum(settingsHooksPath);
+  }
+
+  // Record gitignore entries
+  manifest.gitignoreEntries = [
+    'scopes/',
+    '.claude/orbital/',
+    '.claude/orbital-events/',
+    '.claude/config/workflow-manifest.sh',
+  ];
+
+  return manifest;
+}
+
+function getPackageVersion(): string {
+  return _getPackageVersionUtil(PACKAGE_ROOT);
+}
+
+/** Recursively walk a directory for manifest building. */
+function walkDirForManifest(
+  dirPath: string,
+  prefix: string,
+  fn: (relPath: string, absPath: string) => void,
+): void {
+  if (!fs.existsSync(dirPath)) return;
+  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+    if (entry.name.startsWith('.')) continue;
+    const absPath = path.join(dirPath, entry.name);
+    const relPath = `${prefix}/${entry.name}`;
+    // Follow symlinks: use stat() to check if target is a directory
+    const stat = fs.statSync(absPath);
+    if (stat.isDirectory()) {
+      walkDirForManifest(absPath, relPath, fn);
+    } else {
+      fn(relPath, absPath);
+    }
+  }
+}
+
 // ─── Exports ─────────────────────────────────────────────────
+
+/** Seed ~/.orbital/primitives/ from package templates. Called by init, update, and server startup. */
+export function seedGlobalPrimitives(): void {
+  ensureOrbitalHome();
+  for (const type of ['hooks', 'skills', 'agents'] as const) {
+    const src = path.join(TEMPLATES_DIR, type);
+    const dest = path.join(GLOBAL_PRIMITIVES_DIR, type);
+    if (fs.existsSync(src)) {
+      copyDirSync(src, dest, { overwrite: true });
+    }
+  }
+}
 
 export { TEMPLATES_DIR, ensureDir };
 
+// Re-export manifest utilities for CLI access via loadSharedModule()
+export { loadManifest, saveManifest, hashFile, buildTemplateInventory, refreshFileStatuses, summarizeManifest } from './manifest.js';
+export { validate, formatValidationReport } from './validator.js';
+
 export interface InitOptions {
   force?: boolean;
+  quiet?: boolean;              // suppress console output (used by wizard)
+  preset?: string;              // workflow preset name (default: 'default')
+  projectName?: string;         // override auto-detected project name
+  serverPort?: number;          // override default server port
+  clientPort?: number;          // override default client port
+  commands?: Partial<Record<string, string | null>>; // override detected commands
 }
 
 export function runInit(projectRoot: string, options: InitOptions = {}): void {
   const force = options.force ?? false;
+  const quiet = options.quiet ?? false;
+  const selectedPreset = options.preset || 'default';
   const claudeDir = path.join(projectRoot, '.claude');
 
-  console.log(`\nOrbital Command — init`);
-  console.log(`Project root: ${projectRoot}\n`);
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  const log = quiet ? (..._args: unknown[]) => {} : console.log.bind(console);
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  const warn = quiet ? (..._args: unknown[]) => {} : console.warn.bind(console);
+
+  log(`\nOrbital Command — init`);
+  log(`Project root: ${projectRoot}\n`);
 
   // 1. Create directories
   const dirs = [
@@ -513,24 +664,26 @@ export function runInit(projectRoot: string, options: InitOptions = {}): void {
   ];
   for (const dir of dirs) {
     const wasCreated = ensureDir(dir);
-    console.log(`  ${wasCreated ? 'Created' : 'Exists '}  ${path.relative(projectRoot, dir)}/`);
+    log(`  ${wasCreated ? 'Created' : 'Exists '}  ${path.relative(projectRoot, dir)}/`);
   }
 
-  // 1b. Create scopes/ subdirectories from the default workflow preset
+  // 1b. Create scopes/ subdirectories from the selected workflow preset
+  const selectedPresetPath = path.join(TEMPLATES_DIR, 'presets', `${selectedPreset}.json`);
   const defaultPresetPath = path.join(TEMPLATES_DIR, 'presets', 'default.json');
+  const presetPath = fs.existsSync(selectedPresetPath) ? selectedPresetPath : defaultPresetPath;
   let scopeDirs = ['icebox'];
   try {
-    const preset = JSON.parse(fs.readFileSync(defaultPresetPath, 'utf8'));
+    const preset = JSON.parse(fs.readFileSync(presetPath, 'utf8'));
     if (preset.lists && Array.isArray(preset.lists)) {
       scopeDirs = preset.lists.filter((l: Record<string, unknown>) => l.hasDirectory).map((l: Record<string, unknown>) => l.id as string);
     }
   } catch {
-    console.warn('  Warning: could not load default preset, creating scopes/icebox/ only');
+    warn('  Warning: could not load preset, creating scopes/icebox/ only');
   }
   for (const dirId of scopeDirs) {
     const scopeDir = path.join(projectRoot, 'scopes', dirId);
     const wasCreated = ensureDir(scopeDir);
-    console.log(`  ${wasCreated ? 'Created' : 'Exists '}  scopes/${dirId}/`);
+    log(`  ${wasCreated ? 'Created' : 'Exists '}  scopes/${dirId}/`);
   }
 
   // 1c. Copy scope template
@@ -539,9 +692,9 @@ export function runInit(projectRoot: string, options: InitOptions = {}): void {
   if (fs.existsSync(scopeTemplateSrc)) {
     if (force || !fs.existsSync(scopeTemplateDest)) {
       fs.copyFileSync(scopeTemplateSrc, scopeTemplateDest);
-      console.log(`  ${force ? 'Reset  ' : 'Created'}  scopes/_template.md`);
+      log(`  ${force ? 'Reset  ' : 'Created'}  scopes/_template.md`);
     } else {
-      console.log(`  Exists   scopes/_template.md`);
+      log(`  Exists   scopes/_template.md`);
     }
   }
 
@@ -552,75 +705,97 @@ export function runInit(projectRoot: string, options: InitOptions = {}): void {
   if (configIsNew) {
     if (fs.existsSync(configSrc)) {
       fs.copyFileSync(configSrc, configDest);
-      console.log(`  Created  .claude/orbital.config.json`);
+      // Apply wizard-collected or auto-detected values
+      try {
+        const config = JSON.parse(fs.readFileSync(configDest, 'utf8'));
+        config.projectName = options.projectName || path.basename(projectRoot)
+          .replace(/[-_]+/g, ' ')
+          .replace(/\b\w/g, c => c.toUpperCase());
+        if (options.serverPort) config.serverPort = options.serverPort;
+        if (options.clientPort) config.clientPort = options.clientPort;
+        fs.writeFileSync(configDest, JSON.stringify(config, null, 2) + '\n', 'utf8');
+      } catch { /* leave template default */ }
+      log(`  Created  .claude/orbital.config.json`);
     } else {
       const defaultConfig = {
-        serverPort: 4444,
-        clientPort: 4445,
-        projectName: path.basename(projectRoot),
+        serverPort: options.serverPort || 4444,
+        clientPort: options.clientPort || 4445,
+        projectName: options.projectName || path.basename(projectRoot),
       };
       fs.writeFileSync(configDest, JSON.stringify(defaultConfig, null, 2) + '\n', 'utf8');
-      console.log(`  Created  .claude/orbital.config.json (default)`);
+      log(`  Created  .claude/orbital.config.json (default)`);
     }
 
-    // Auto-detect project commands from package.json
-    const pkgJsonPath = path.join(projectRoot, 'package.json');
-    if (fs.existsSync(pkgJsonPath)) {
+    // Apply wizard-provided commands or auto-detect from package.json
+    if (options.commands) {
       try {
-        const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
-        const scripts = pkg.scripts || {};
         const config = JSON.parse(fs.readFileSync(configDest, 'utf8'));
         if (!config.commands) config.commands = {};
-        let detected = 0;
-
-        if (scripts.typecheck || scripts['type-check']) {
-          config.commands.typeCheck = `npm run ${scripts.typecheck ? 'typecheck' : 'type-check'}`;
-          detected++;
-        }
-        if (scripts.lint) { config.commands.lint = 'npm run lint'; detected++; }
-        if (scripts.build) { config.commands.build = 'npm run build'; detected++; }
-        if (scripts.test) { config.commands.test = 'npm run test'; detected++; }
-
-        if (detected > 0) {
-          fs.writeFileSync(configDest, JSON.stringify(config, null, 2) + '\n', 'utf8');
-          console.log(`  Detected ${detected} project command(s) from package.json`);
-        }
+        Object.assign(config.commands, options.commands);
+        const commandCount = Object.values(options.commands).filter(v => v !== null).length;
+        fs.writeFileSync(configDest, JSON.stringify(config, null, 2) + '\n', 'utf8');
+        if (commandCount > 0) log(`  Applied  ${commandCount} project command(s)`);
       } catch { /* leave defaults */ }
+    } else {
+      // Auto-detect project commands from package.json
+      const pkgJsonPath = path.join(projectRoot, 'package.json');
+      if (fs.existsSync(pkgJsonPath)) {
+        try {
+          const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+          const scripts = pkg.scripts || {};
+          const config = JSON.parse(fs.readFileSync(configDest, 'utf8'));
+          if (!config.commands) config.commands = {};
+          let detected = 0;
+
+          if (scripts.typecheck || scripts['type-check']) {
+            config.commands.typeCheck = `npm run ${scripts.typecheck ? 'typecheck' : 'type-check'}`;
+            detected++;
+          }
+          if (scripts.lint) { config.commands.lint = 'npm run lint'; detected++; }
+          if (scripts.build) { config.commands.build = 'npm run build'; detected++; }
+          if (scripts.test) { config.commands.test = 'npm run test'; detected++; }
+
+          if (detected > 0) {
+            fs.writeFileSync(configDest, JSON.stringify(config, null, 2) + '\n', 'utf8');
+            log(`  Detected ${detected} project command(s) from package.json`);
+          }
+        } catch { /* leave defaults */ }
+      }
     }
   } else {
-    console.log(`  Exists   .claude/orbital.config.json`);
+    log(`  Exists   .claude/orbital.config.json`);
   }
 
   // 3. Copy hooks
-  console.log('');
+  log('');
   const hooksSrc = path.join(TEMPLATES_DIR, 'hooks');
   const hooksDest = path.join(claudeDir, 'hooks');
   if (force) {
     const pruned = pruneStaleEntries(hooksSrc, hooksDest);
-    if (pruned > 0) console.log(`  Pruned   ${pruned} stale hook entries`);
+    if (pruned > 0) log(`  Pruned   ${pruned} stale hook entries`);
   }
   const hooksResult = copyDirSync(hooksSrc, hooksDest, { overwrite: force });
-  console.log(`  Hooks    ${hooksResult.created.length} copied, ${hooksResult.skipped.length} skipped`);
+  log(`  Hooks    ${hooksResult.created.length} copied, ${hooksResult.skipped.length} skipped`);
 
   // 4. Copy skills
   const skillsSrc = path.join(TEMPLATES_DIR, 'skills');
   const skillsDest = path.join(claudeDir, 'skills');
   if (force) {
     const pruned = pruneStaleEntries(skillsSrc, skillsDest);
-    if (pruned > 0) console.log(`  Pruned   ${pruned} stale skill entries`);
+    if (pruned > 0) log(`  Pruned   ${pruned} stale skill entries`);
   }
   const skillsResult = copyDirSync(skillsSrc, skillsDest, { overwrite: force });
-  console.log(`  Skills   ${skillsResult.created.length} copied, ${skillsResult.skipped.length} skipped`);
+  log(`  Skills   ${skillsResult.created.length} copied, ${skillsResult.skipped.length} skipped`);
 
   // 5. Copy agents
   const agentsSrc = path.join(TEMPLATES_DIR, 'agents');
   const agentsDest = path.join(claudeDir, 'agents');
   if (force) {
     const pruned = pruneStaleEntries(agentsSrc, agentsDest);
-    if (pruned > 0) console.log(`  Pruned   ${pruned} stale agent entries`);
+    if (pruned > 0) log(`  Pruned   ${pruned} stale agent entries`);
   }
   const agentsResult = copyDirSync(agentsSrc, agentsDest, { overwrite: force });
-  console.log(`  Agents   ${agentsResult.created.length} copied, ${agentsResult.skipped.length} skipped`);
+  log(`  Agents   ${agentsResult.created.length} copied, ${agentsResult.skipped.length} skipped`);
 
   // 6. Copy workflow presets
   const presetsSrc = path.join(TEMPLATES_DIR, 'presets');
@@ -628,22 +803,22 @@ export function runInit(projectRoot: string, options: InitOptions = {}): void {
   if (fs.existsSync(presetsSrc) && fs.readdirSync(presetsSrc).length > 0) {
     if (force) {
       const pruned = pruneStaleEntries(presetsSrc, presetsDest);
-      if (pruned > 0) console.log(`  Pruned   ${pruned} stale preset entries`);
+      if (pruned > 0) log(`  Pruned   ${pruned} stale preset entries`);
     }
     const presetsResult = copyDirSync(presetsSrc, presetsDest, { overwrite: force });
-    console.log(`  Presets  ${presetsResult.created.length} copied, ${presetsResult.skipped.length} skipped`);
+    log(`  Presets  ${presetsResult.created.length} copied, ${presetsResult.skipped.length} skipped`);
   }
 
   // 6b. Reset active workflow config when --force, or create if missing
   const activeWorkflowDest = path.join(claudeDir, 'config', 'workflow.json');
   if (force) {
-    fs.copyFileSync(defaultPresetPath, activeWorkflowDest);
-    console.log(`  Reset    .claude/config/workflow.json (default workflow)`);
+    fs.copyFileSync(presetPath, activeWorkflowDest);
+    log(`  Reset    .claude/config/workflow.json (${selectedPreset} workflow)`);
   } else if (!fs.existsSync(activeWorkflowDest)) {
-    fs.copyFileSync(defaultPresetPath, activeWorkflowDest);
-    console.log(`  Created  .claude/config/workflow.json`);
+    fs.copyFileSync(presetPath, activeWorkflowDest);
+    log(`  Created  .claude/config/workflow.json (${selectedPreset})`);
   } else {
-    console.log(`  Exists   .claude/config/workflow.json`);
+    log(`  Exists   .claude/config/workflow.json`);
   }
 
   // 7. Copy agent-triggers.json
@@ -652,9 +827,9 @@ export function runInit(projectRoot: string, options: InitOptions = {}): void {
   if (fs.existsSync(triggersSrc)) {
     if (force || !fs.existsSync(triggersDest)) {
       fs.copyFileSync(triggersSrc, triggersDest);
-      console.log(`  Created  .claude/config/agent-triggers.json`);
+      log(`  Created  .claude/config/agent-triggers.json`);
     } else {
-      console.log(`  Exists   .claude/config/agent-triggers.json`);
+      log(`  Exists   .claude/config/agent-triggers.json`);
     }
   }
 
@@ -663,7 +838,7 @@ export function runInit(projectRoot: string, options: InitOptions = {}): void {
   const quickDest = path.join(claudeDir, 'quick');
   if (fs.existsSync(quickSrc)) {
     const quickResult = copyDirSync(quickSrc, quickDest, { overwrite: force });
-    console.log(`  Quick    ${quickResult.created.length} copied, ${quickResult.skipped.length} skipped`);
+    log(`  Quick    ${quickResult.created.length} copied, ${quickResult.skipped.length} skipped`);
   }
 
   // 7c. Copy anti-patterns/ templates
@@ -671,7 +846,7 @@ export function runInit(projectRoot: string, options: InitOptions = {}): void {
   const antiDest = path.join(claudeDir, 'anti-patterns');
   if (fs.existsSync(antiSrc)) {
     const antiResult = copyDirSync(antiSrc, antiDest, { overwrite: force });
-    console.log(`  Anti-pat ${antiResult.created.length} copied, ${antiResult.skipped.length} skipped`);
+    log(`  Anti-pat ${antiResult.created.length} copied, ${antiResult.skipped.length} skipped`);
   }
 
   // 7d. Copy lessons-learned.md
@@ -680,212 +855,480 @@ export function runInit(projectRoot: string, options: InitOptions = {}): void {
   if (fs.existsSync(lessonsSrc)) {
     if (force || !fs.existsSync(lessonsDest)) {
       fs.copyFileSync(lessonsSrc, lessonsDest);
-      console.log(`  Created  .claude/lessons-learned.md`);
+      log(`  Created  .claude/lessons-learned.md`);
     } else {
-      console.log(`  Exists   .claude/lessons-learned.md`);
+      log(`  Exists   .claude/lessons-learned.md`);
     }
   }
 
   // 7e. Generate workflow manifest
   const manifestOk = writeManifest(claudeDir);
-  console.log(`  ${manifestOk ? 'Created' : 'Skipped'}  .claude/config/workflow-manifest.sh`);
+  log(`  ${manifestOk ? 'Created' : 'Skipped'}  .claude/config/workflow-manifest.sh`);
 
   // 7f. Generate INDEX.md
   const indexDest = path.join(claudeDir, 'INDEX.md');
   if (force || !fs.existsSync(indexDest)) {
     const indexContent = generateIndexMd(projectRoot, claudeDir);
     fs.writeFileSync(indexDest, indexContent, 'utf8');
-    console.log(`  ${force ? 'Reset  ' : 'Created'}  .claude/INDEX.md`);
+    log(`  ${force ? 'Reset  ' : 'Created'}  .claude/INDEX.md`);
   } else {
-    console.log(`  Exists   .claude/INDEX.md`);
+    log(`  Exists   .claude/INDEX.md`);
   }
 
   // 8. Merge hook registrations into settings.local.json
-  console.log('');
+  log('');
   const settingsTarget = path.join(claudeDir, 'settings.local.json');
   const settingsSrc = path.join(TEMPLATES_DIR, 'settings-hooks.json');
   mergeSettingsHooks(settingsTarget, settingsSrc);
-  console.log(`  Merged   hook registrations into .claude/settings.local.json`);
+  log(`  Merged   hook registrations into .claude/settings.local.json`);
 
   // 9. Update .gitignore
   const gitignoreUpdated = updateGitignore(projectRoot);
-  console.log(`  ${gitignoreUpdated ? 'Updated' : 'Exists '}  .gitignore (Orbital patterns)`);
+  log(`  ${gitignoreUpdated ? 'Updated' : 'Exists '}  .gitignore (Orbital patterns)`);
 
   // 10. Make hook scripts executable
   chmodScripts(hooksDest);
-  console.log(`  chmod    hook scripts set to executable`);
+  log(`  chmod    hook scripts set to executable`);
+
+  // 11. Seed global primitives from package templates
+  seedGlobalPrimitives();
+  log(`  Seeded   global primitives (~/.orbital/primitives/)`);
+
+  // 12. Build and save manifest
+  const manifest = buildInitManifest(projectRoot, claudeDir, selectedPreset);
+  saveManifest(projectRoot, manifest);
+  log(`  Created  .claude/orbital-manifest.json (${Object.keys(manifest.files).length} files tracked)`);
 
   // Summary
   const totalCreated = hooksResult.created.length + skillsResult.created.length + agentsResult.created.length;
   const totalSkipped = hooksResult.skipped.length + skillsResult.skipped.length + agentsResult.skipped.length;
-  console.log(`\nDone. ${totalCreated} files installed, ${totalSkipped} skipped (use --force to overwrite).`);
+  log(`\nDone. ${totalCreated} files installed, ${totalSkipped} skipped (use --force to overwrite).`);
 }
 
-export function runUpdate(projectRoot: string): void {
-  const claudeDir = path.join(projectRoot, '.claude');
+export interface UpdateOptions {
+  dryRun?: boolean;
+  force?: boolean;
+}
 
-  console.log(`\nOrbital Command — update`);
+export function runUpdate(projectRoot: string, options: UpdateOptions = {}): void {
+  const { dryRun = false } = options;
+  const claudeDir = path.join(projectRoot, '.claude');
+  const newVersion = getPackageVersion();
+
+  console.log(`\nOrbital Command — update${dryRun ? ' (dry run)' : ''}`);
   console.log(`Project root: ${projectRoot}\n`);
 
-  // 1. Copy hooks (overwrite) — prune stale entries first
-  const hooksSrc = path.join(TEMPLATES_DIR, 'hooks');
-  const hooksDest = path.join(claudeDir, 'hooks');
-  const hooksPruned = pruneStaleEntries(hooksSrc, hooksDest);
-  if (hooksPruned > 0) console.log(`  Pruned   ${hooksPruned} stale hook entries`);
-  const hooksResult = copyDirSync(hooksSrc, hooksDest, { overwrite: true });
-  console.log(`  Hooks    ${hooksResult.created.length} updated`);
-
-  // 2. Copy skills (overwrite) — prune stale entries first
-  const skillsSrc = path.join(TEMPLATES_DIR, 'skills');
-  const skillsDest = path.join(claudeDir, 'skills');
-  const skillsPruned = pruneStaleEntries(skillsSrc, skillsDest);
-  if (skillsPruned > 0) console.log(`  Pruned   ${skillsPruned} stale skill entries`);
-  const skillsResult = copyDirSync(skillsSrc, skillsDest, { overwrite: true });
-  console.log(`  Skills   ${skillsResult.created.length} updated`);
-
-  // 3. Copy agents (overwrite) — prune stale entries first
-  const agentsSrc = path.join(TEMPLATES_DIR, 'agents');
-  const agentsDest = path.join(claudeDir, 'agents');
-  const agentsPruned = pruneStaleEntries(agentsSrc, agentsDest);
-  if (agentsPruned > 0) console.log(`  Pruned   ${agentsPruned} stale agent entries`);
-  const agentsResult = copyDirSync(agentsSrc, agentsDest, { overwrite: true });
-  console.log(`  Agents   ${agentsResult.created.length} updated`);
-
-  // 4. Update workflow presets — prune stale entries first
-  const presetsSrc = path.join(TEMPLATES_DIR, 'presets');
-  const presetsDest = path.join(claudeDir, 'config', 'workflows');
-  if (fs.existsSync(presetsSrc) && fs.readdirSync(presetsSrc).length > 0) {
-    const presetsPruned = pruneStaleEntries(presetsSrc, presetsDest);
-    if (presetsPruned > 0) console.log(`  Pruned   ${presetsPruned} stale preset entries`);
-    const presetsResult = copyDirSync(presetsSrc, presetsDest, { overwrite: true });
-    console.log(`  Presets  ${presetsResult.created.length} updated`);
+  // 1. Load or create manifest (auto-migrate legacy installs)
+  let manifest = loadManifest(projectRoot);
+  if (!manifest) {
+    if (needsLegacyMigration(projectRoot)) {
+      console.log('  Migrating from legacy install...');
+      const result = migrateFromLegacy(projectRoot, TEMPLATES_DIR, newVersion);
+      console.log(`  Migrated ${result.synced} synced, ${result.modified} modified, ${result.userOwned} user-owned files`);
+      if (result.importedPins > 0) console.log(`  Imported ${result.importedPins} pinned files from orbital-sync.json`);
+      manifest = loadManifest(projectRoot);
+    }
+    if (!manifest) {
+      console.log('  No manifest found. Run `orbital init` first.');
+      return;
+    }
   }
 
-  // 5. Update quick/, anti-patterns/, lessons-learned, scope template
-  const quickSrc = path.join(TEMPLATES_DIR, 'quick');
-  const quickDest = path.join(claudeDir, 'quick');
-  if (fs.existsSync(quickSrc)) {
-    const quickResult = copyDirSync(quickSrc, quickDest, { overwrite: true });
-    console.log(`  Quick    ${quickResult.created.length} updated`);
+  const oldVersion = manifest.packageVersion;
+
+  // 1b. Refresh file statuses so outdated vs modified is accurate
+  refreshFileStatuses(manifest, claudeDir);
+
+  // 2. Compute update plan
+  const renameMap = loadRenameMap(TEMPLATES_DIR, oldVersion, newVersion);
+  const plan = computeUpdatePlan({
+    templatesDir: TEMPLATES_DIR,
+    claudeDir,
+    manifest,
+    newVersion,
+    renameMap,
+  });
+
+  // 3. Dry-run mode — print plan and exit
+  if (dryRun) {
+    console.log(formatPlan(plan, oldVersion, newVersion));
+    return;
   }
 
-  const antiSrc = path.join(TEMPLATES_DIR, 'anti-patterns');
-  const antiDest = path.join(claudeDir, 'anti-patterns');
-  if (fs.existsSync(antiSrc)) {
-    const antiResult = copyDirSync(antiSrc, antiDest, { overwrite: true });
-    console.log(`  Anti-pat ${antiResult.created.length} updated`);
+  if (plan.isEmpty && oldVersion === newVersion) {
+    console.log('  Everything up to date. No changes needed.');
   }
 
-  const lessonsSrc = path.join(TEMPLATES_DIR, 'lessons-learned.md');
-  const lessonsDest = path.join(claudeDir, 'lessons-learned.md');
-  if (fs.existsSync(lessonsSrc) && !fs.existsSync(lessonsDest)) {
-    fs.copyFileSync(lessonsSrc, lessonsDest);
-    console.log(`  Created  .claude/lessons-learned.md`);
+  // 4. Create backup of files that will be modified
+  const filesToBackup = getFilesToBackup(plan);
+  if (filesToBackup.length > 0) {
+    const backupDir = createBackup(claudeDir, filesToBackup);
+    if (backupDir) {
+      console.log(`  Backup   ${filesToBackup.length} files → ${path.relative(claudeDir, backupDir)}/`);
+    }
   }
 
+  // 5. Execute plan
+  const templateInventory = buildTemplateInventory(TEMPLATES_DIR);
+
+  // 5a. Handle renames
+  for (const { from, to } of plan.toRename) {
+    const fromPath = path.join(claudeDir, from);
+    const toPath = path.join(claudeDir, to);
+    const toDir = path.dirname(toPath);
+    if (!fs.existsSync(toDir)) fs.mkdirSync(toDir, { recursive: true });
+
+    if (fs.existsSync(fromPath)) {
+      safeBackupFile(fromPath);
+      const stat = fs.lstatSync(fromPath);
+      if (stat.isSymbolicLink()) {
+        // Recreate symlink at new path pointing to remapped template
+        const target = fs.readlinkSync(fromPath);
+        fs.unlinkSync(fromPath);
+        fs.symlinkSync(target, toPath);
+      } else {
+        fs.renameSync(fromPath, toPath);
+      }
+    }
+
+    // Transfer manifest record
+    const record = manifest.files[from];
+    if (record) {
+      delete manifest.files[from];
+      const newHash = templateInventory.get(to);
+      manifest.files[to] = { ...record, templateHash: newHash, installedHash: newHash || record.installedHash };
+    }
+    console.log(`  RENAME  ${from} → ${to}`);
+  }
+
+  // 5b. Add new files
+  for (const filePath of plan.toAdd) {
+    const templateHash = templateInventory.get(filePath);
+    if (!templateHash) continue;
+
+    const destPath = path.join(claudeDir, filePath);
+    const destDir = path.dirname(destPath);
+    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+
+    copyTemplateFile(TEMPLATES_DIR, filePath, destPath);
+    manifest.files[filePath] = templateFileRecord(templateHash);
+    console.log(`  ADD     ${filePath}`);
+  }
+
+  // 5c. Update changed synced/outdated files
+  for (const filePath of plan.toUpdate) {
+    const templateHash = templateInventory.get(filePath);
+    if (!templateHash) continue;
+
+    const destPath = path.join(claudeDir, filePath);
+    safeBackupFile(destPath);
+    copyTemplateFile(TEMPLATES_DIR, filePath, destPath);
+    manifest.files[filePath] = templateFileRecord(templateHash);
+    console.log(`  UPDATE  ${filePath}`);
+  }
+
+  // 5d. Remove deleted files
+  for (const filePath of plan.toRemove) {
+    const absPath = path.join(claudeDir, filePath);
+    if (fs.existsSync(absPath)) {
+      safeBackupFile(absPath);
+      fs.unlinkSync(absPath);
+    }
+    delete manifest.files[filePath];
+    console.log(`  REMOVE  ${filePath}`);
+  }
+
+  // 5e. Update pinned/modified file records (record new template hash without touching file)
+  for (const { file, reason, newTemplateHash } of plan.toSkip) {
+    if (manifest.files[file]) {
+      manifest.files[file].templateHash = newTemplateHash;
+    }
+    if (reason === 'modified') {
+      console.log(`  SKIP    ${file} (user modified)`);
+    } else {
+      console.log(`  SKIP    ${file} (pinned)`);
+    }
+  }
+
+  // 5f. Clean up empty directories
+  for (const dir of ['hooks', 'skills', 'agents', 'config/workflows']) {
+    const dirPath = path.join(claudeDir, dir);
+    if (fs.existsSync(dirPath)) cleanEmptyDirs(dirPath);
+  }
+
+  // 6. Bidirectional settings hook sync
+  const settingsTarget = path.join(claudeDir, 'settings.local.json');
+  const settingsSrc = path.join(TEMPLATES_DIR, 'settings-hooks.json');
+  const syncResult = syncSettingsHooks(settingsTarget, settingsSrc, manifest.settingsHooksChecksum, renameMap);
+  if (!syncResult.skipped) {
+    console.log(`  Settings +${syncResult.added} -${syncResult.removed} hooks (${syncResult.updated} renamed)`);
+    manifest.settingsHooksChecksum = getTemplateChecksum(settingsSrc);
+  }
+
+  // 7. Config migrations
+  const configPath = path.join(claudeDir, 'orbital.config.json');
+  const migrationResult = migrateConfig(configPath, manifest.appliedMigrations);
+  if (migrationResult.applied.length > 0) {
+    manifest.appliedMigrations.push(...migrationResult.applied);
+    console.log(`  Config   ${migrationResult.applied.length} migration(s) applied`);
+  }
+  if (migrationResult.defaultsFilled.length > 0) {
+    console.log(`  Config   ${migrationResult.defaultsFilled.length} default(s) filled`);
+  }
+
+  // 8. Regenerate derived artifacts (always)
+  const workflowManifestOk = writeManifest(claudeDir);
+  console.log(`  ${workflowManifestOk ? 'Updated' : 'Skipped'}  .claude/config/workflow-manifest.sh`);
+
+  const indexContent = generateIndexMd(projectRoot, claudeDir);
+  fs.writeFileSync(path.join(claudeDir, 'INDEX.md'), indexContent, 'utf8');
+  console.log(`  Updated  .claude/INDEX.md`);
+
+  // 9. Update agent-triggers.json (template-managed)
+  const triggersSrc = path.join(TEMPLATES_DIR, 'config', 'agent-triggers.json');
+  const triggersDest = path.join(claudeDir, 'config', 'agent-triggers.json');
+  if (fs.existsSync(triggersSrc)) {
+    fs.copyFileSync(triggersSrc, triggersDest);
+    console.log(`  Updated  .claude/config/agent-triggers.json`);
+  }
+
+  // 10. Update scope template
   const scopeTemplateSrc = path.join(TEMPLATES_DIR, 'scopes', '_template.md');
   const scopeTemplateDest = path.join(projectRoot, 'scopes', '_template.md');
   if (fs.existsSync(scopeTemplateSrc)) {
     ensureDir(path.join(projectRoot, 'scopes'));
     fs.copyFileSync(scopeTemplateSrc, scopeTemplateDest);
-    console.log(`  Updated  scopes/_template.md`);
   }
 
-  // 5b. Regenerate workflow manifest
-  const manifestOk = writeManifest(claudeDir);
-  console.log(`  ${manifestOk ? 'Updated' : 'Skipped'}  .claude/config/workflow-manifest.sh`);
+  // 11. Make hook scripts executable
+  chmodScripts(path.join(claudeDir, 'hooks'));
 
-  // 6. Re-merge settings hooks
-  const settingsTarget = path.join(claudeDir, 'settings.local.json');
-  const settingsSrc = path.join(TEMPLATES_DIR, 'settings-hooks.json');
-  mergeSettingsHooks(settingsTarget, settingsSrc);
-  console.log(`  Merged   hook registrations into .claude/settings.local.json`);
+  // 12. Refresh global primitives
+  seedGlobalPrimitives();
 
-  // 7. Make hook scripts executable
-  chmodScripts(hooksDest);
-  console.log(`  chmod    hook scripts set to executable`);
+  // 13. Update manifest metadata
+  manifest.previousPackageVersion = oldVersion;
+  manifest.packageVersion = newVersion;
+  manifest.updatedAt = new Date().toISOString();
+  saveManifest(projectRoot, manifest);
 
-  console.log(`\nUpdate complete.\n`);
+  // 14. Validate
+  const report = validate(projectRoot, newVersion);
+  if (report.errors > 0) {
+    console.log(`\n  Validation: ${report.errors} errors found`);
+    console.log(formatValidationReport(report));
+  }
+
+  const totalChanges = plan.toAdd.length + plan.toUpdate.length + plan.toRemove.length + plan.toRename.length;
+  console.log(`\nUpdate complete. ${totalChanges} file changes, ${plan.toSkip.length} skipped.\n`);
 }
 
-export function runUninstall(projectRoot: string): void {
+export interface UninstallOptions {
+  dryRun?: boolean;
+  keepConfig?: boolean;
+}
+
+export function runUninstall(projectRoot: string, options: UninstallOptions = {}): void {
+  const { dryRun = false, keepConfig = false } = options;
   const claudeDir = path.join(projectRoot, '.claude');
 
-  console.log(`\nOrbital Command — uninstall`);
+  console.log(`\nOrbital Command — uninstall${dryRun ? ' (dry run)' : ''}`);
   console.log(`Project root: ${projectRoot}\n`);
 
-  let removedCount = 0;
+  const manifest = loadManifest(projectRoot);
 
-  // 1. Remove orbital hooks from settings.local.json
+  // Fall back to legacy uninstall if no manifest
+  if (!manifest) {
+    console.log('  No manifest found — falling back to legacy uninstall.');
+    runLegacyUninstall(projectRoot);
+    return;
+  }
+
+  // Compute what to remove vs preserve
+  const toRemove: string[] = [];
+  const toPreserve: string[] = [];
+
+  for (const [filePath, record] of Object.entries(manifest.files)) {
+    if (record.origin === 'user') {
+      toPreserve.push(filePath);
+    } else if (record.status === 'modified' || record.status === 'outdated') {
+      toPreserve.push(filePath);
+    } else {
+      toRemove.push(filePath);
+    }
+  }
+
+  if (dryRun) {
+    console.log('  Files to REMOVE:');
+    for (const f of toRemove) console.log(`    ${f}`);
+    if (toPreserve.length > 0) {
+      console.log('  Files to PRESERVE:');
+      for (const f of toPreserve) console.log(`    ${f} (${manifest.files[f].origin}/${manifest.files[f].status})`);
+    }
+    console.log(`\n  Would also remove: settings hooks, generated artifacts, config files, gitignore entries`);
+    console.log(`  No changes made. Run without --dry-run to apply.`);
+    return;
+  }
+
+  // 1. Remove _orbital hooks from settings.local.json
   const settingsPath = path.join(claudeDir, 'settings.local.json');
-  if (fs.existsSync(settingsPath)) {
-    try {
-      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-      if (settings.hooks) {
-        for (const [event] of Object.entries(settings.hooks)) {
-          for (const group of settings.hooks[event]) {
-            if (group.hooks) {
-              const before = group.hooks.length;
-              group.hooks = group.hooks.filter((h: HookEntry) => !h._orbital);
-              removedCount += before - group.hooks.length;
-            }
-          }
-          settings.hooks[event] = settings.hooks[event].filter(
-            (g: HookGroup) => g.hooks && g.hooks.length > 0
-          );
-          if (settings.hooks[event].length === 0) {
-            delete settings.hooks[event];
-          }
-        }
-        if (Object.keys(settings.hooks).length === 0) {
-          delete settings.hooks;
-        }
-        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf8');
-        console.log(`  Removed  ${removedCount} orbital hook registrations from settings.local.json`);
-      }
-    } catch {
-      console.warn('  Warning: could not parse settings.local.json');
+  const removedHooks = removeAllOrbitalHooks(settingsPath);
+  console.log(`  Removed  ${removedHooks} orbital hook registrations`);
+
+  // 2. Delete template files (synced + pinned, not modified or user-owned)
+  let filesRemoved = 0;
+  for (const filePath of toRemove) {
+    const absPath = path.join(claudeDir, filePath);
+    if (fs.existsSync(absPath)) {
+      fs.unlinkSync(absPath);
+      filesRemoved++;
+    }
+  }
+  console.log(`  Removed  ${filesRemoved} template files`);
+  if (toPreserve.length > 0) {
+    console.log(`  Preserved ${toPreserve.length} user/modified files`);
+  }
+
+  // 3. Clean up empty directories
+  for (const dir of ['hooks', 'skills', 'agents', 'config/workflows', 'quick', 'anti-patterns']) {
+    const dirPath = path.join(claudeDir, dir);
+    if (fs.existsSync(dirPath)) cleanEmptyDirs(dirPath);
+  }
+
+  // 4. Remove generated artifacts
+  for (const artifact of manifest.generatedArtifacts) {
+    const artifactPath = path.join(claudeDir, artifact);
+    if (fs.existsSync(artifactPath)) {
+      fs.unlinkSync(artifactPath);
+      console.log(`  Removed  .claude/${artifact}`);
     }
   }
 
-  // 2. Delete hooks that came from templates
-  const hookFiles = listTemplateFiles(path.join(TEMPLATES_DIR, 'hooks'), path.join(claudeDir, 'hooks'));
-  let hooksRemoved = 0;
-  for (const f of hookFiles) {
-    if (fs.existsSync(f)) {
-      fs.unlinkSync(f);
-      hooksRemoved++;
+  // 5. Remove template-sourced config files
+  const configFiles = [
+    'config/agent-triggers.json',
+    'config/workflow.json',
+    'lessons-learned.md',
+  ];
+  for (const file of configFiles) {
+    const filePath = path.join(claudeDir, file);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log(`  Removed  .claude/${file}`);
     }
   }
-  console.log(`  Removed  ${hooksRemoved} hook scripts`);
 
-  // 3. Delete skills that came from templates
-  const skillFiles = listTemplateFiles(path.join(TEMPLATES_DIR, 'skills'), path.join(claudeDir, 'skills'));
-  let skillsRemoved = 0;
-  for (const f of skillFiles) {
-    if (fs.existsSync(f)) {
-      fs.unlinkSync(f);
-      skillsRemoved++;
-    }
+  // Remove config/workflows/ directory entirely
+  const workflowsDir = path.join(claudeDir, 'config', 'workflows');
+  if (fs.existsSync(workflowsDir)) {
+    fs.rmSync(workflowsDir, { recursive: true, force: true });
+    console.log(`  Removed  .claude/config/workflows/`);
   }
-  const skillsDest = path.join(claudeDir, 'skills');
-  if (fs.existsSync(skillsDest)) cleanEmptyDirs(skillsDest);
-  console.log(`  Removed  ${skillsRemoved} skill files`);
 
-  // 4. Delete agents that came from templates
-  const agentFiles = listTemplateFiles(path.join(TEMPLATES_DIR, 'agents'), path.join(claudeDir, 'agents'));
-  let agentsRemoved = 0;
-  for (const f of agentFiles) {
-    if (fs.existsSync(f)) {
-      fs.unlinkSync(f);
-      agentsRemoved++;
-    }
+  // 6. Remove gitignore entries
+  removeGitignoreEntries(projectRoot, manifest.gitignoreEntries);
+  console.log(`  Cleaned  .gitignore`);
+
+  // 7. Deregister from global registry
+  if (unregisterProject(projectRoot)) {
+    console.log(`  Removed  project from ~/.orbital/config.json`);
   }
-  const agentsDest = path.join(claudeDir, 'agents');
-  if (fs.existsSync(agentsDest)) cleanEmptyDirs(agentsDest);
-  console.log(`  Removed  ${agentsRemoved} agent files`);
 
-  const total = removedCount + hooksRemoved + skillsRemoved + agentsRemoved;
+  // 8. Remove orbital config and manifest (unless --keep-config)
+  if (!keepConfig) {
+    const toClean = ['orbital.config.json', 'orbital-manifest.json', 'orbital-sync.json'];
+    for (const file of toClean) {
+      const filePath = path.join(claudeDir, file);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+
+    // Remove backups directory
+    const backupsDir = path.join(claudeDir, '.orbital-backups');
+    if (fs.existsSync(backupsDir)) fs.rmSync(backupsDir, { recursive: true, force: true });
+
+    console.log(`  Removed  orbital config and manifest`);
+  } else {
+    // Still remove the manifest — it's invalid after uninstall
+    const manifestPath = path.join(claudeDir, 'orbital-manifest.json');
+    if (fs.existsSync(manifestPath)) fs.unlinkSync(manifestPath);
+    console.log(`  Kept     orbital.config.json (--keep-config)`);
+  }
+
+  // Clean up remaining empty directories
+  for (const dir of ['config', 'quick', 'anti-patterns', 'review-verdicts']) {
+    const dirPath = path.join(claudeDir, dir);
+    if (fs.existsSync(dirPath)) cleanEmptyDirs(dirPath);
+  }
+
+  const total = removedHooks + filesRemoved;
   console.log(`\nUninstall complete. ${total} items removed.`);
+  if (toPreserve.length > 0) {
+    console.log(`Note: ${toPreserve.length} user/modified files were preserved.`);
+  }
   console.log(`Note: scopes/ and .claude/orbital-events/ were preserved.\n`);
+}
+
+/** Legacy uninstall for projects without a manifest (backward compat). */
+function runLegacyUninstall(projectRoot: string): void {
+  const claudeDir = path.join(projectRoot, '.claude');
+
+  // Remove orbital hooks from settings.local.json
+  const settingsPath = path.join(claudeDir, 'settings.local.json');
+  const removedHooks = removeAllOrbitalHooks(settingsPath);
+  console.log(`  Removed  ${removedHooks} orbital hook registrations`);
+
+  // Delete hooks/skills/agents that match template files
+  for (const dir of ['hooks', 'skills', 'agents']) {
+    const templateFiles = listTemplateFiles(path.join(TEMPLATES_DIR, dir), path.join(claudeDir, dir));
+    let removed = 0;
+    for (const f of templateFiles) {
+      if (fs.existsSync(f)) { fs.unlinkSync(f); removed++; }
+    }
+    const dirPath = path.join(claudeDir, dir);
+    if (fs.existsSync(dirPath)) cleanEmptyDirs(dirPath);
+    console.log(`  Removed  ${removed} ${dir} files`);
+  }
+
+  console.log(`\nLegacy uninstall complete.`);
+  console.log(`Note: scopes/ and .claude/orbital-events/ were preserved.\n`);
+}
+
+/** Remove Orbital-added entries from .gitignore. */
+function removeGitignoreEntries(projectRoot: string, entries: string[]): void {
+  const gitignorePath = path.join(projectRoot, '.gitignore');
+  if (!fs.existsSync(gitignorePath)) return;
+
+  let content = fs.readFileSync(gitignorePath, 'utf-8');
+  const marker = '# Orbital Command';
+
+  // Try to remove the entire block
+  const markerIdx = content.indexOf(marker);
+  if (markerIdx !== -1) {
+    // Find the block boundaries: from the marker to the next non-empty/non-orbital line
+    const before = content.slice(0, markerIdx).replace(/\n+$/, '');
+    const after = content.slice(markerIdx);
+    const lines = after.split('\n');
+    let endIdx = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (i === 0) { endIdx = i + 1; continue; } // skip the marker line
+      if (line === '' || entries.includes(line)) { endIdx = i + 1; continue; }
+      break;
+    }
+    const remaining = lines.slice(endIdx).join('\n');
+    content = before + (remaining ? '\n' + remaining : '') + '\n';
+    fs.writeFileSync(gitignorePath, content, 'utf-8');
+  }
+}
+
+/** Copy a single template file to a destination, resolving the template path. */
+function copyTemplateFile(templatesDir: string, claudeRelPath: string, destPath: string): void {
+  const templateRelPath = reverseRemapPath(claudeRelPath);
+  const srcPath = path.join(templatesDir, templateRelPath);
+  if (!fs.existsSync(srcPath)) {
+    throw new Error(`Template file not found: ${templateRelPath}`);
+  }
+  const destDir = path.dirname(destPath);
+  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+  safeCopyTemplate(srcPath, destPath);
 }

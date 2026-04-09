@@ -1,6 +1,7 @@
+import { useEffect, useRef, useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { Lightbulb, Sparkles, AlertTriangle, Undo2, X } from 'lucide-react';
+import { Lightbulb, Sparkles, Star, AlertTriangle, Undo2, X } from 'lucide-react';
 import type { Scope, CardDisplayConfig, Project } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
@@ -8,6 +9,7 @@ import { cn, formatScopeId } from '@/lib/utils';
 import { scopeKey } from '@/lib/scope-key';
 import { useActiveDispatches } from '@/hooks/useActiveDispatches';
 import { useWorkflow } from '@/hooks/useWorkflow';
+import { useProjectUrl } from '@/hooks/useProjectUrl';
 
 interface ScopeCardProps {
   scope: Scope;
@@ -125,6 +127,7 @@ export function ScopeCard({ scope, onClick, isDragOverlay, cardDisplay, dimmed, 
 
   const { engine } = useWorkflow();
   const { activeScopes, abandonedScopes, recoverScope, dismissAbandoned } = useActiveDispatches();
+  const buildUrl = useProjectUrl();
   const entryPointId = engine.getEntryPoint().id;
   const isIdea = scope.status === entryPointId;
   const isGhost = isIdea && !!scope.is_ghost;
@@ -133,15 +136,50 @@ export function ScopeCard({ scope, onClick, isDragOverlay, cardDisplay, dimmed, 
   const abandonedInfo = !isIdea ? abandonedScopes.get(key) : undefined;
   const isAbandoned = !!abandonedInfo && !isDispatched;
 
+  // JS-driven dispatch border animation — real DOM element instead of ::before
+  // because browsers don't repaint pseudo-elements when inherited custom props change,
+  // and Arc doesn't support @property for CSS-only animation.
+  const borderRef = useRef<HTMLDivElement | null>(null);
+
+  const [isNeon, setIsNeon] = useState(
+    () => document.documentElement.getAttribute('data-theme') === 'neon-glass'
+  );
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsNeon(document.documentElement.getAttribute('data-theme') === 'neon-glass');
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!isDispatched || !borderRef.current) return;
+    let angle = 0;
+    let raf: number;
+    const el = borderRef.current;
+    const gradient = isNeon
+      ? (a: number) => `conic-gradient(from ${a}deg, transparent 0%, rgba(var(--neon-pink), 0.9) 8%, rgba(var(--neon-pink), 0.5) 16%, rgba(var(--neon-cyan), 0.15) 24%, transparent 32%)`
+      : (a: number) => `conic-gradient(from ${a}deg, transparent 0%, rgba(233,30,99,0.7) 10%, rgba(233,30,99,0.3) 20%, transparent 30%)`;
+    const tick = () => {
+      angle = (angle + 1.5) % 360;
+      el.style.background = gradient(angle);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isDispatched, isNeon]);
+
   return (
     <Card
       ref={setNodeRef}
+      data-tour="scope-card"
       style={{
         ...style,
-        ...(!isGhost && !isIdea && project && cardDisplay?.project !== false ? { borderLeftWidth: '2px', borderLeftColor: `hsl(${project.color})` } : {}),
+        ...(!isGhost && !isIdea && project && cardDisplay?.project !== false ? { '--project-color': `hsl(${project.color})` } as React.CSSProperties : {}),
       }}
       className={cn(
-        'scope-card cursor-grab transition-[colors,opacity] duration-200 hover:bg-surface-light active:cursor-grabbing',
+        'scope-card group/scope-card cursor-grab transition-[colors,opacity] duration-200 hover:bg-surface-light active:cursor-grabbing',
         isGhost
           ? 'scope-card-ghost ghost-shimmer opacity-70'
           : isIdea
@@ -158,6 +196,12 @@ export function ScopeCard({ scope, onClick, isDragOverlay, cardDisplay, dimmed, 
       {...attributes}
       {...listeners}
     >
+      {isDispatched && (
+        <div
+          ref={borderRef}
+          className="dispatch-border-overlay"
+        />
+      )}
       <CardContent className="px-2.5 py-1.5">
         {/* Header: ID/idea label + badges */}
         <div className="mb-1.5 flex items-center gap-1.5">
@@ -176,6 +220,25 @@ export function ScopeCard({ scope, onClick, isDragOverlay, cardDisplay, dimmed, 
               {isDispatched && <span className="h-1.5 w-1.5 rounded-full bg-pink-500 dispatch-pulse" />}
               {isAbandoned && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
               {formatScopeId(scope.id)}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fetch(buildUrl(`/scopes/${scope.id}`), {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ favourite: !scope.favourite }),
+                  });
+                }}
+                className={cn(
+                  'inline-flex items-center justify-center h-3.5 w-3.5 transition-all duration-150',
+                  scope.favourite
+                    ? 'text-primary opacity-100'
+                    : 'text-muted-foreground/40 opacity-0 group-hover/scope-card:opacity-100 hover:text-primary/70'
+                )}
+                aria-label={scope.favourite ? 'Remove from favourites' : 'Add to favourites'}
+              >
+                <Star className={cn('h-3 w-3', scope.favourite && 'fill-current')} />
+              </button>
             </span>
           )}
           {!isIdea && (

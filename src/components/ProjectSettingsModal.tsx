@@ -140,7 +140,7 @@ function ProjectRow({
     if (!editingName) {
       setNameValue(project.name);
     }
-  }, [project.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [project.name, editingName]);
 
   const isDirty = nameValue.trim() !== '' && nameValue.trim() !== project.name;
 

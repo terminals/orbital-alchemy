@@ -106,7 +106,7 @@ export class BatchOrchestrator {
     } catch (err) {
       this.sprintService.updateStatus(batchId, 'failed');
       resolveDispatchEvent(this.db, this.io, eventId, 'failed', String(err));
-      return { ok: false, error: `Failed to launch terminal: ${err}` };
+      return { ok: false, error: `Failed to launch terminal: ${err instanceof Error ? err.message : String(err)}` };
     }
   }
 
@@ -210,16 +210,24 @@ export class BatchOrchestrator {
       let pidDead = false;
 
       if (dispatchEvent) {
-        const data = JSON.parse(dispatchEvent.data) as Record<string, unknown>;
-        // If the dispatch event is already resolved, the session is definitely done
-        if (data.resolved != null) {
+        let data: Record<string, unknown>;
+        try {
+          data = JSON.parse(dispatchEvent.data) as Record<string, unknown>;
+        } catch {
           pidDead = true;
-        } else if (typeof data.pid === 'number') {
-          pidDead = !isSessionPidAlive(data.pid);
-        } else {
-          // No PID recorded — check if batch is old enough to consider stale
-          const dispatchedAt = batch.dispatched_at ? new Date(batch.dispatched_at).getTime() : 0;
-          pidDead = Date.now() - dispatchedAt > STALE_THRESHOLD_MS;
+          // Fall through to resolution below
+        }
+        if (!pidDead) {
+          // If the dispatch event is already resolved, the session is definitely done
+          if (data!.resolved != null) {
+            pidDead = true;
+          } else if (typeof data!.pid === 'number') {
+            pidDead = !isSessionPidAlive(data!.pid);
+          } else {
+            // No PID recorded — check if batch is old enough to consider stale
+            const dispatchedAt = batch.dispatched_at ? new Date(batch.dispatched_at).getTime() : 0;
+            pidDead = Date.now() - dispatchedAt > STALE_THRESHOLD_MS;
+          }
         }
       } else {
         // No dispatch event at all — check age

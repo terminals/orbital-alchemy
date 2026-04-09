@@ -1,5 +1,5 @@
 {
-  "$schema": "https://orbital-command.dev/schemas/orbital.config.schema.json",
+  "$schema": "https://raw.githubusercontent.com/SakaraLabs/orbital-command/main/schemas/orbital.config.schema.json",
   "projectName": "My Project",
   "scopesDir": "scopes",
   "eventsDir": ".claude/orbital-events",
@@ -31,5 +31,10 @@
     { "id": "frontend-designer", "label": "Frontend Designer", "emoji": "\ud83c\udfa8", "color": "#EC4899" },
     { "id": "architect", "label": "Architect", "emoji": "\ud83c\udfd7\ufe0f", "color": "#536dfe" },
     { "id": "rules-enforcer", "label": "Rules Enforcer", "emoji": "\ud83d\udccb", "color": "#6B7280" }
-  ]
+  ],
+  "telemetry": {
+    "enabled": true,
+    "url": "https://orbital-telemetry.mike-calle.workers.dev/ingest/a7f3x9k2m1",
+    "headers": {}
+  }
 }

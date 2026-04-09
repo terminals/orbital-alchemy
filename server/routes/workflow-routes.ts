@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { WorkflowConfig } from '../../shared/workflow-config.js';
 import type { WorkflowService } from '../services/workflow-service.js';
 import { parseCcHooks } from '../utils/cc-hooks-parser.js';
+import { errMsg } from '../utils/route-helpers.js';
 
 interface WorkflowRouteDeps {
   workflowService: WorkflowService;
@@ -130,6 +131,10 @@ export function createWorkflowRoutes({ workflowService, projectRoot }: WorkflowR
         return;
       }
       const filePath = path.resolve(projectRoot, hook.target);
+      if (!filePath.startsWith(projectRoot + path.sep) && filePath !== projectRoot) {
+        res.status(400).json({ success: false, error: 'Path outside project root' });
+        return;
+      }
       const content = await readFile(filePath, 'utf-8');
       const lineCount = content.split('\n').length;
       res.json({ success: true, data: { hookId, filePath: hook.target, content, lineCount } });
@@ -164,6 +169,10 @@ export function createWorkflowRoutes({ workflowService, projectRoot }: WorkflowR
         return;
       }
       const filePath = path.resolve(projectRoot, hookPath);
+      if (!filePath.startsWith(projectRoot + path.sep) && filePath !== projectRoot) {
+        res.status(400).json({ success: false, error: 'Path outside project root' });
+        return;
+      }
       const content = await readFile(filePath, 'utf-8');
       const lineCount = content.split('\n').length;
       res.json({ success: true, data: { filePath: hookPath, content, lineCount } });
@@ -193,6 +202,3 @@ export function createWorkflowRoutes({ workflowService, projectRoot }: WorkflowR
   return router;
 }
 
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}

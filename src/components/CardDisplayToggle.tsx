@@ -26,7 +26,7 @@ export function CardDisplayToggle({ display, onToggle, hiddenCount }: CardDispla
           variant="outline"
           size="sm"
           className="gap-1.5 backdrop-blur-sm bg-white/[0.03] border-white/10"
-          aria-label="Toggle card display fields"
+          aria-label="Toggle card display"
         >
           <SlidersHorizontal className="h-3 w-3" />
           Cards

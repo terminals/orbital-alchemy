@@ -22,6 +22,7 @@ export interface ParsedScope {
   raw_content: string;
   sessions: Record<string, string[]>;
   is_ghost: boolean;
+  favourite: boolean;
 }
 
 const VALID_PRIORITIES = new Set(['critical', 'high', 'medium', 'low']);
@@ -85,46 +86,58 @@ function slugHash(s: string): number {
  * Handles both YAML frontmatter and plain markdown formats.
  */
 export function parseScopeFile(filePath: string): ParsedScope | null {
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const fileName = path.basename(filePath, '.md');
-  const dirName = path.basename(path.dirname(filePath));
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const fileName = path.basename(filePath, '.md');
+    const dirName = path.basename(path.dirname(filePath));
 
-  // Extract ID from filename pattern: NNN[suffix]-description.md
-  // Suffixes (a-d, X) encode as thousands offset for unique DB keys
-  const idMatch = fileName.match(/^(\d+)([a-dA-DxX])?/);
-  const fileId = idMatch ? scopeFileId(parseInt(idMatch[1], 10), idMatch[2]) : 0;
+    // Extract ID from filename pattern: NNN[suffix]-description.md
+    // Suffixes (a-d, X) encode as thousands offset for unique DB keys
+    const idMatch = fileName.match(/^(\d+)([a-dA-DxX])?/);
+    const fileId = idMatch ? scopeFileId(parseInt(idMatch[1], 10), idMatch[2]) : 0;
 
-  // Slug-only icebox files: no numeric prefix, e.g. "onboarding-flow.md"
-  const isSlugOnly = !idMatch && dirName === 'icebox';
+    // Slug-only icebox files: no numeric prefix, e.g. "onboarding-flow.md"
+    const isSlugOnly = !idMatch && dirName === 'icebox';
 
-  // Skip non-scope files (but allow slug-only icebox files)
-  if (fileId === 0 && !fileName.startsWith('0') && !isSlugOnly) {
-    // Files like _template.md, technical-debt.md, backlog_plan.md
-    if (fileName.startsWith('_') || !idMatch) return null;
-  }
-
-  // For slug-only icebox files, generate a stable negative ID for internal cache indexing.
-  // This avoids collisions with real scope IDs (positive) and between icebox items.
-  const effectiveId = isSlugOnly ? -slugHash(fileName) : fileId;
-
-  // Try YAML frontmatter first
-  const { data: frontmatter, content: markdownBody } = matter(content);
-
-  if (frontmatter && Object.keys(frontmatter).length > 0) {
-    const scope = parseFrontmatterScope(frontmatter, markdownBody, filePath, effectiveId, dirName);
-    // Populate slug for icebox items
-    if (isSlugOnly || dirName === 'icebox') {
-      scope.slug = isSlugOnly ? fileName : fileName.replace(/^\d+[a-dA-DxX]?-/, '');
+    // Skip non-scope files (but allow slug-only icebox files)
+    if (fileId === 0 && !fileName.startsWith('0') && !isSlugOnly) {
+      // Files like _template.md, technical-debt.md, backlog_plan.md
+      if (fileName.startsWith('_') || !idMatch) return null;
     }
-    return scope;
-  }
 
-  // Fallback: extract from markdown structure
-  const fallbackScope = parseMarkdownScope(content, filePath, effectiveId, dirName);
-  if (isSlugOnly || dirName === 'icebox') {
-    fallbackScope.slug = isSlugOnly ? fileName : fileName.replace(/^\d+[a-dA-DxX]?-/, '');
+    // For slug-only icebox files, generate a stable negative ID for internal cache indexing.
+    // This avoids collisions with real scope IDs (positive) and between icebox items.
+    const effectiveId = isSlugOnly ? -slugHash(fileName) : fileId;
+
+    // Try YAML frontmatter first
+    let frontmatter: Record<string, unknown>;
+    let markdownBody: string;
+    try {
+      ({ data: frontmatter, content: markdownBody } = matter(content));
+    } catch (err) {
+      log.warn('Skipping scope with malformed YAML frontmatter', { file: filePath, error: (err as Error).message });
+      return null;
+    }
+
+    if (frontmatter && Object.keys(frontmatter).length > 0) {
+      const scope = parseFrontmatterScope(frontmatter, markdownBody, filePath, effectiveId, dirName);
+      // Populate slug for icebox items
+      if (isSlugOnly || dirName === 'icebox') {
+        scope.slug = isSlugOnly ? fileName : fileName.replace(/^\d+[a-dA-DxX]?-/, '');
+      }
+      return scope;
+    }
+
+    // Fallback: extract from markdown structure
+    const fallbackScope = parseMarkdownScope(content, filePath, effectiveId, dirName);
+    if (isSlugOnly || dirName === 'icebox') {
+      fallbackScope.slug = isSlugOnly ? fileName : fileName.replace(/^\d+[a-dA-DxX]?-/, '');
+    }
+    return fallbackScope;
+  } catch (err) {
+    log.warn('Failed to parse scope file', { file: filePath, error: (err as Error).message });
+    return null;
   }
-  return fallbackScope;
 }
 
 function parseFrontmatterScope(
@@ -155,6 +168,7 @@ function parseFrontmatterScope(
     raw_content: body.trim(),
     sessions: parseSessions(fm.sessions),
     is_ghost: fm.ghost === true,
+    favourite: fm.favourite === true,
   };
 }
 
@@ -200,6 +214,7 @@ function parseMarkdownScope(
     raw_content: content,
     sessions: {},
     is_ghost: false,
+    favourite: false,
   };
 }
 
@@ -242,26 +257,32 @@ export function parseAllScopes(scopesDir: string): ParsedScope[] {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        scanDir(fullPath);
-      } else if (entry.name.endsWith('.md') && !entry.name.startsWith('_')) {
-        const parsed = parseScopeFile(fullPath);
-        if (parsed) scopes.push(parsed);
+      try {
+        if (entry.isDirectory()) {
+          scanDir(fullPath);
+        } else if (entry.name.endsWith('.md') && !entry.name.startsWith('_')) {
+          const parsed = parseScopeFile(fullPath);
+          if (parsed) scopes.push(parsed);
+        }
+      } catch (err) {
+        log.warn('Failed to process scope entry', { file: fullPath, error: (err as Error).message });
       }
     }
   }
 
   scanDir(scopesDir);
 
-  // Detect ID collisions — last-write-wins but warn on stderr
+  // Detect ID collisions — first-seen wins, duplicates are dropped
   const seen = new Map<number, string>();
-  for (const scope of scopes) {
+  const deduped = scopes.filter(scope => {
     const existing = seen.get(scope.id);
     if (existing) {
       log.error('Scope ID collision — renumber one of them', { id: scope.id, existing, duplicate: scope.file_path });
+      return false;
     }
     seen.set(scope.id, scope.file_path);
-  }
+    return true;
+  });
 
-  return scopes.sort((a, b) => a.id - b.id);
+  return deduped.sort((a, b) => a.id - b.id);
 }

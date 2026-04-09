@@ -3,6 +3,7 @@ import type { Emitter } from '../project-emitter.js';
 import { ConfigService, isValidPrimitiveType } from '../services/config-service.js';
 import type { ConfigPrimitiveType } from '../services/config-service.js';
 import type { WorkflowService } from '../services/workflow-service.js';
+import { errMsg } from '../utils/route-helpers.js';
 
 interface ConfigRouteDeps {
   projectRoot: string;
@@ -177,6 +178,3 @@ export function createConfigRoutes({ projectRoot, workflowService: _workflowServ
   return router;
 }
 
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}

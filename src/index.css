@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Spinner — defined outside @layer so it always wins the cascade regardless of
+   how/when Tailwind's utility layer loads.  Fixes Arc and other Chromium forks
+   where the @layer utilities injection order can differ from stock Chrome. */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
 @layer base {
   :root {
     --background: 240 25% 3.5%;
@@ -294,6 +304,39 @@
 [data-theme="neon-glass"] .scope-card-medium:hover {
   box-shadow: -4px 4px 18px -4px rgba(var(--neon-blue), 0.25);
 }
+/* ─── SECTION MARKDOWN (compact variant for scope detail sections) ─── */
+.section-markdown.section-markdown {
+  font-size: 11px;
+  line-height: 1.6;
+}
+.section-markdown h1 { font-size: 13px; }
+.section-markdown h2 { font-size: 12px; }
+.section-markdown h3 { font-size: 11px; }
+.section-markdown h4 { font-size: 11px; }
+.section-markdown table { font-size: 11px; }
+
+/* Project color bar — straight vertical line clipped at card edges */
+.scope-card[style*="--project-color"] {
+  position: relative;
+  overflow: hidden;
+}
+/* Dispatched cards need overflow:visible for the ::before stroke border */
+.scope-card-dispatched[style*="--project-color"] {
+  overflow: visible;
+}
+.scope-card[style*="--project-color"]::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--project-color);
+}
+/* Project color inset glow — enhances the bar in neon-glass theme */
+[data-theme="neon-glass"] .scope-card[style*="--project-color"] {
+  box-shadow: inset 5px 0 8px -5px var(--project-color);
+}
 [data-theme="neon-glass"] .scope-card {
   transition: transform 0.2s ease, box-shadow 0.25s ease;
 }
@@ -381,24 +424,26 @@
 [data-theme="neon-glass"] .scope-cat-infrastructure:hover { box-shadow: inset 12px 0 16px -10px rgba(64, 196, 255, 0.3), 0 8px 8px -4px rgba(var(--neon-cyan), 0.12); }
 [data-theme="neon-glass"] .scope-cat-docs:hover           { box-shadow: inset 12px 0 16px -10px rgba(107, 114, 128, 0.3), 0 8px 8px -4px rgba(var(--neon-cyan), 0.12); }
 
-/* ─── DISPATCH BORDER GLOW (active dispatch indicator) ─── */
-/* Uses outline (not box-shadow) — immune to overflow clipping and
-   won't conflict with card-glass box-shadow or Tailwind shadow-none. */
-@keyframes dispatch-glow {
-  0%, 100% { outline-color: rgba(233, 30, 99, 0.3); }
-  50%      { outline-color: rgba(233, 30, 99, 0.8); }
-}
+/* ─── DISPATCH STROKE LOADER (active dispatch border animation) ─── */
+/* Uses a real DOM element (.dispatch-border-overlay) instead of ::before
+   because browsers don't repaint pseudo-element backgrounds when inherited
+   custom properties change via JS, and Arc doesn't support @property. */
 .scope-card-dispatched {
-  outline: 1.5px solid rgba(233, 30, 99, 0.5);
-  outline-offset: -1.5px;
-  animation: dispatch-glow 2s ease-in-out infinite;
+  position: relative;
+  overflow: visible;
 }
-[data-theme="neon-glass"] .scope-card-dispatched {
-  animation-name: dispatch-glow-neon;
-}
-@keyframes dispatch-glow-neon {
-  0%, 100% { outline-color: rgba(var(--neon-pink), 0.35); }
-  50%      { outline-color: rgba(var(--neon-pink), 0.9); }
+.dispatch-border-overlay {
+  position: absolute;
+  inset: -1.5px;
+  border-radius: inherit;
+  padding: 1.5px;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* ─── DISPATCH PULSE DOT ─── */
@@ -426,22 +471,45 @@
   box-shadow: 0 4px 16px rgba(var(--neon-amber), 0.12);
 }
 
-/* ─── BATCH GROUP DISPATCH GLOW (container-level indicator) ─── */
-@keyframes batch-glow {
-  0%, 100% { outline-color: rgba(255, 171, 0, 0.3); }
-  50%      { outline-color: rgba(255, 171, 0, 0.8); }
-}
+/* ─── BATCH GROUP DISPATCH STROKE (container-level border animation) ─── */
+/* --dispatch-angle driven by JS in the batch group component */
 .batch-group-dispatched {
-  outline: 2px solid rgba(255, 171, 0, 0.5);
-  outline-offset: -2px;
-  animation: batch-glow 2.5s ease-in-out infinite;
+  position: relative;
+  overflow: visible;
 }
-[data-theme="neon-glass"] .batch-group-dispatched {
-  animation-name: batch-glow-neon;
+/* Default theme: amber border stroke */
+.batch-group-dispatched::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(
+    from var(--dispatch-angle, 0deg),
+    transparent 0%,
+    rgba(255, 171, 0, 0.7) 10%,
+    rgba(255, 171, 0, 0.3) 20%,
+    transparent 30%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 1;
 }
-@keyframes batch-glow-neon {
-  0%, 100% { outline-color: rgba(var(--neon-amber), 0.35); }
-  50%      { outline-color: rgba(var(--neon-amber), 0.9); }
+/* Neon-glass theme: amber head with cyan trail */
+[data-theme="neon-glass"] .batch-group-dispatched::before {
+  padding: 2px;
+  background: conic-gradient(
+    from var(--dispatch-angle, 0deg),
+    transparent 0%,
+    rgba(var(--neon-amber), 0.9) 8%,
+    rgba(var(--neon-amber), 0.5) 16%,
+    rgba(var(--neon-cyan), 0.15) 24%,
+    transparent 32%
+  );
 }
 
 /* Effort estimate ghost button */
@@ -506,10 +574,7 @@
 /* ─── SIDEBAR NAV (icon-only squares) ─── */
 .nav-item-square {
   border: 1px solid transparent;
-  transition: background-color 200ms ease, border-color 200ms ease, box-shadow 300ms ease, transform 200ms ease;
-}
-.nav-item-square:hover {
-  transform: scale(1.06);
+  transition: background-color 500ms ease, border-color 500ms ease, box-shadow 500ms ease;
 }
 [data-theme="neon-glass"] .nav-item-square:not(.nav-icon-active-glow):hover {
   background: rgba(var(--neon-cyan), 0.06);
@@ -538,6 +603,12 @@
       0 0 10px rgba(var(--neon-cyan), 0.25),
       inset 0 0 16px rgba(var(--neon-cyan), 0.1);
   }
+}
+/* Active nav item — always show label */
+.nav-icon-active-glow .nav-item-label {
+  max-height: 12px;
+  margin-top: 4px;
+  opacity: 1;
 }
 /* Hover label text glow */
 [data-theme="neon-glass"] .nav-item-label {

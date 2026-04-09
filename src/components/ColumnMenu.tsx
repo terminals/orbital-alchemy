@@ -34,7 +34,7 @@ export function ColumnMenu({
       <PopoverTrigger asChild>
         <button
           className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
-          aria-label="Column menu"
+          aria-label="Column options"
         >
           <MoreVertical className="h-3 w-3" />
         </button>

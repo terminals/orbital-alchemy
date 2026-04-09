@@ -62,7 +62,6 @@ VIOLATION_DATA=$(jq -n --arg rule "scope-create-gate" --arg file "$FILE_PATH" --
 "$HOOK_DIR/orbital-emit.sh" VIOLATION "$VIOLATION_DATA" 2>/dev/null &
 
 # Resolve entry status from workflow manifest
-HOOK_DIR="$(dirname "$0")"
 source "$HOOK_DIR/scope-helpers.sh" 2>/dev/null || true
 ENTRY="${WORKFLOW_ENTRY_STATUS:-planning}"
 

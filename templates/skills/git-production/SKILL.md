@@ -96,12 +96,16 @@ gh pr merge --merge
 # Your CI/CD pipeline auto-deploys main to production (if configured)
 ```
 
-### Step 6: Signal Completion
+### Step 6: Signal Completion (REQUIRED)
 
-After the merge succeeds, emit the agent completion event if working on a dispatched scope:
+**Always emit after a successful merge** — this is not optional:
 
 ```bash
+# With a scope:
 bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"pr_production"}' --scope "{NNN}"
+
+# Without a scope:
+bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"pr_production"}'
 ```
 
 ### Step 7: Verify Production

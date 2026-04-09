@@ -10,9 +10,9 @@ interface ProjectBadgeProps {
  * Only renders in multi-project mode and when projectId is provided.
  */
 export function ProjectBadge({ projectId, className }: ProjectBadgeProps) {
-  const { isMultiProject, getProjectColor, getProjectName } = useProjects();
+  const { hasMultipleProjects, getProjectColor, getProjectName } = useProjects();
 
-  if (!isMultiProject || !projectId) return null;
+  if (!hasMultipleProjects || !projectId) return null;
 
   const color = getProjectColor(projectId);
   const name = getProjectName(projectId);

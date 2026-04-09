@@ -129,7 +129,25 @@ export class SprintService {
     } else {
       rows = this.db.prepare('SELECT * FROM sprints ORDER BY created_at DESC').all() as SprintRow[];
     }
-    return rows.map((row) => this.buildDetail(row));
+    if (rows.length === 0) return [];
+
+    // Batch-fetch all sprint_scopes in one query to avoid N+1
+    const sprintIds = rows.map(r => r.id);
+    const placeholders = sprintIds.map(() => '?').join(',');
+    const allScopeRows = this.db.prepare(
+      `SELECT sprint_id, scope_id, layer, dispatch_status FROM sprint_scopes
+       WHERE sprint_id IN (${placeholders}) ORDER BY layer ASC, scope_id ASC`,
+    ).all(...sprintIds) as Array<{ sprint_id: number; scope_id: number; layer: number | null; dispatch_status: SprintScopeStatus }>;
+
+    // Group by sprint_id
+    const scopesBySprintId = new Map<number, typeof allScopeRows>();
+    for (const ss of allScopeRows) {
+      let arr = scopesBySprintId.get(ss.sprint_id);
+      if (!arr) { arr = []; scopesBySprintId.set(ss.sprint_id, arr); }
+      arr.push(ss);
+    }
+
+    return rows.map((row) => this.buildDetailFromScopes(row, scopesBySprintId.get(row.id) ?? []));
   }
 
   /** Get full sprint detail by ID */
@@ -352,7 +370,13 @@ export class SprintService {
       `SELECT scope_id, layer, dispatch_status FROM sprint_scopes
        WHERE sprint_id = ? ORDER BY layer ASC, scope_id ASC`,
     ).all(row.id) as Array<{ scope_id: number; layer: number | null; dispatch_status: SprintScopeStatus }>;
+    return this.buildDetailFromScopes(row, ssRows);
+  }
 
+  private buildDetailFromScopes(
+    row: SprintRow,
+    ssRows: Array<{ scope_id: number; layer: number | null; dispatch_status: SprintScopeStatus }>,
+  ): SprintDetail {
     const progress = { pending: 0, in_progress: 0, completed: 0, failed: 0, skipped: 0 };
     const scopes: SprintDetail['scopes'] = [];
 

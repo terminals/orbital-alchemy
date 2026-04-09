@@ -50,7 +50,7 @@ const rowItem = {
 export function AgentFeed() {
   const { events, loading } = useEvents({ limit: 200 });
   const { neonGlass } = useTheme();
-  const { activeProjectId, isMultiProject, getProjectColor, getProjectName } = useProjects();
+  const { activeProjectId, hasMultipleProjects, getProjectColor, getProjectName } = useProjects();
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [showAllEvents, setShowAllEvents] = useState(false);
 
@@ -59,7 +59,7 @@ export function AgentFeed() {
     let filtered = events;
 
     // Filter by project when a specific project is selected
-    if (activeProjectId && isMultiProject) {
+    if (activeProjectId && hasMultipleProjects) {
       filtered = filtered.filter((e) => e.project_id === activeProjectId);
     }
 
@@ -72,7 +72,7 @@ export function AgentFeed() {
     }
 
     return filtered;
-  }, [events, agentFilter, showAllEvents, activeProjectId, isMultiProject]);
+  }, [events, agentFilter, showAllEvents, activeProjectId, hasMultipleProjects]);
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
@@ -155,8 +155,8 @@ export function AgentFeed() {
               <motion.div key={event.id} variants={rowItem}>
                 <EventRow
                   event={event}
-                  projectName={event.project_id && isMultiProject ? getProjectName(event.project_id) : undefined}
-                  projectColor={event.project_id && isMultiProject ? getProjectColor(event.project_id) : undefined}
+                  projectName={event.project_id && hasMultipleProjects ? getProjectName(event.project_id) : undefined}
+                  projectColor={event.project_id && hasMultipleProjects ? getProjectColor(event.project_id) : undefined}
                 />
               </motion.div>
             ))}
@@ -167,8 +167,8 @@ export function AgentFeed() {
               <EventRow
                 key={event.id}
                 event={event}
-                projectName={event.project_id && isMultiProject ? getProjectName(event.project_id) : undefined}
-                projectColor={event.project_id && isMultiProject ? getProjectColor(event.project_id) : undefined}
+                projectName={event.project_id && hasMultipleProjects ? getProjectName(event.project_id) : undefined}
+                projectColor={event.project_id && hasMultipleProjects ? getProjectColor(event.project_id) : undefined}
               />
             ))}
           </div>

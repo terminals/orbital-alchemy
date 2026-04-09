@@ -41,8 +41,8 @@ export function useViolations() {
     try {
       const res = await fetch(buildUrl('/events/violations/summary'));
       if (res.ok) setSummary(await res.json());
-    } catch {
-      // Silently fail — CC server may not be running
+    } catch (err) {
+      console.warn('[Orbital] Failed to fetch violations:', err);
     } finally {
       setLoading(false);
     }

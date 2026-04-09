@@ -21,9 +21,9 @@ Combines all validation layers into one comprehensive check:
 │                            /test-code-review                                        │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│  Phase 1: /test-checks (8 checks)                                              │
-│  ├── TypeScript, ESLint, Build, Templates                               │
-│  └── Doc links, Doc freshness, Enforcement, Workarounds                 │
+│  Phase 1: /test-checks (13 quality gates)                               │
+│  ├── TypeScript, Lint, Build, Templates, Docs, Enforcement              │
+│  └── Placeholders, Mock data, Shortcuts, Secrets, Stale scopes, Tests   │
 │                                                                         │
 │  Phase 2: pre-push (3 checks)                                                  │
 │  ├── Documentation sync                                                 │
@@ -50,26 +50,13 @@ Combines all validation layers into one comprehensive check:
 
 ### Phase 1: Pre-Commit Checks
 
-Run all 8 quality gates. Read commands from `.claude/orbital.config.json` — skip any that are null:
+Run all 13 quality gates via `/test-checks`:
 
-```bash
-echo "═══ PHASE 1: PRE-COMMIT ═══"
-# Run commands.typeCheck from orbital.config.json (skip if null)
-echo "[1/8] TypeScript..."
-# Run commands.lint from orbital.config.json (skip if null)
-echo "[2/8] Lint..."
-# Run commands.build from orbital.config.json (skip if null)
-echo "[3/8] Build..."
-# Run commands.validateTemplates from orbital.config.json (skip if null)
-echo "[4/8] Templates..."
-# Run commands.validateDocs from orbital.config.json (skip if null)
-echo "[5/8] Doc links..."
-# Run commands.docFreshness from orbital.config.json (skip if null)
-echo "[6/8] Doc freshness..."
-# Run commands.checkRules from orbital.config.json (skip if null)
-echo "[7/8] Enforcement..."
-echo "[8/8] Workarounds..." && echo "✅ Check staged files manually"
 ```
+Skill(skill: "test-checks")
+```
+
+This runs the full pipeline: typecheck, lint, build, templates, docs, enforcement, placeholders, mock data, shortcuts, secrets, stale scopes, and tests (13 gates total). See `/test-checks` for details.
 
 **Stop here if any check fails. Fix before proceeding.**
 
@@ -120,21 +107,44 @@ Prompt: "Review type design quality"
 
 ### Phase 4: Synthesize Results
 
-Collect all findings and report:
+Collect all findings, categorize by severity, and **persist to disk** so `/scope-fix-review` can load them in a standalone session.
+
+**4a. Categorize findings** from all 6 agents into BLOCKERS, WARNINGS, and SUGGESTIONS.
+
+**4b. Write findings to disk** — if running in a scope context (scope NNN is known from the pipeline), write:
+
+```bash
+mkdir -p .claude/review-findings
+```
+
+Write `.claude/review-findings/NNN.json`:
+```json
+{
+  "scopeId": NNN,
+  "timestamp": "<ISO timestamp>",
+  "blockers": [{ "agent": "...", "file": "...", "line": N, "message": "...", "fix": "..." }],
+  "warnings": [{ "agent": "...", "file": "...", "line": N, "message": "...", "fix": "..." }],
+  "suggestions": [{ "agent": "...", "file": "...", "line": N, "message": "...", "fix": "..." }]
+}
+```
+
+If no scope context is available (standalone `/test-code-review` outside post-review), skip the file write — findings remain in conversation context only.
+
+**4c. Display summary:**
 
 ```
 ╔═══════════════════════════════════════════════════════════════════════╗
-║                         /test-code-review RESULTS                                 ║
+║                       /test-code-review RESULTS                       ║
 ╠═══════════════════════════════════════════════════════════════════════╣
 ║                                                                       ║
-║  PHASE 1: Pre-Commit          [8/8 passed]  ✅                        ║
-║  PHASE 2: Pre-Push            [3/3 passed]  ✅                        ║
+║  PHASE 1: Pre-Commit          [13/13 passed] ✅                       ║
+║  PHASE 2: Pre-Push            [3/3 passed]   ✅                       ║
 ║  PHASE 3: Code Review         [findings below]                        ║
 ║                                                                       ║
 ║  ─────────────────────────────────────────────────────────────────    ║
-║  🚫 BLOCKERS (must fix):       0                                      ║
-║  ⚠️  WARNINGS (should fix):     2                                      ║
-║  💡 SUGGESTIONS (consider):    5                                      ║
+║  BLOCKERS (must fix):       0                                         ║
+║  WARNINGS (should fix):     2                                         ║
+║  SUGGESTIONS (consider):    5                                         ║
 ║                                                                       ║
 ╚═══════════════════════════════════════════════════════════════════════╝
 ```

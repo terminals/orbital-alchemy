@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Clock, ExternalLink, FileText, Terminal } from 'lucide-react';
 import { useProjects } from '@/hooks/useProjectContext';
 import { format } from 'date-fns';
@@ -94,40 +94,68 @@ function actionLabel(action: string): string {
 // ─── Main Component ────────────────────────────────────────
 
 export function SessionTimeline() {
-  const { activeProjectId, isMultiProject, getApiBase } = useProjects();
+  const { activeProjectId, getApiBase } = useProjects();
   const [allSessions, setAllSessions] = useState<TimelineSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<TimelineSession | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [resuming, setResuming] = useState(false);
+  const resumeTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const [sessionCounts, setSessionCounts] = useState<Record<string, number>>({});
   const { neonGlass } = useTheme();
 
-  // Always fetch ALL sessions once — client-side filtering handles project tabs
+  // Fetch aggregate session counts for the tab bar badges
+  const fetchSessionCounts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/orbital/aggregate/sessions');
+      if (!res.ok) return;
+      const rows = await res.json() as TimelineSession[];
+      const counts: Record<string, number> = {};
+      for (const row of rows) {
+        if (row.project_id) counts[row.project_id] = (counts[row.project_id] ?? 0) + 1;
+      }
+      setSessionCounts(counts);
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => { fetchSessionCounts(); }, [fetchSessionCounts]);
+
+  // Fetch sessions for the active view
   const fetchAllSessions = useCallback(async () => {
     try {
-      const url = isMultiProject
-        ? '/api/orbital/aggregate/sessions'
-        : '/api/orbital/sessions';
+      const url = activeProjectId
+        ? `${getApiBase(activeProjectId)}/sessions`
+        : '/api/orbital/aggregate/sessions';
       const res = await fetch(url);
       if (res.ok) setAllSessions(await res.json());
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [isMultiProject]);
+  }, [activeProjectId, getApiBase]);
 
   useEffect(() => { fetchAllSessions(); }, [fetchAllSessions]);
 
   useEffect(() => {
-    const onUpdate = () => fetchAllSessions();
+    const onUpdate = () => { fetchAllSessions(); fetchSessionCounts(); };
     socket.on('session:updated', onUpdate);
     return () => { socket.off('session:updated', onUpdate); };
-  }, [fetchAllSessions]);
+  }, [fetchAllSessions, fetchSessionCounts]);
 
-  // Client-side filter — instant, no network, no loading state
-  const sessions = useMemo(() => {
-    if (!activeProjectId) return allSessions;
-    return allSessions.filter(s => s.project_id === activeProjectId);
-  }, [allSessions, activeProjectId]);
+  // No client-side filter needed — fetch URL already scopes to the active project
+  const sessions = allSessions;
+
+  // Detail fetch uses the session's own project context for correct routing
+  const selectSession = useCallback(async (session: TimelineSession) => {
+    setSelected(session);
+    setDetail(null);
+    setDetailLoading(true);
+    try {
+      const base = getApiBase(session.project_id ?? activeProjectId);
+      const res = await fetch(`${base}/sessions/${session.id}/content`);
+      if (res.ok) setDetail(await res.json());
+    } catch { /* silent */ }
+    finally { setDetailLoading(false); }
+  }, [getApiBase]);
 
   // Clear selection when it no longer exists in filtered list
   useEffect(() => {
@@ -142,45 +170,30 @@ export function SessionTimeline() {
     if (!selected && sessions.length > 0) {
       selectSession(sessions[0]);
     }
-  }, [sessions]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Detail fetch uses the session's own project context for correct routing
-  const selectSession = useCallback(async (session: TimelineSession) => {
-    setSelected(session);
-    setDetail(null);
-    setDetailLoading(true);
-    try {
-      const base = session.project_id
-        ? getApiBase(session.project_id)
-        : '/api/orbital';
-      const res = await fetch(`${base}/sessions/${session.id}/content`);
-      if (res.ok) setDetail(await res.json());
-    } catch { /* silent */ }
-    finally { setDetailLoading(false); }
-  }, [getApiBase]);
+  }, [sessions, selected, selectSession]);
 
   const handleResume = useCallback(async () => {
     const sessionId = detail?.claude_session_id;
     if (!selected || !sessionId) return;
     setResuming(true);
     try {
-      const base = selected.project_id
-        ? getApiBase(selected.project_id)
-        : '/api/orbital';
+      const base = getApiBase(selected.project_id ?? activeProjectId);
       await fetch(`${base}/sessions/${selected.id}/resume`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ claude_session_id: sessionId }),
       });
     } catch { /* silent */ }
-    finally { setTimeout(() => setResuming(false), 2000); }
+    finally { resumeTimerRef.current = setTimeout(() => setResuming(false), 2000); }
   }, [selected, detail, getApiBase]);
+
+  useEffect(() => () => { clearTimeout(resumeTimerRef.current); }, []);
 
   const showList = !loading && sessions.length > 0;
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
-      <ProjectTabBar />
+      <ProjectTabBar countOverrides={sessionCounts} />
 
       <div className="mb-4 flex items-center gap-3">
         <Clock className="h-4 w-4 text-primary" />
@@ -206,7 +219,7 @@ export function SessionTimeline() {
           ) : (
             <ScrollArea className="h-full">
               <div className="relative p-3">
-                <div className="absolute left-6 top-3 bottom-3 w-px bg-border" />
+                <div className="absolute left-6 top-[29px] bottom-3 w-px bg-border" />
                 <div className="space-y-1">
                   {sessions.map((s) => (
                     <SessionListItem key={s.id} session={s} isSelected={selected?.id === s.id} neonGlass={neonGlass} onClick={() => selectSession(s)} />
@@ -249,7 +262,7 @@ function SessionListItem({ session, isSelected, neonGlass, onClick }: {
   return (
     <div className="relative pl-8 cursor-pointer" onClick={onClick}>
       <div className={cn(
-        'absolute left-1.5 top-3 h-2.5 w-2.5 rounded-full border-2',
+        'absolute left-[8px] top-3 h-2.5 w-2.5 rounded-full border-2',
         isSelected ? 'border-primary bg-primary' : 'border-muted-foreground/40 bg-background',
         neonGlass && 'timeline-dot-glow glow-blue',
       )} />
@@ -488,8 +501,8 @@ function BulletSection({ title, items, color }: { title: string; items: string[]
     <div className="mt-5">
       <h4 className="mb-2 text-xxs font-medium uppercase tracking-wider text-foreground">{title}</h4>
       <ul className="space-y-1.5">
-        {items.map((item, idx) => (
-          <li key={idx} className="flex items-start gap-2 text-xs">
+        {items.map((item) => (
+          <li key={item} className="flex items-start gap-2 text-xs">
             <span className={cn('mt-0.5', color)}>{'•'}</span>
             <span>{item}</span>
           </li>

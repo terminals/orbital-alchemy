@@ -62,14 +62,14 @@ function parseDragId(id: string | number): { type: 'scope'; scopeId: number; pro
   const s = String(id);
   if (s.startsWith('sprint-drop-')) return { type: 'sprint-drop', sprintId: parseInt(s.slice(12)) };
   if (s.startsWith('sprint-')) return { type: 'sprint', sprintId: parseInt(s.slice(7)) };
-  if (typeof id === 'number' || /^\d+$/.test(s)) return { type: 'scope', scopeId: Number(id) };
+  if (typeof id === 'number' || /^-?\d+$/.test(s)) return { type: 'scope', scopeId: Number(id) };
   // Swimlane cell: swim::{laneValue}::{status} → treat as column drop target
   if (s.startsWith('swim::')) {
     const lastSep = s.lastIndexOf('::');
     return { type: 'column', status: s.slice(lastSep + 2) };
   }
   // Project-scoped scope ID: {projectId}::{scopeId} (from scopeKey())
-  const scopeMatch = s.match(/^(.+?)::(\d+)$/);
+  const scopeMatch = s.match(/^(.+?)::(-?\d+)$/);
   if (scopeMatch) {
     return { type: 'scope', scopeId: Number(scopeMatch[2]), projectId: scopeMatch[1] };
   }
@@ -80,15 +80,15 @@ function parseDragId(id: string | number): { type: 'scope'; scopeId: number; pro
 export function useKanbanDnd({ scopes, sprints, onAddToSprint, isPhaseView, projectEngines }: UseKanbanDndOptions) {
   const { engine } = useWorkflow();
   const buildUrl = useProjectUrl();
-  const { getApiBase, isMultiProject } = useProjects();
+  const { getApiBase, hasMultipleProjects } = useProjects();
 
   // Build URL routed to a specific scope's project (for mutations in All Projects view)
   const buildScopeUrl = useCallback((scope: Scope, path: string): string => {
-    if (isMultiProject && scope.project_id) {
+    if (hasMultipleProjects && scope.project_id) {
       return `${getApiBase(scope.project_id)}${path}`;
     }
     return buildUrl(path);
-  }, [buildUrl, getApiBase, isMultiProject]);
+  }, [buildUrl, getApiBase, hasMultipleProjects]);
 
   // Present a resolved edge to the user via modal or popover
   const presentEdge = useCallback(async (scope: Scope, edge: WorkflowEdge) => {
@@ -323,7 +323,19 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint, isPhaseView, proj
     const url = (path: string) => buildScopeUrl(scope, path);
 
     try {
-      if (command) {
+      // Idea promotion must be checked first: slug-only icebox files can't go through
+      // the normal dispatch/patch paths (they lack numeric ID prefixes). The promote
+      // endpoint handles ID assignment, file rename, and terminal launch in one step.
+      const entryPointId = activeEngine.getEntryPoint().id;
+      const isIdeaPromotion = scope.status === entryPointId && transition.direction === 'forward' && scope.slug;
+
+      if (isIdeaPromotion) {
+        const res = await fetch(url(`/ideas/${scope.slug}/promote`), { method: 'POST' });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: 'Request failed' }));
+          throw new Error(body.error ?? `HTTP ${res.status}`);
+        }
+      } else if (command) {
         const res = await fetch(url('/dispatch'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -343,27 +355,15 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint, isPhaseView, proj
           throw new Error(body.error ?? `HTTP ${res.status}`);
         }
       } else {
-        // Idea promotion: entry point → next status — server moves file + launches terminal
-        const entryPointId = activeEngine.getEntryPoint().id;
-        const isIdeaPromotion = scope.status === entryPointId && transition.direction === 'forward';
+        const res = await fetch(url(`/scopes/${scope.id}`), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: transition.to }),
+        });
 
-        if (isIdeaPromotion && !transition.command && scope.slug) {
-          const res = await fetch(url(`/ideas/${scope.slug}/promote`), { method: 'POST' });
-          if (!res.ok) {
-            const body = await res.json().catch(() => ({ error: 'Request failed' }));
-            throw new Error(body.error ?? `HTTP ${res.status}`);
-          }
-        } else {
-          const res = await fetch(url(`/scopes/${scope.id}`), {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: transition.to }),
-          });
-
-          if (!res.ok) {
-            const body = await res.json().catch(() => ({ error: 'Request failed' }));
-            throw new Error(body.error ?? `Failed to update scope status: HTTP ${res.status}`);
-          }
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: 'Request failed' }));
+          throw new Error(body.error ?? `Failed to update scope status: HTTP ${res.status}`);
         }
       }
 

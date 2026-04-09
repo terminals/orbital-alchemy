@@ -58,13 +58,19 @@ git commit -m "type(scope): description"
 - Follow conventional commit format
 - Do NOT push or create PRs — those are separate skills
 
-### Step 4: Signal Completion
+### Step 4: Signal Completion (REQUIRED)
 
-If working on a dispatched scope, emit the agent completion event:
+**Always emit after a successful commit** — this is not optional:
 
 ```bash
+# With a scope:
 bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"save"}' --scope "{NNN}"
+
+# Without a scope (general commit):
+bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"save"}'
 ```
+
+The `--scope` flag is optional. Omit it when committing work that isn't tied to a specific scope.
 
 ## Quick Reference
 

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { socket } from '../socket';
 import { WorkflowEngine } from '../../shared/workflow-engine';
@@ -22,7 +22,7 @@ interface ProjectContextValue {
   /** Whether the project list is loading */
   loading: boolean;
   /** Whether multi-project mode is active (more than 1 project) */
-  isMultiProject: boolean;
+  hasMultipleProjects: boolean;
   /** Get the API base URL for a project (or aggregate) */
   getApiBase: (projectId?: string | null) => string;
   /** Cached WorkflowEngine per project — needed for All Projects phase normalization */
@@ -58,17 +58,26 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
     }, { replace: true });
   }, [setSearchParams]);
 
-  // Fetch projects list — no dependency on projectParam to avoid refetching on every tab switch
+  // Fetch projects list with inline workflow configs to avoid a second round-trip
   const fetchProjects = useCallback(async () => {
     try {
-      const res = await fetch('/api/orbital/projects');
+      const res = await fetch('/api/orbital/projects?include=workflow');
       if (!res.ok) {
         setProjects([]);
         setLoading(false);
         return;
       }
-      const data = await res.json() as Project[];
+      const data = await res.json() as Array<Project & { workflow?: unknown }>;
       setProjects(data);
+
+      // Build engines from inline workflow configs — no separate fetch needed
+      const engines = new Map<string, WorkflowEngine>();
+      for (const project of data) {
+        if (project.workflow && isWorkflowConfig(project.workflow)) {
+          engines.set(project.id, new WorkflowEngine(project.workflow));
+        }
+      }
+      if (engines.size > 0) setProjectEngines(engines);
     } catch {
       setProjects([]);
     } finally {
@@ -114,15 +123,20 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
     };
   }, [fetchProjects]);
 
-  // Subscribe to appropriate socket rooms when project changes
+  // Subscribe to appropriate socket rooms when project changes or socket reconnects
   useEffect(() => {
-    if (activeProjectId) {
-      socket.emit('subscribe', { projectId: activeProjectId });
-    } else {
-      socket.emit('subscribe', { scope: 'all' });
+    function subscribe() {
+      if (activeProjectId) {
+        socket.emit('subscribe', { projectId: activeProjectId });
+      } else {
+        socket.emit('subscribe', { scope: 'all' });
+      }
     }
+    subscribe();
+    socket.on('connect', subscribe);
 
     return () => {
+      socket.off('connect', subscribe);
       if (activeProjectId) {
         socket.emit('unsubscribe', { projectId: activeProjectId });
       } else {
@@ -145,76 +159,35 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
     return '/api/orbital/aggregate';
   }, [activeProjectId]);
 
-  const isMultiProject = projects.length > 1;
+  const hasMultipleProjects = projects.length > 1;
 
   // ─── Per-Project Workflow Engines ─────────────────────────
   // Fetch and cache all project workflows so the All Projects board
   // can do phase normalization across different workflow configs.
 
   const [projectEngines, setProjectEngines] = useState<Map<string, WorkflowEngine>>(new Map());
-  const engineFetchedRef = useRef<Set<string>>(new Set());
 
+  // Re-fetch projects + engines on workflow:changed
   useEffect(() => {
-    if (projects.length === 0) return;
-
-    const newEngines = new Map(projectEngines);
-    let changed = false;
-
-    for (const project of projects) {
-      if (project.status !== 'active') continue;
-      if (engineFetchedRef.current.has(project.id)) continue;
-      engineFetchedRef.current.add(project.id);
-
-      fetch(`/api/orbital/projects/${project.id}/workflow`)
-        .then(res => {
-          if (!res.ok) return;
-          return res.json();
-        })
-        .then((json: { success: boolean; data?: unknown } | undefined) => {
-          if (!json) return;
-          const config: unknown = json.data ?? json;
-          if (!isWorkflowConfig(config)) return;
-          setProjectEngines(prev => {
-            const next = new Map(prev);
-            next.set(project.id, new WorkflowEngine(config));
-            return next;
-          });
-        })
-        .catch(() => {});
-      changed = true;
-    }
-
-    if (changed) setProjectEngines(newEngines);
-  }, [projects]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Re-fetch engines on workflow:changed
-  useEffect(() => {
-    const handler = () => {
-      engineFetchedRef.current.clear();
-      setProjectEngines(new Map());
-    };
+    const handler = () => { fetchProjects(); };
     socket.on('workflow:changed', handler);
     return () => { socket.off('workflow:changed', handler); };
-  }, []);
+  }, [fetchProjects]);
 
-  // Re-fetch engines on socket reconnect or tab visibility change
-  const refetchEngines = useCallback(() => {
-    engineFetchedRef.current.clear();
-    setProjectEngines(new Map());
-  }, []);
-  useReconnect(refetchEngines);
+  // Re-fetch projects + engines on socket reconnect or tab visibility change
+  useReconnect(fetchProjects);
 
-  const value: ProjectContextValue = {
+  const value: ProjectContextValue = useMemo(() => ({
     projects,
     activeProjectId,
     setActiveProjectId,
     getProjectColor,
     getProjectName,
     loading,
-    isMultiProject,
+    hasMultipleProjects,
     getApiBase,
     projectEngines,
-  };
+  }), [projects, activeProjectId, setActiveProjectId, getProjectColor, getProjectName, loading, hasMultipleProjects, getApiBase, projectEngines]);
 
   return (
     <ProjectContext.Provider value={value}>

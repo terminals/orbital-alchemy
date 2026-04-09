@@ -1,5 +1,8 @@
 import { readFileSync } from 'node:fs';
+import { createLogger } from './logger.js';
 import type { CcHookEvent, CcHookParsed } from '../../shared/workflow-config.js';
+
+const log = createLogger('config');
 
 const CC_HOOK_EVENTS: CcHookEvent[] = ['SessionStart', 'SessionEnd', 'PreToolUse', 'PostToolUse'];
 
@@ -36,6 +39,7 @@ export function parseCcHooks(settingsPath: string): CcHookParsed[] {
   try {
     raw = readFileSync(settingsPath, 'utf-8');
   } catch {
+    log.debug('Settings file not found', { path: settingsPath });
     return [];
   }
 

@@ -19,6 +19,10 @@ import { createSprintRoutes } from './routes/sprint-routes.js';
 import { createWorkflowRoutes } from './routes/workflow-routes.js';
 import { createConfigRoutes } from './routes/config-routes.js';
 import { createGitRoutes } from './routes/git-routes.js';
+import { createManifestRoutes } from './routes/manifest-routes.js';
+import { createTelemetryRoutes } from './services/telemetry-service.js';
+import { TEMPLATES_DIR } from './init.js';
+import { getPackageVersion } from './utils/package-info.js';
 import { resolveActiveDispatchesForScope } from './utils/dispatch-utils.js';
 import { createLogger } from './utils/logger.js';
 
@@ -128,11 +132,11 @@ export class ProjectManager {
   // ─── Project List ───────────────────────────────────────
 
   /** Get summary of all registered projects with live status. */
-  getProjectList(): ProjectSummary[] {
+  getProjectList(options?: { includeWorkflow?: boolean }): (ProjectSummary & { workflow?: unknown })[] {
     const config = loadGlobalConfig();
     return config.projects.map(reg => {
       const ctx = this.contexts.get(reg.id);
-      return {
+      const summary: ProjectSummary & { workflow?: unknown } = {
         id: reg.id,
         name: reg.name,
         path: reg.path,
@@ -142,6 +146,10 @@ export class ProjectManager {
         scopeCount: ctx ? ctx.scopeService.getAll().length : 0,
         error: ctx?.error,
       };
+      if (options?.includeWorkflow && ctx) {
+        summary.workflow = ctx.workflowService.getActive();
+      }
+      return summary;
     });
   }
 
@@ -284,10 +292,10 @@ export class ProjectManager {
    *  are global (they update the Orbital Command package), not per-project. */
   private buildProjectRouter(ctx: ProjectContext): Router {
     const router = Router();
-    const { db, emitter, config, scopeService, gateService, deployService,
+    const { db, emitter, config, scopeService, eventService, gateService, deployService,
             sprintService, sprintOrchestrator, batchOrchestrator,
             readinessService, workflowService, workflowEngine,
-            gitService, githubService } = ctx;
+            gitService, githubService, telemetryService } = ctx;
 
     // Scope status inference function (same logic as index.ts)
     function inferScopeStatus(
@@ -328,7 +336,7 @@ export class ProjectManager {
       engine: workflowEngine,
     }));
     router.use(createDataRoutes({
-      db, io: emitter, gateService, deployService,
+      db, io: emitter, eventService, gateService, deployService, gitService,
       engine: workflowEngine, projectRoot: config.projectRoot,
       inferScopeStatus,
     }));
@@ -348,6 +356,13 @@ export class ProjectManager {
     router.use(createGitRoutes({
       gitService, githubService, engine: workflowEngine,
     }));
+    router.use(createManifestRoutes({
+      projectRoot: config.projectRoot,
+      templatesDir: TEMPLATES_DIR,
+      packageVersion: getPackageVersion(),
+      io: emitter,
+    }));
+    router.use(createTelemetryRoutes({ telemetryService }));
 
     return router;
   }

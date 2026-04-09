@@ -29,6 +29,12 @@ export interface CommandsConfig {
 export type { AgentConfig } from '../shared/api-types.js';
 import type { AgentConfig } from '../shared/api-types.js';
 
+export interface TelemetryConfig {
+  enabled: boolean;
+  url: string;
+  headers: Record<string, string>;
+}
+
 export interface OrbitalConfig {
   projectName: string;
   projectRoot: string;
@@ -58,6 +64,9 @@ export interface OrbitalConfig {
   // Dynamic configuration
   categories: string[];
   agents: AgentConfig[];
+
+  // Telemetry
+  telemetry: TelemetryConfig;
 }
 
 // ─── Defaults ───────────────────────────────────────────────
@@ -88,6 +97,11 @@ const DEFAULT_CONFIG: Omit<OrbitalConfig, 'projectRoot'> = {
     checkRules: null,
   },
   logLevel: 'info' as const,
+  telemetry: {
+    enabled: true,
+    url: '',
+    headers: {},
+  },
   categories: ['feature', 'bugfix', 'refactor', 'infrastructure', 'docs'],
   agents: [
     { id: 'attacker', label: 'Attacker', emoji: '\u{1F5E1}\u{FE0F}', color: '#ff1744' },
@@ -168,8 +182,11 @@ export function loadConfig(projectRoot?: string): OrbitalConfig {
     }
   }
 
-  // Merge with defaults
-  const projectName = (userConfig.projectName as string) ?? DEFAULT_CONFIG.projectName;
+  // Merge with defaults — derive project name from directory if not configured
+  const defaultProjectName = path.basename(root)
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+  const projectName = (userConfig.projectName as string) ?? defaultProjectName;
 
   const scopesDir = path.resolve(root, (userConfig.scopesDir as string) ?? DEFAULT_CONFIG.scopesDir);
   const eventsDir = path.resolve(root, (userConfig.eventsDir as string) ?? DEFAULT_CONFIG.eventsDir);
@@ -198,6 +215,12 @@ export function loadConfig(projectRoot?: string): OrbitalConfig {
   const categories = (userConfig.categories as string[]) ?? DEFAULT_CONFIG.categories;
   const agents = (userConfig.agents as AgentConfig[]) ?? DEFAULT_CONFIG.agents;
 
+  const telemetry: TelemetryConfig = {
+    ...DEFAULT_CONFIG.telemetry,
+    ...(userConfig.telemetry as Partial<TelemetryConfig> ?? {}),
+  };
+  if (process.env.ORBITAL_TELEMETRY === 'false') telemetry.enabled = false;
+
   return {
     projectName,
     projectRoot: root,
@@ -213,6 +236,7 @@ export function loadConfig(projectRoot?: string): OrbitalConfig {
     logLevel,
     categories,
     agents,
+    telemetry,
   };
 }
 

@@ -63,10 +63,16 @@ For each completed scope being pushed:
 bash .claude/hooks/scope-transition.sh --from completed --to main --scope NNN
 ```
 
-### Step 5: Signal Completion
+### Step 5: Signal Completion (REQUIRED)
+
+**Always emit after a successful push/PR** — this is not optional:
 
 ```bash
-bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"pr_main"}' --scope "NNN"
+# With a scope:
+bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"pr_main"}' --scope "{NNN}"
+
+# Without a scope:
+bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"pr_main"}'
 ```
 
 ## Batch Support

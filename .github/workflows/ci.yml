@@ -23,5 +23,7 @@ jobs:
         name: Type check (frontend)
       - run: npx tsc --noEmit -p tsconfig.server.json
         name: Type check (server)
+      - run: npx vitest run
+        name: Run tests
       - run: npx vite build
         name: Build frontend

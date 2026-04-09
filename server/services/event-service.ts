@@ -52,7 +52,7 @@ export class EventService {
       return;
     }
 
-    log.info('Event ingested', { type: event.type, id: event.id, scope_id: event.scope_id, agent: event.agent });
+    log.debug('Event ingested', { type: event.type, id: event.id, scope_id: event.scope_id });
     const data = event.data ?? {};
     this.io.emit('event:new', {
       id: event.id,
@@ -94,5 +94,94 @@ export class EventService {
     return this.db
       .prepare('SELECT * FROM events WHERE scope_id = ? ORDER BY timestamp DESC LIMIT ?')
       .all(scopeId, limit) as EventRow[];
+  }
+
+  /** Get filtered events with optional type and scope_id filters */
+  getFiltered(options: { limit?: number; type?: string; scopeId?: number }): EventRow[] {
+    const { limit = 50, type, scopeId } = options;
+    let query = 'SELECT * FROM events WHERE 1=1';
+    const params: unknown[] = [];
+    if (type) { query += ' AND type = ?'; params.push(type); }
+    if (scopeId) { query += ' AND scope_id = ?'; params.push(scopeId); }
+    query += ' ORDER BY timestamp DESC LIMIT ?';
+    params.push(limit);
+    return this.db.prepare(query).all(...params) as EventRow[];
+  }
+
+  /** Get violation summary: by rule, by file, overrides, and totals */
+  getViolationSummary(): {
+    byRule: Array<{ rule: string; count: number; last_seen: string }>;
+    byFile: Array<{ file: string; count: number }>;
+    overrides: Array<{ rule: string; reason: string; date: string }>;
+    totalViolations: number;
+    totalOverrides: number;
+  } {
+    const byRule = this.db.prepare(
+      `SELECT JSON_EXTRACT(data, '$.rule') as rule, COUNT(*) as count, MAX(timestamp) as last_seen
+       FROM events WHERE type = 'VIOLATION' GROUP BY rule ORDER BY count DESC`
+    ).all() as Array<{ rule: string; count: number; last_seen: string }>;
+
+    const byFile = this.db.prepare(
+      `SELECT JSON_EXTRACT(data, '$.file') as file, COUNT(*) as count FROM events
+       WHERE type = 'VIOLATION' AND JSON_EXTRACT(data, '$.file') IS NOT NULL AND JSON_EXTRACT(data, '$.file') != ''
+       GROUP BY file ORDER BY count DESC LIMIT 20`
+    ).all() as Array<{ file: string; count: number }>;
+
+    const overrides = this.db.prepare(
+      `SELECT JSON_EXTRACT(data, '$.rule') as rule, JSON_EXTRACT(data, '$.reason') as reason, timestamp as date
+       FROM events WHERE type = 'OVERRIDE' ORDER BY timestamp DESC LIMIT 50`
+    ).all() as Array<{ rule: string; reason: string; date: string }>;
+
+    const totalViolations = (this.db.prepare(`SELECT COUNT(*) as count FROM events WHERE type = 'VIOLATION'`).get() as { count: number }).count;
+    const totalOverrides = (this.db.prepare(`SELECT COUNT(*) as count FROM events WHERE type = 'OVERRIDE'`).get() as { count: number }).count;
+
+    return { byRule, byFile, overrides, totalViolations, totalOverrides };
+  }
+
+  /** Get per-rule violation and override counts (for enforcement rules view) */
+  getViolationStatsByRule(): {
+    violations: Map<string, { count: number; last_seen: string }>;
+    overrides: Map<string, { count: number }>;
+  } {
+    const violationStats = this.db.prepare(
+      `SELECT JSON_EXTRACT(data, '$.rule') as rule, COUNT(*) as count, MAX(timestamp) as last_seen
+       FROM events WHERE type = 'VIOLATION' GROUP BY rule`
+    ).all() as Array<{ rule: string; count: number; last_seen: string }>;
+
+    const overrideStats = this.db.prepare(
+      `SELECT JSON_EXTRACT(data, '$.rule') as rule, COUNT(*) as count
+       FROM events WHERE type = 'OVERRIDE' GROUP BY rule`
+    ).all() as Array<{ rule: string; count: number }>;
+
+    return {
+      violations: new Map(violationStats.map(v => [v.rule, v])),
+      overrides: new Map(overrideStats.map(o => [o.rule, o])),
+    };
+  }
+
+  /** Get violation trend data grouped by day and rule */
+  getViolationTrend(days: number = 30): Array<{ day: string; rule: string; count: number }> {
+    return this.db.prepare(
+      `SELECT date(timestamp) as day, JSON_EXTRACT(data, '$.rule') as rule, COUNT(*) as count
+       FROM events WHERE type = 'VIOLATION' AND timestamp >= datetime('now', ? || ' days')
+       GROUP BY day, rule ORDER BY day ASC`
+    ).all(`-${days}`) as Array<{ day: string; rule: string; count: number }>;
+  }
+
+  /** Get deployment frequency by week and environment */
+  getDeployFrequency(): Array<{ week: string; staging: number; production: number }> {
+    const rows = this.db.prepare(
+      `SELECT environment, strftime('%Y-W%W', started_at) as week, COUNT(*) as count
+       FROM deployments WHERE started_at > datetime('now', '-56 days') GROUP BY environment, week ORDER BY week ASC`
+    ).all() as Array<{ environment: string; week: string; count: number }>;
+
+    const weekMap = new Map<string, { week: string; staging: number; production: number }>();
+    for (const row of rows) {
+      if (!weekMap.has(row.week)) weekMap.set(row.week, { week: row.week, staging: 0, production: 0 });
+      const entry = weekMap.get(row.week)!;
+      if (row.environment === 'staging') entry.staging = row.count;
+      if (row.environment === 'production') entry.production = row.count;
+    }
+    return [...weekMap.values()];
   }
 }

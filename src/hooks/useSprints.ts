@@ -14,19 +14,23 @@ export function useSprints() {
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchSprints = useCallback(async () => {
+  const fetchSprints = useCallback(async (signal?: AbortSignal) => {
     try {
-      const res = await fetch(buildUrl('/sprints'));
+      const res = await fetch(buildUrl('/sprints'), { signal });
       if (!res.ok) return;
-      const data = await res.json();
-      setSprints(data);
+      setSprints(await res.json());
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      console.warn('[Orbital] Failed to fetch sprints:', err);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [buildUrl]);
 
   useEffect(() => {
-    fetchSprints();
+    const controller = new AbortController();
+    fetchSprints(controller.signal);
+    return () => controller.abort();
   }, [fetchSprints]);
 
   useReconnect(fetchSprints);

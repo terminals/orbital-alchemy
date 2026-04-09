@@ -1,6 +1,7 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
 import type { Scope } from '@/types';
 import { EFFORT_BUCKETS } from '@/types';
+import { useLocalStorage, setStorage } from './useLocalStorage';
 
 // ─── Types ─────────────────────────────────────────────────
 export type SortField = 'id' | 'priority' | 'effort' | 'updated_at' | 'created_at' | 'title';
@@ -38,41 +39,20 @@ function effortRank(raw: string | null): number {
   return idx >= 0 ? idx : Infinity;
 }
 
-// ─── localStorage helpers ──────────────────────────────────
-function readSort(): { field: SortField; direction: SortDirection } {
-  try {
-    const raw = localStorage.getItem(SORT_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as { field: string; direction: string };
-      if (parsed.field in DEFAULT_SORT_DIRECTIONS) {
-        return {
-          field: parsed.field as SortField,
-          direction: parsed.direction === 'desc' ? 'desc' : 'asc',
-        };
-      }
+const DEFAULT_SORT = { field: 'id' as SortField, direction: 'asc' as SortDirection };
+
+const sortStorage = {
+  deserialize: (raw: string): { field: SortField; direction: SortDirection } | undefined => {
+    const parsed = JSON.parse(raw) as { field: string; direction: string };
+    if (parsed.field in DEFAULT_SORT_DIRECTIONS) {
+      return {
+        field: parsed.field as SortField,
+        direction: parsed.direction === 'desc' ? 'desc' : 'asc',
+      };
     }
-  } catch { /* use defaults */ }
-  return { field: 'id', direction: 'asc' };
-}
-
-function readCollapsed(): Set<string> {
-  try {
-    const raw = localStorage.getItem(COLLAPSE_KEY);
-    if (raw) {
-      const arr = JSON.parse(raw) as string[];
-      if (Array.isArray(arr)) return new Set(arr);
-    }
-  } catch { /* use defaults */ }
-  return new Set();
-}
-
-function persistSort(field: SortField, direction: SortDirection) {
-  try { localStorage.setItem(SORT_KEY, JSON.stringify({ field, direction })); } catch { /* noop */ }
-}
-
-function persistCollapsed(collapsed: Set<string>) {
-  try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsed])); } catch { /* noop */ }
-}
+    return undefined;
+  },
+};
 
 // ─── Sort comparator ───────────────────────────────────────
 export function sortScopes(scopes: Scope[], field: SortField, direction: SortDirection): Scope[] {
@@ -119,39 +99,17 @@ function compareByField(a: Scope, b: Scope, field: SortField): number {
 
 // ─── Hook ──────────────────────────────────────────────────
 export function useBoardSettings() {
-  const [sortField, setSortField] = useState<SortField>(() => readSort().field);
-  const [sortDirection, setSortDirection] = useState<SortDirection>(() => readSort().direction);
-  const [collapsed, setCollapsed] = useState<Set<string>>(readCollapsed);
+  const [sort, setSort] = useLocalStorage(SORT_KEY, DEFAULT_SORT, sortStorage);
+  const [collapsed, setCollapsed] = useLocalStorage<Set<string>>(COLLAPSE_KEY, new Set(), setStorage);
 
-  // Cross-tab sync
-  useEffect(() => {
-    function onStorage(e: StorageEvent) {
-      if (e.key === SORT_KEY) {
-        const s = readSort();
-        setSortField(s.field);
-        setSortDirection(s.direction);
-      }
-      if (e.key === COLLAPSE_KEY) {
-        setCollapsed(readCollapsed());
-      }
-    }
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
-
-  const setSort = useCallback((field: SortField) => {
-    setSortField((prevField) => {
-      setSortDirection((prevDir) => {
-        // Same field → toggle direction; different field → default direction
-        const nextDir = prevField === field
-          ? (prevDir === 'asc' ? 'desc' : 'asc')
-          : DEFAULT_SORT_DIRECTIONS[field];
-        persistSort(field, nextDir);
-        return nextDir;
-      });
-      return field;
+  const handleSetSort = useCallback((field: SortField) => {
+    setSort((prev) => {
+      const nextDir = prev.field === field
+        ? (prev.direction === 'asc' ? 'desc' : 'asc')
+        : DEFAULT_SORT_DIRECTIONS[field];
+      return { field, direction: nextDir };
     });
-  }, []);
+  }, [setSort]);
 
   const toggleCollapse = useCallback((columnId: string) => {
     setCollapsed((prev) => {
@@ -161,10 +119,9 @@ export function useBoardSettings() {
       } else {
         next.add(columnId);
       }
-      persistCollapsed(next);
       return next;
     });
-  }, []);
+  }, [setCollapsed]);
 
-  return { sortField, sortDirection, setSort, collapsed, toggleCollapse } as const;
+  return { sortField: sort.field, sortDirection: sort.direction, setSort: handleSetSort, collapsed, toggleCollapse } as const;
 }

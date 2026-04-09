@@ -71,6 +71,11 @@ function runMigrations(database: Database.Database): void {
     database.exec('ALTER TABLE sessions ADD COLUMN action TEXT');
   }
 
+  // Migration 9: Add telemetry_sent_at column to sessions
+  if (!sessionCols.some((c) => c.name === 'telemetry_sent_at')) {
+    database.exec('ALTER TABLE sessions ADD COLUMN telemetry_sent_at TEXT');
+  }
+
   // Migration 8: Add batch group columns to sprints
   const sprintCols = database.pragma('table_info(sprints)') as Array<{ name: string }>;
   if (!sprintCols.some((c) => c.name === 'target_column')) {

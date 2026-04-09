@@ -100,6 +100,7 @@
       "label": "Team Review",
       "description": "Runs full agent team review, locks spec, moves to backlog.",
       "dispatchOnly": true,
+      "autoRevert": true,
       "hooks": ["session-enforcer", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
     },
     {
@@ -128,6 +129,7 @@
       "label": "Start Implementing",
       "description": "Opens a Claude session running /scope-implement.",
       "dispatchOnly": true,
+      "autoRevert": true,
       "hooks": ["session-enforcer", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
     },
     {
@@ -139,6 +141,7 @@
       "label": "Launch Post-Review",
       "description": "Runs quality gates, formal verification, and code review.",
       "dispatchOnly": true,
+      "autoRevert": true,
       "hooks": ["session-enforcer", "review-gate-check", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
     },
     {
@@ -179,6 +182,7 @@
       "label": "Commit",
       "description": "Commits scope work.",
       "dispatchOnly": true,
+      "autoRevert": true,
       "hooks": ["session-enforcer", "completion-checklist", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update", "scope-commit-logger"]
     },
     {
@@ -190,6 +194,7 @@
       "label": "Push to Main",
       "description": "Pushes or PRs scope work to the main branch.",
       "dispatchOnly": true,
+      "autoRevert": true,
       "hooks": ["session-enforcer", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update", "scope-commit-logger"]
     },
     {
@@ -245,6 +250,66 @@
       "confirmLevel": "quick",
       "label": "Revert to Planning",
       "description": "Sends this scope back for more planning. Unlocks spec.",
+      "dispatchOnly": false,
+      "humanOnly": true,
+      "hooks": ["session-enforcer", "scope-transition", "orbital-scope-update"]
+    },
+    {
+      "from": "backlog",
+      "to": "icebox",
+      "direction": "backward",
+      "command": null,
+      "confirmLevel": "quick",
+      "label": "Shelve to Icebox",
+      "description": "Shelves this scope back to the icebox for later consideration.",
+      "dispatchOnly": false,
+      "humanOnly": true,
+      "hooks": ["session-enforcer", "scope-transition", "orbital-scope-update"]
+    },
+    {
+      "from": "implementing",
+      "to": "icebox",
+      "direction": "backward",
+      "command": null,
+      "confirmLevel": "full",
+      "checklist": [
+        "No uncommitted work will be lost",
+        "This scope is being abandoned, not paused"
+      ],
+      "label": "Shelve to Icebox",
+      "description": "Abandons implementation and shelves this scope back to the icebox.",
+      "dispatchOnly": false,
+      "humanOnly": true,
+      "hooks": ["session-enforcer", "scope-transition", "orbital-scope-update"]
+    },
+    {
+      "from": "review",
+      "to": "icebox",
+      "direction": "backward",
+      "command": null,
+      "confirmLevel": "full",
+      "checklist": [
+        "No uncommitted work will be lost",
+        "This scope is being abandoned, not paused"
+      ],
+      "label": "Shelve to Icebox",
+      "description": "Abandons review and shelves this scope back to the icebox.",
+      "dispatchOnly": false,
+      "humanOnly": true,
+      "hooks": ["session-enforcer", "scope-transition", "orbital-scope-update"]
+    },
+    {
+      "from": "completed",
+      "to": "icebox",
+      "direction": "backward",
+      "command": null,
+      "confirmLevel": "full",
+      "checklist": [
+        "Committed work has been reverted or is acceptable to leave",
+        "This scope is being abandoned, not paused"
+      ],
+      "label": "Shelve to Icebox",
+      "description": "Shelves this completed scope back to the icebox.",
       "dispatchOnly": false,
       "humanOnly": true,
       "hooks": ["session-enforcer", "scope-transition", "orbital-scope-update"]

@@ -2,7 +2,7 @@
 name: scope-post-review
 description: Orchestrates post-implementation review — runs quality gates, formal verification, code review, and optional agent-team fix execution. Use when a scope is ready to move from implementing to review.
 user-invocable: true
-orchestrates: [test-checks, scope-verify, test-code-review, scope-fix-review]
+orchestrates: [test-scaffold, test-checks, scope-verify, test-code-review, scope-fix-review]
 ---
 
 # /scope-post-review NNN — Post-Implementation Review
@@ -15,6 +15,11 @@ Orchestrates the full post-implementation review pipeline for a scope. Runs up t
 ┌─────────────────────────────────────────────────────────────────┐
 │                     /scope-post-review NNN                      │
 ├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Phase 0: Test infrastructure check                            │
+│  └── If commands.test is null → /test-scaffold                 │
+│      Analyzes project, installs framework, writes tests.       │
+│      SKIPPED if tests already configured.                      │
 │                                                                 │
 │  Phase 1: /test-checks                                         │
 │  └── 13 machine-verifiable quality gates                       │
@@ -41,9 +46,48 @@ Orchestrates the full post-implementation review pipeline for a scope. Runs up t
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Rationale**: Quality gates run first to catch obvious issues cheaply. Spec verification runs second to confirm the implementation is actually complete before spending tokens on AI code review. Code review runs third on verified, passing code. Fix execution runs last, using an agent team to address all findings in parallel across non-overlapping file domains.
+**Rationale**: Test infrastructure is checked first so that gate #13 (tests) has something to run. Quality gates run next to catch obvious issues cheaply. Spec verification runs third to confirm the implementation is actually complete before spending tokens on AI code review. Code review runs fourth on verified, passing code. Fix execution runs last, using an agent team to address all findings in parallel across non-overlapping file domains.
 
 ## Steps
+
+### Phase 0: Test Infrastructure Check
+
+Ensure the project has a test suite before running quality gates. This runs in a subagent to keep the main post-review context clean — the scaffolding work (codebase analysis, package installs, writing test files) can be extensive and is not relevant to the review phases that follow.
+
+1. Read `.claude/orbital.config.json`
+2. Check `commands.test`:
+   - **If non-null** → tests are configured. Print:
+     ```
+     Phase 0: Tests configured (commands.test = "<value>") — skipping.
+     ```
+     **Skip** to Phase 1.
+   - **If null** → no test suite configured. Print:
+     ```
+     Phase 0: No test suite configured — scaffolding tests via subagent...
+     ```
+     Launch a subagent to scaffold the test suite:
+     ```
+     Agent(
+       description: "Scaffold test infrastructure",
+       prompt: "Run the /test-scaffold skill for this project. The project has no test suite configured (commands.test is null in .claude/orbital.config.json). Follow the skill instructions to: detect the project stack, choose a test framework, install it, write real tests, verify they pass, and update commands.test in .claude/orbital.config.json. Report what you did when finished.",
+       mode: "auto"
+     )
+     ```
+3. After the subagent completes:
+   - Re-read `.claude/orbital.config.json` and confirm `commands.test` is now non-null
+   - Run the configured test command to verify tests actually pass:
+     ```bash
+     <commands.test value>   # e.g., npm run test
+     ```
+   - **If `commands.test` is still null or tests fail:**
+     ```
+     ╔═══════════════════════════════════════════════════════════════╗
+     ║  Phase 0 FAILED — Test scaffolding did not produce passing   ║
+     ║  tests. Fix manually and re-run: /scope-post-review NNN     ║
+     ╚═══════════════════════════════════════════════════════════════╝
+     ```
+     **STOP** — do not proceed to Phase 1 with broken tests.
+   - **If tests pass** → continue to Phase 1.
 
 ### Phase 1: Quality Gates (`/test-checks`)
 
@@ -83,8 +127,12 @@ Run the 6 parallel code review agents on the verified code.
 
 1. Invoke: `Skill(skill: "test-code-review")`
 2. Collect all findings — count BLOCKERS, WARNINGS, and SUGGESTIONS.
-3. If there are **any findings** (blockers, warnings, or suggestions), proceed to Phase 4.
-4. If there are **zero findings**, skip Phase 4 and go to Final Report.
+3. **Persist findings** — write all findings to `.claude/review-findings/NNN.json` so Phase 4 can read them even if run standalone in a separate session:
+   ```json
+   { "scopeId": NNN, "timestamp": "<ISO>", "blockers": [...], "warnings": [...], "suggestions": [...] }
+   ```
+4. If there are **any findings** (blockers, warnings, or suggestions), proceed to Phase 4.
+5. If there are **zero findings**, skip Phase 4 and go to Final Report.
 
 ### Phase 4: Fix Review Findings (`/scope-fix-review NNN`)
 
@@ -95,9 +143,14 @@ Execute all Phase 3 findings using a coordinated agent team. **This phase requir
    echo "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-not set}"
    ```
 2. If **enabled** (`1`) and Phase 3 produced findings:
+   - If `.claude/review-findings/NNN.json` exists, load findings from there (enables standalone `/scope-fix-review` without re-running Phase 3)
    - Invoke: `Skill(skill: "scope-fix-review", args: "NNN")`
    - This spawns an agent team that fixes all findings in parallel across non-overlapping file domains
-   - Includes a verification step (typecheck + build) at the end
+   - After fixes complete, **re-run quality gates** to catch regressions:
+     ```
+     Skill(skill: "test-checks")
+     ```
+     If any gate fails, report which gates regressed and **STOP**.
 3. If **not enabled**:
    - Read `~/.claude/settings.json`
    - Merge `"env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" }` into the existing JSON (preserve all other settings)
@@ -119,6 +172,11 @@ Execute all Phase 3 findings using a coordinated agent team. **This phase requir
    Phase 4 is skipped but does **not** block the pipeline. The setting is enabled for next time.
 
 ### Final Report
+
+Emit the completion event so the dispatch resolves and the dashboard card stops showing the active animation:
+```bash
+bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"post_review"}' --scope "{NNN}"
+```
 
 ```
 ╔═══════════════════════════════════════════════════════════════╗

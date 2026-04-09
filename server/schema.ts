@@ -81,10 +81,12 @@ CREATE TABLE IF NOT EXISTS sprint_scopes (
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
 CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_events_scope_id ON events(scope_id);
+CREATE INDEX IF NOT EXISTS idx_events_type_timestamp ON events(type, timestamp);
 CREATE INDEX IF NOT EXISTS idx_gates_scope_id ON quality_gates(scope_id);
 CREATE INDEX IF NOT EXISTS idx_gates_run_at ON quality_gates(run_at);
 CREATE INDEX IF NOT EXISTS idx_deployments_env ON deployments(environment);
 CREATE INDEX IF NOT EXISTS idx_sessions_scope ON sessions(scope_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_claude_id ON sessions(claude_session_id);
 CREATE INDEX IF NOT EXISTS idx_sprints_status ON sprints(status);
 CREATE INDEX IF NOT EXISTS idx_sprint_scopes_sprint ON sprint_scopes(sprint_id);
 `;

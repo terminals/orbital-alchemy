@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema",
-  "$id": "https://orbital-command.dev/schemas/orbital.config.schema.json",
+  "$id": "https://raw.githubusercontent.com/SakaraLabs/orbital-command/main/schemas/orbital.config.schema.json",
   "title": "Orbital Command Configuration",
   "description": "Configuration file for Orbital Command — mission control for Claude Code projects",
   "type": "object",
@@ -77,6 +77,21 @@
         "production": { "type": "string", "format": "uri" }
       },
       "additionalProperties": { "type": "string", "format": "uri" }
+    },
+    "telemetry": {
+      "type": "object",
+      "description": "Session telemetry — uploads Claude session JSONL files to a remote endpoint. Can also be disabled via ORBITAL_TELEMETRY=false env var.",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true, "description": "Enable session telemetry upload" },
+        "url": { "type": "string", "description": "Base URL of the telemetry receiver (Cloudflare Worker)" },
+        "headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "default": {},
+          "description": "Custom headers sent with upload requests (e.g. Authorization)"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

@@ -3,7 +3,7 @@ import path from 'path';
 import matter from 'gray-matter';
 import type { Emitter } from '../project-emitter.js';
 import type { ParsedScope } from '../parsers/scope-parser.js';
-import { normalizeStatus, parseAllScopes, parseScopeFile, setValidStatuses, inferStatusFromDir } from '../parsers/scope-parser.js';
+import { parseAllScopes, parseScopeFile, setValidStatuses } from '../parsers/scope-parser.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 import type { TransitionContext, TransitionResult } from '../../shared/workflow-config.js';
 import type { ScopeCache } from './scope-cache.js';
@@ -44,6 +44,42 @@ export class ScopeService {
     const scopes = parseAllScopes(this.scopesDir);
     this.cache.loadAll(scopes);
     return scopes.length;
+  }
+
+  /** Reconcile files whose directory doesn't match their frontmatter status.
+   *  Frontmatter is the authoritative source — files are moved to match it.
+   *  Called once at startup after syncFromFilesystem(). */
+  reconcileDirectories(): number {
+    let moved = 0;
+    for (const scope of this.cache.getAll()) {
+      if (scope.id < 0) continue; // slug-only icebox items (negative IDs)
+      const currentDir = path.basename(path.dirname(scope.file_path));
+      if (currentDir === scope.status) continue;
+      if (!this.engine.isValidStatus(scope.status)) continue;
+
+      const targetDir = path.join(this.scopesDir, scope.status);
+      if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+      const newPath = path.join(targetDir, path.basename(scope.file_path));
+
+      this.suppressedPaths.add(scope.file_path);
+      this.suppressedPaths.add(newPath);
+      try {
+        fs.renameSync(scope.file_path, newPath);
+        this.updateFromFile(newPath);
+        this.removeByFilePath(scope.file_path);
+        moved++;
+        log.warn('Reconciled directory mismatch', {
+          id: scope.id, frontmatter: scope.status, directory: currentDir,
+        });
+      } catch (err) {
+        log.error('Failed to reconcile scope directory', { id: scope.id, error: String(err) });
+      }
+      setTimeout(() => {
+        this.suppressedPaths.delete(scope.file_path);
+        this.suppressedPaths.delete(newPath);
+      }, 2000);
+    }
+    return moved;
   }
 
   /** Check if a path is suppressed from watcher processing (during programmatic moves) */
@@ -102,6 +138,7 @@ export class ScopeService {
 
   /** Update a scope's status with transition validation.
    *  Writes the new status to the frontmatter file and updates the cache.
+   *  This is the SINGLE validation point — all status changes must flow through here.
    *  @param context - caller trust level: 'patch', 'dispatch', 'event', 'bulk-sync', 'rollback' */
   updateStatus(
     id: number,
@@ -135,12 +172,39 @@ export class ScopeService {
     // the validation block above is skipped, so this may be the first lookup.
     const current = this.cache.getById(id);
     const fromStatus = current?.status ?? 'unknown';
-    const result = this.updateScopeFrontmatter(id, { status }, context);
+    const result = this._writeFrontmatter(id, { status });
     if (result.ok) {
       log.info('Status updated', { id, from: fromStatus, to: status, context });
       for (const cb of this.onStatusChangeCallbacks) cb(id, status);
     }
     return result;
+  }
+
+  /** Update scope fields via a public API (e.g. PATCH route).
+   *  Status changes are routed through updateStatus for validation.
+   *  Non-status fields are written directly via _writeFrontmatter. */
+  updateFields(
+    id: number,
+    fields: Record<string, unknown>,
+  ): TransitionResult & { moved?: boolean } {
+    const { status, ...nonStatusFields } = fields as { status?: string; [k: string]: unknown };
+
+    // Status changes go through updateStatus (validates transition, fires callbacks)
+    if (status) {
+      const current = this.cache.getById(id);
+      if (!current) return { ok: false, error: 'Scope not found', code: 'NOT_FOUND' };
+      if (status !== current.status) {
+        const result = this.updateStatus(id, status);
+        if (!result.ok) return result;
+      }
+    }
+
+    // Non-status field updates written directly
+    if (Object.keys(nonStatusFields).length > 0) {
+      return this._writeFrontmatter(id, nonStatusFields);
+    }
+
+    return { ok: true, moved: !!status };
   }
 
   /** Compute the next sequential scope ID by scanning all non-icebox scopes.
@@ -278,9 +342,15 @@ export class ScopeService {
       const newFileName = `${newSlug}.md`;
       const newPath = path.join(iceboxDir, newFileName);
       if (!fs.existsSync(newPath)) {
+        this.suppressedPaths.add(filePath);
+        this.suppressedPaths.add(newPath);
         this.removeByFilePath(filePath);
         fs.renameSync(filePath, newPath);
         this.updateFromFile(newPath);
+        setTimeout(() => {
+          this.suppressedPaths.delete(filePath);
+          this.suppressedPaths.delete(newPath);
+        }, 2000);
       } else {
         // Collision with existing slug — keep old filename, still sync content changes
         log.warn('Slug collision during rename, keeping old filename', { slug, newSlug });
@@ -346,16 +416,26 @@ export class ScopeService {
     // Write updated content to old path, then rename/move (no intermediate missing state)
     const originalContent = fs.readFileSync(oldPath, 'utf-8');
     fs.writeFileSync(oldPath, newContent, 'utf-8');
+
+    // Suppress watcher events during programmatic move
+    this.suppressedPaths.add(oldPath);
+    this.suppressedPaths.add(newPath);
     try {
       fs.renameSync(oldPath, newPath);
     } catch (err) {
       // Restore original content on rename failure
       fs.writeFileSync(oldPath, originalContent, 'utf-8');
+      this.suppressedPaths.delete(oldPath);
+      this.suppressedPaths.delete(newPath);
       log.error('Failed to rename during promote', { oldPath, newPath, error: String(err) });
       return null;
     }
     this.updateFromFile(newPath);
     this.removeByFilePath(oldPath);
+    setTimeout(() => {
+      this.suppressedPaths.delete(oldPath);
+      this.suppressedPaths.delete(newPath);
+    }, 2000);
 
     const relPath = path.relative(path.resolve(this.scopesDir, '..'), newPath);
     log.info('Idea promoted', { slug, newId, title });
@@ -380,13 +460,13 @@ export class ScopeService {
     return null;
   }
 
-  /** Update a scope's frontmatter fields and write back to the .md file.
-   *  If status changes, validates the transition and moves the file to the new status directory.
-   *  @param context - transition context for validation (default 'patch') */
-  updateScopeFrontmatter(
+  /** Write frontmatter fields to a scope's .md file.
+   *  If the effective status differs from the current directory, moves the file.
+   *  This is a trusted write operation — callers must validate transitions
+   *  via updateStatus() before calling this method with status changes. */
+  private _writeFrontmatter(
     id: number,
     fields: Record<string, unknown>,
-    context: TransitionContext = 'patch',
   ): TransitionResult & { moved?: boolean } {
     const filePath = this.findScopeFile(id);
     if (!filePath) {
@@ -397,26 +477,21 @@ export class ScopeService {
     const parsed = matter(raw);
     const today = new Date().toISOString().split('T')[0];
 
-    // Validate status transition before any writes
+    // Determine if the file needs to move to a different directory.
+    // Compare against the DIRECTORY name (not frontmatter status) since the question
+    // is whether the physical file location matches the desired status.
     const newStatus = fields.status as string | undefined;
     const dirName = path.basename(path.dirname(filePath));
-    const rawOldStatus = String(parsed.data.status ?? inferStatusFromDir(dirName));
-    const oldStatus = normalizeStatus(rawOldStatus);
-    let needsMove = false;
+    const effectiveStatus = newStatus ?? String(parsed.data.status ?? dirName);
+    const needsMove = effectiveStatus !== dirName && this.engine.isValidStatus(effectiveStatus);
 
-    if (newStatus && newStatus !== oldStatus) {
-      if (!this.engine.isValidStatus(newStatus)) {
-        return { ok: false, error: `Invalid status: '${newStatus}'`, code: 'INVALID_STATUS' };
-      }
-      const check = this.engine.validateTransition(oldStatus, newStatus, context);
-      if (!check.ok) return check;
-      needsMove = true;
-      // Auto-unlock spec when reverting backlog → planning
-      if (newStatus === 'planning' && oldStatus === 'backlog') fields.spec_locked = false;
+    // Auto-unlock spec when reverting backlog → planning
+    if (newStatus === 'planning' && dirName === 'backlog') {
+      fields = { ...fields, spec_locked: false };
     }
 
     // Merge editable fields into frontmatter
-    const editableKeys = ['title', 'status', 'priority', 'effort_estimate', 'category', 'tags', 'blocked_by', 'blocks', 'spec_locked'];
+    const editableKeys = ['title', 'status', 'priority', 'effort_estimate', 'category', 'tags', 'blocked_by', 'blocks', 'spec_locked', 'favourite'];
     for (const key of editableKeys) {
       if (key in fields) {
         const val = fields[key];
@@ -448,8 +523,8 @@ export class ScopeService {
       return { ok: true };
     }
 
-    // Status change → move file to new directory
-    const targetDir = path.join(this.scopesDir, newStatus!);
+    // Status differs from directory → move file to correct directory
+    const targetDir = path.join(this.scopesDir, effectiveStatus);
     if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
 
     const fileName = path.basename(filePath);
@@ -470,7 +545,7 @@ export class ScopeService {
     setTimeout(() => {
       this.suppressedPaths.delete(filePath);
       this.suppressedPaths.delete(newPath);
-    }, 500);
+    }, 2000);
 
     return { ok: true, moved: true };
   }

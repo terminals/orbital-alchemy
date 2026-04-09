@@ -1,4 +1,5 @@
 import { useDroppable } from '@dnd-kit/core';
+import { AnimatePresence, motion } from 'framer-motion';
 import type { Scope, ScopeStatus, CardDisplayConfig } from '@/types';
 import { ScopeCard } from './ScopeCard';
 import { cn } from '@/lib/utils';
@@ -54,24 +55,30 @@ export function SwimCell({
             Drop here
           </div>
         )}
-        {scopes.filter((s) => !s.is_ghost).map((scope) => (
-          <ScopeCard
-            key={scopeKey(scope)}
-            scope={scope}
-            onClick={onScopeClick}
-            cardDisplay={cardDisplay}
-            dimmed={dimmedIds?.has(scopeKey(scope))}
-          />
-        ))}
-        {scopes.filter((s) => s.is_ghost).map((scope) => (
-          <ScopeCard
-            key={scopeKey(scope)}
-            scope={scope}
-            onClick={onScopeClick}
-            cardDisplay={cardDisplay}
-            dimmed={dimmedIds?.has(scopeKey(scope))}
-          />
-        ))}
+        <AnimatePresence initial={false}>
+          {scopes.filter((s) => !s.is_ghost).map((scope) => (
+            <motion.div key={scopeKey(scope)} layout transition={{ duration: 0.25, ease: 'easeInOut' }}>
+              <ScopeCard
+                scope={scope}
+                onClick={onScopeClick}
+                cardDisplay={cardDisplay}
+                dimmed={dimmedIds?.has(scopeKey(scope))}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
+        <AnimatePresence initial={false}>
+          {scopes.filter((s) => s.is_ghost).map((scope) => (
+            <motion.div key={scopeKey(scope)} layout transition={{ duration: 0.25, ease: 'easeInOut' }}>
+              <ScopeCard
+                scope={scope}
+                onClick={onScopeClick}
+                cardDisplay={cardDisplay}
+                dimmed={dimmedIds?.has(scopeKey(scope))}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </div>
   );

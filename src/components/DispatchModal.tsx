@@ -107,7 +107,7 @@ export function DispatchModal({
               </p>
               {checklist.map((item, idx) => (
                 <button
-                  key={idx}
+                  key={item}
                   onClick={() => toggleCheck(idx)}
                   className={cn(
                     'flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-left transition-colors',

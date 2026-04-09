@@ -1,22 +1,26 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ShieldCheck, ArrowRight, CheckCircle2, Clock, Shield, ShieldAlert, Eye, Cog,
+  GitCommit, Play, Square, AlertTriangle, Zap, FileText, TerminalSquare,
+  Wrench, CheckCheck, XCircle,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip,
   ResponsiveContainer, Cell, AreaChart, Area, CartesianGrid,
-  PieChart, Pie, Legend,
 } from 'recharts';
 import { useGates } from '@/hooks/useGates';
 import { useViolations } from '@/hooks/useViolations';
 import { useEnforcementRules } from '@/hooks/useEnforcementRules';
+import { useScopes } from '@/hooks/useScopes';
 import { useProjectUrl } from '@/hooks/useProjectUrl';
 import { ProjectTabBar } from '@/components/ProjectTabBar';
 import { GateIndicator } from '@/components/GateIndicator';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { socket } from '@/socket';
 import type { GateStatus, EnforcementRule, ViolationTrendPoint, OrbitalEvent } from '@/types';
 
 function formatGateName(name: string): string {
@@ -39,6 +43,30 @@ const TOOLTIP_STYLE = {
   borderRadius: '6px', fontSize: '11px',
 };
 
+// ─── Event type display config ──────────────────────────────
+
+const EVENT_CONFIG: Record<string, { icon: typeof Shield; color: string; label: string }> = {
+  VIOLATION:                { icon: AlertTriangle, color: 'text-red-400',           label: 'Violation' },
+  OVERRIDE:                 { icon: ShieldAlert,   color: 'text-amber-400',         label: 'Override' },
+  GATE_PASSED:              { icon: CheckCircle2,  color: 'text-green-400',         label: 'Gate passed' },
+  GATE_FAILED:              { icon: XCircle,       color: 'text-red-400',           label: 'Gate failed' },
+  ALL_GATES_PASSED:         { icon: CheckCheck,    color: 'text-green-400',         label: 'All gates passed' },
+  SCOPE_STATUS_CHANGED:     { icon: Zap,           color: 'text-cyan-400',          label: 'Status changed' },
+  SCOPE_TRANSITION:         { icon: ArrowRight,    color: 'text-cyan-400',          label: 'Transition' },
+  SCOPE_GATE_LIFTED:        { icon: Shield,        color: 'text-cyan-400',          label: 'Gate lifted' },
+  COMMIT:                   { icon: GitCommit,     color: 'text-foreground',        label: 'Commit' },
+  SESSION_START:            { icon: Play,          color: 'text-green-400',         label: 'Session started' },
+  SESSION_END:              { icon: Square,        color: 'text-muted-foreground',  label: 'Session ended' },
+  AGENT_STARTED:            { icon: Zap,           color: 'text-purple-400',        label: 'Agent started' },
+  AGENT_COMPLETED:          { icon: CheckCircle2,  color: 'text-purple-400',        label: 'Agent completed' },
+  SCOPE_CREATED:            { icon: FileText,      color: 'text-cyan-400',          label: 'Scope created' },
+  SCOPE_COMPLETED:          { icon: CheckCircle2,  color: 'text-green-400',         label: 'Scope completed' },
+  DISPATCH:                 { icon: TerminalSquare, color: 'text-cyan-400',         label: 'Dispatch' },
+  REVIEW_FIXES_COMPLETED:   { icon: Wrench,        color: 'text-purple-400',        label: 'Review fixes' },
+  SKILL_INVOKED:            { icon: Zap,           color: 'text-foreground',        label: 'Skill invoked' },
+  SKILL_COMPLETED:          { icon: CheckCircle2,  color: 'text-foreground',        label: 'Skill completed' },
+};
+
 // ─── Main Page ──────────────────────────────────────────────
 
 export function QualityGates() {
@@ -47,16 +75,16 @@ export function QualityGates() {
       <ProjectTabBar />
       <div className="mb-3 flex items-center gap-3">
         <ShieldCheck className="h-4 w-4 text-primary" />
-        <h1 className="text-xl font-light">Safeguards</h1>
+        <h1 className="text-xl font-light">Guards</h1>
       </div>
       <div className="flex flex-1 min-h-0 gap-4">
         {/* Left pane — Rules */}
         <div className="flex w-1/2 min-w-0 flex-col overflow-y-auto rounded-lg border border-border/50">
           <RulesPane />
         </div>
-        {/* Right pane — Enforcement + CI */}
-        <div className="flex w-1/2 min-w-0 flex-col overflow-y-auto space-y-4">
-          <EnforcementPane />
+        {/* Right pane — Activity + CI */}
+        <div className="flex w-1/2 min-w-0 flex-col space-y-4">
+          <ActivityPane />
           <CIGatesPane />
         </div>
       </div>
@@ -87,7 +115,7 @@ function RulesPane() {
 
   return (
     <>
-      {/* Header strip with summary + donut */}
+      {/* Header strip with summary */}
       <div className="sticky top-0 z-10 border-b border-border/50 bg-surface-light/40 backdrop-blur-sm px-3 py-2">
         <div className="flex items-center gap-3">
           <Shield className="h-3.5 w-3.5 text-muted-foreground" />
@@ -101,11 +129,6 @@ function RulesPane() {
             <span className="text-[10px] text-muted-foreground">{rulesData.totalEdges} edges</span>
           </div>
         </div>
-      </div>
-
-      {/* Donut chart row */}
-      <div className="flex items-center justify-center border-b border-border/30 py-2">
-        <HookCategoryDonut summary={rulesData.summary} />
       </div>
 
       {/* Rule table */}
@@ -192,108 +215,282 @@ function RuleRow({ rule }: { rule: EnforcementRule }) {
   );
 }
 
-// ─── Right Pane: Enforcement ────────────────────────────────
+// ─── Right Pane: Activity ──────────────────────────────────
 
-function EnforcementPane() {
+/** Event type filter categories */
+const EVENT_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'workflow', label: 'Workflow', types: new Set(['SCOPE_STATUS_CHANGED', 'SCOPE_TRANSITION', 'SCOPE_GATE_LIFTED', 'SCOPE_CREATED', 'SCOPE_COMPLETED', 'DISPATCH']) },
+  { key: 'enforcement', label: 'Enforcement', types: new Set(['VIOLATION', 'OVERRIDE', 'GATE_PASSED', 'GATE_FAILED', 'ALL_GATES_PASSED', 'REVIEW_FIXES_COMPLETED']) },
+  { key: 'sessions', label: 'Sessions', types: new Set(['SESSION_START', 'SESSION_END', 'AGENT_STARTED', 'AGENT_COMPLETED', 'COMMIT', 'SKILL_INVOKED', 'SKILL_COMPLETED']) },
+] as const;
+
+function ActivityPane() {
   const buildUrl = useProjectUrl();
-  const { byRule, overrides, totalViolations, totalOverrides, loading: violationsLoading } = useViolations();
+  const { scopes } = useScopes();
+  const { totalViolations, totalOverrides, loading: violationsLoading } = useViolations();
   const { trend, loading: trendLoading } = useEnforcementRules();
 
-  const [recentViolations, setRecentViolations] = useState<OrbitalEvent[]>([]);
-  const fetchRecent = useCallback(async () => {
+  const [events, setEvents] = useState<OrbitalEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [filter, setFilter] = useState<string>('all');
+  const [resumingSession, setResumingSession] = useState<string | null>(null);
+
+  const fetchEvents = useCallback(async () => {
     try {
-      const res = await fetch(buildUrl('/events?type=VIOLATION&limit=15'));
-      if (res.ok) setRecentViolations(await res.json());
+      const res = await fetch(buildUrl('/events?limit=50'));
+      if (res.ok) setEvents(await res.json());
     } catch { /* ok */ }
+    finally { setEventsLoading(false); }
   }, [buildUrl]);
-  useEffect(() => { fetchRecent(); }, [fetchRecent]);
+
+  useEffect(() => { fetchEvents(); }, [fetchEvents]);
+
+  useEffect(() => {
+    const handler = () => { fetchEvents(); };
+    socket.on('event:new', handler);
+    return () => { socket.off('event:new', handler); };
+  }, [fetchEvents]);
+
+  // Scope title lookup
+  const scopeMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const s of scopes) map.set(s.id, s.title);
+    return map;
+  }, [scopes]);
+
+  // Filter events
+  const filteredEvents = useMemo(() => {
+    const filterDef = EVENT_FILTERS.find((f) => f.key === filter);
+    if (!filterDef || filter === 'all') return events;
+    return events.filter((e) => (filterDef as { types: Set<string> }).types.has(e.type));
+  }, [events, filter]);
 
   const overrideRate = (totalViolations + totalOverrides) > 0
     ? Math.round((totalOverrides / (totalViolations + totalOverrides)) * 100) : 0;
 
-  const isLoading = violationsLoading || trendLoading;
+  const isLoading = violationsLoading || trendLoading || eventsLoading;
+
+  // Resume session handler
+  async function handleResume(sessionId: string) {
+    setResumingSession(sessionId);
+    try {
+      // Fetch session to get claude_session_id
+      const detailRes = await fetch(buildUrl(`/sessions/${sessionId}/content`));
+      if (!detailRes.ok) return;
+      const detail = await detailRes.json();
+      if (!detail.claude_session_id) return;
+      await fetch(buildUrl(`/sessions/${sessionId}/resume`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ claude_session_id: detail.claude_session_id }),
+      });
+    } catch { /* ok */ }
+    finally { setTimeout(() => setResumingSession(null), 2000); }
+  }
 
   return (
-    <Card>
-      {/* Header */}
-      <CardHeader className="pb-2 pt-3 px-4">
+    <Card className="flex-1 min-h-0 flex flex-col">
+      <CardHeader className="pb-2 pt-3 px-4 shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
           <ShieldAlert className="h-3.5 w-3.5 text-red-400" />
-          <CardTitle className="text-sm font-medium">Enforcement Activity</CardTitle>
+          <CardTitle className="text-sm font-medium">Activity</CardTitle>
           <div className="flex items-center gap-3 ml-auto text-xs">
             <span><span className="text-red-400 font-medium">{totalViolations}</span> <span className="text-muted-foreground">violations</span></span>
             <span><span className="text-amber-400 font-medium">{totalOverrides}</span> <span className="text-muted-foreground">overrides</span></span>
-            <span className={cn('font-medium', overrideRate > 50 ? 'text-amber-400' : 'text-muted-foreground')}>{overrideRate}% <span className="font-normal text-muted-foreground">override rate</span></span>
+            {(totalViolations + totalOverrides) > 0 && (
+              <span className={cn('font-medium', overrideRate > 50 ? 'text-amber-400' : 'text-muted-foreground')}>{overrideRate}%</span>
+            )}
           </div>
         </div>
+        {/* Filter pills */}
+        <div className="flex gap-1 mt-2">
+          {EVENT_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={cn(
+                'rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors',
+                filter === f.key
+                  ? 'bg-primary/15 text-primary border border-primary/30'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-surface-light/50 border border-transparent',
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </CardHeader>
-      <CardContent className="px-4 pb-4 space-y-4">
+      <CardContent className="px-4 pb-4 flex-1 min-h-0 overflow-y-auto space-y-3">
         {isLoading ? (
           <div className="flex h-20 items-center justify-center">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
         ) : (
           <>
-            {/* Charts row */}
-            <div className="grid grid-cols-2 gap-4">
-              <ViolationsVsOverridesChart byRule={byRule} overrides={overrides} />
-              <ViolationTrendChart trend={trend} />
-            </div>
+            <ViolationTrendChart trend={trend} />
 
-            {/* Tables row */}
-            <div className="grid grid-cols-2 gap-4">
-              {/* Recent violations */}
-              <div>
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1.5 block">Recent Violations</span>
-                {recentViolations.length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-2">No violations recorded</p>
-                ) : (
-                  <div className="space-y-0.5">
-                    {recentViolations.slice(0, 8).map((v) => {
-                      const data = v.data as Record<string, string>;
-                      return (
-                        <div key={v.id} className="flex items-center justify-between gap-2 rounded px-2 py-0.5 hover:bg-surface-light/30">
-                          <span className="text-[11px] font-mono text-red-400 truncate">{data?.rule ?? '-'}</span>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {v.scope_id && <span className="font-mono text-[10px] text-muted-foreground">{String(v.scope_id).padStart(3, '0')}</span>}
-                            <span className="text-[10px] text-muted-foreground/50">
-                              {v.timestamp ? formatDistanceToNow(new Date(v.timestamp), { addSuffix: true }) : '-'}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+            {filteredEvents.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">No events recorded yet</p>
+            ) : (
+              <div className="space-y-px">
+                {filteredEvents.map((event) => (
+                  <EventRow
+                    key={event.id}
+                    event={event}
+                    scopeTitle={event.scope_id ? scopeMap.get(event.scope_id) ?? null : null}
+                    onResume={event.session_id ? () => handleResume(event.session_id!) : undefined}
+                    resuming={resumingSession === event.session_id}
+                  />
+                ))}
               </div>
-
-              {/* Recent overrides */}
-              <div>
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1.5 block">Recent Overrides</span>
-                {overrides.length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-2">No overrides recorded</p>
-                ) : (
-                  <div className="space-y-1">
-                    {overrides.slice(0, 8).map((o, idx) => (
-                      <div key={idx} className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[11px] font-medium text-amber-400 truncate">{o.rule ?? 'unknown'}</span>
-                          <span className="flex-shrink-0 text-[9px] text-muted-foreground/50">
-                            {o.date ? formatDistanceToNow(new Date(o.date), { addSuffix: true }) : '-'}
-                          </span>
-                        </div>
-                        {o.reason && <p className="mt-0.5 text-[10px] text-muted-foreground line-clamp-1">{o.reason}</p>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            )}
           </>
         )}
       </CardContent>
     </Card>
   );
+}
+
+function EventRow({ event, scopeTitle, onResume, resuming }: {
+  event: OrbitalEvent;
+  scopeTitle: string | null;
+  onResume?: () => void;
+  resuming?: boolean;
+}) {
+  const config = EVENT_CONFIG[event.type] ?? { icon: Zap, color: 'text-muted-foreground', label: event.type };
+  const Icon = config.icon;
+  const data = (event.data ?? {}) as Record<string, unknown>;
+
+  return (
+    <div className="flex items-center gap-2 rounded px-2 py-1 hover:bg-surface-light/30 group border-l-2 border-transparent hover:border-primary/20">
+      <Icon className={cn('h-3.5 w-3.5 shrink-0', config.color)} />
+      <span className={cn('text-[11px] font-medium shrink-0', config.color)}>{config.label}</span>
+      {event.scope_id && (
+        <Badge variant="outline" className="text-[9px] font-mono px-1.5 py-0 h-4 gap-1 border-border/50 shrink-0">
+          #{String(event.scope_id).padStart(3, '0')}
+          {scopeTitle && (
+            <span className="font-sans text-muted-foreground truncate max-w-[120px]">{scopeTitle}</span>
+          )}
+        </Badge>
+      )}
+      <EventTags type={event.type} data={data} />
+      <span className="flex-1 min-w-0">
+        <EventDescription type={event.type} data={data} />
+      </span>
+      {/* Right side: resume button + time */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        {onResume && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-5 px-1.5 text-[10px] gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+            onClick={onResume}
+            disabled={resuming}
+          >
+            <Play className="h-2.5 w-2.5" />
+            {resuming ? 'Opening...' : 'Resume'}
+          </Button>
+        )}
+        <span className="text-[9px] text-muted-foreground/40 tabular-nums whitespace-nowrap">
+          {event.timestamp ? formatDistanceToNow(new Date(event.timestamp), { addSuffix: true }) : ''}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** Inline tag badges for key event metadata */
+function EventTags({ type, data }: { type: string; data: Record<string, unknown> }) {
+  const tags: Array<{ label: string; color?: string }> = [];
+
+  if (data.rule) tags.push({ label: String(data.rule), color: 'border-red-500/30 text-red-400' });
+  if (data.outcome === 'blocked') tags.push({ label: 'blocked', color: 'border-red-500/30 text-red-400' });
+  if (data.outcome === 'overridden') tags.push({ label: 'overridden', color: 'border-amber-500/30 text-amber-400' });
+  if (data.verdict === 'PASS') tags.push({ label: 'PASS', color: 'border-green-500/30 text-green-400' });
+  if (data.verdict === 'FAIL') tags.push({ label: 'FAIL', color: 'border-red-500/30 text-red-400' });
+  if (type === 'COMMIT' && data.hash) tags.push({ label: String(data.hash).slice(0, 7) });
+  if (type === 'DISPATCH' && data.command) tags.push({ label: String(data.command) });
+  if (type === 'SCOPE_GATE_LIFTED' && data.mode) tags.push({ label: String(data.mode) });
+  if (type === 'AGENT_COMPLETED' && data.action) tags.push({ label: String(data.action) });
+  if (type === 'SKILL_INVOKED' && data.skill) tags.push({ label: String(data.skill) });
+
+  if (tags.length === 0) return null;
+
+  return (
+    <>
+      {tags.map((tag, idx) => (
+        <Badge key={idx} variant="outline" className={cn('text-[9px] px-1 py-0 h-3.5 font-mono', tag.color ?? 'border-border/50')}>
+          {tag.label}
+        </Badge>
+      ))}
+    </>
+  );
+}
+
+/** Rich second-line description based on event type and data */
+function EventDescription({ type, data }: { type: string; data: Record<string, unknown> }) {
+  let text: string | null = null;
+
+  switch (type) {
+    case 'VIOLATION':
+      text = [data.details, data.file].filter(Boolean).join(' \u2014 ') || null;
+      break;
+    case 'OVERRIDE':
+      text = data.reason ? String(data.reason) : null;
+      break;
+    case 'SCOPE_STATUS_CHANGED':
+    case 'SCOPE_TRANSITION': {
+      const from = data.from ? String(data.from) : null;
+      const to = data.to ? String(data.to) : null;
+      const name = data.scope_name ? String(data.scope_name) : null;
+      const parts: string[] = [];
+      if (from && to) parts.push(`${from} \u2192 ${to}`);
+      else if (to) parts.push(`\u2192 ${to}`);
+      if (name) parts.push(name);
+      text = parts.join(' \u2014 ') || null;
+      break;
+    }
+    case 'COMMIT':
+      text = data.message ? String(data.message).slice(0, 100) : null;
+      break;
+    case 'AGENT_COMPLETED': {
+      const parts: string[] = [];
+      if (data.outcome) parts.push(String(data.outcome));
+      if (data.commit_hash) parts.push(`commit ${String(data.commit_hash).slice(0, 7)}`);
+      text = parts.join(' \u2014 ') || null;
+      break;
+    }
+    case 'AGENT_STARTED':
+      text = data.agents ? String(data.agents) : data.mode ? String(data.mode) : null;
+      break;
+    case 'REVIEW_FIXES_COMPLETED': {
+      const total = data.findings_total;
+      const fixed = data.findings_fixed;
+      const agents = data.agents_used;
+      text = total != null ? `${fixed}/${total} findings fixed${agents ? ` by ${agents} agents` : ''}` : null;
+      break;
+    }
+    case 'GATE_PASSED':
+    case 'GATE_FAILED':
+      text = data.gate_name ? formatGateName(String(data.gate_name)) : null;
+      break;
+    case 'DISPATCH':
+      text = null; // command shown as tag
+      break;
+    case 'SESSION_START':
+      text = data.source ? `source: ${data.source}` : null;
+      break;
+    case 'SCOPE_GATE_LIFTED':
+      text = data.scope_file ? String(data.scope_file).split('/').pop() ?? null : null;
+      break;
+    default:
+      text = (data.details || data.message) ? String(data.details || data.message).slice(0, 100) : null;
+  }
+
+  if (!text) return null;
+
+  return <p className="text-[10px] text-muted-foreground truncate">{text}</p>;
 }
 
 // ─── Right Pane: CI Gates ───────────────────────────────────
@@ -307,8 +504,8 @@ function CIGatesPane() {
   const passing = gates.filter((g) => g.status === 'pass').length;
 
   return (
-    <Card>
-      <CardHeader className="pb-2 pt-3 px-4">
+    <Card className="shrink-0 basis-2/5 min-h-0 flex flex-col">
+      <CardHeader className="pb-2 pt-3 px-4 shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
           <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground" />
           <CardTitle className="text-sm font-medium">CI Gates</CardTitle>
@@ -326,7 +523,7 @@ function CIGatesPane() {
           )}
         </div>
       </CardHeader>
-      <CardContent className="px-4 pb-4">
+      <CardContent className="px-4 pb-4 flex-1 min-h-0 overflow-y-auto">
         {loading ? (
           <div className="flex h-20 items-center justify-center">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -454,102 +651,6 @@ function ChartEmpty({ height, message }: { height: number; message: string }) {
   );
 }
 
-// ─── Chart: Hook Category Donut ─────────────────────────────
-
-const CATEGORY_DONUT_COLORS: Record<string, string> = {
-  guards: '#EF4444',
-  gates: '#F59E0B',
-  lifecycle: '#3B82F6',
-  observers: '#71717A',
-};
-
-function HookCategoryDonut({ summary }: { summary: { guards: number; gates: number; lifecycle: number; observers: number } }) {
-  const data = [
-    { name: 'Guards', value: summary.guards },
-    { name: 'Gates', value: summary.gates },
-    { name: 'Lifecycle', value: summary.lifecycle },
-    { name: 'Observers', value: summary.observers },
-  ].filter((d) => d.value > 0);
-
-  const colors = [
-    CATEGORY_DONUT_COLORS.guards,
-    CATEGORY_DONUT_COLORS.gates,
-    CATEGORY_DONUT_COLORS.lifecycle,
-    CATEGORY_DONUT_COLORS.observers,
-  ];
-
-  const total = data.reduce((sum, d) => sum + d.value, 0);
-
-  return (
-    <div className="relative">
-      <PieChart width={100} height={100}>
-        <Pie
-          data={data}
-          cx={49}
-          cy={49}
-          innerRadius={26}
-          outerRadius={42}
-          paddingAngle={3}
-          dataKey="value"
-          stroke="none"
-        >
-          {data.map((_, idx) => <Cell key={idx} fill={colors[idx]} fillOpacity={0.8} />)}
-        </Pie>
-        <RechartsTooltip contentStyle={TOOLTIP_STYLE} />
-      </PieChart>
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <span className="text-sm font-light text-foreground">{total}</span>
-      </div>
-    </div>
-  );
-}
-
-// ─── Chart: Violations vs Overrides ─────────────────────────
-
-function ViolationsVsOverridesChart({
-  byRule,
-  overrides,
-}: {
-  byRule: Array<{ rule: string; count: number }>;
-  overrides: Array<{ rule: string }>;
-}) {
-  const overrideCountByRule = new Map<string, number>();
-  for (const o of overrides) {
-    const rule = o.rule ?? 'unknown';
-    overrideCountByRule.set(rule, (overrideCountByRule.get(rule) ?? 0) + 1);
-  }
-
-  const chartData = byRule.map((r) => ({
-    name: String(r.rule ?? 'unknown').slice(0, 18),
-    violations: r.count,
-    overrides: overrideCountByRule.get(String(r.rule)) ?? 0,
-  }));
-
-  const empty = chartData.length === 0;
-
-  return (
-    <div>
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1.5 block">Violations vs Overrides</span>
-      {empty ? (
-        <ChartEmpty height={120} message="No violation data yet" />
-      ) : (
-        <ResponsiveContainer width="100%" height={Math.max(120, chartData.length * 24)}>
-          <BarChart data={chartData} layout="vertical" margin={{ left: 10, right: 8, top: 0, bottom: 0 }}>
-            <XAxis type="number" hide />
-            <YAxis dataKey="name" type="category" width={120}
-              tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }} />
-            <RechartsTooltip contentStyle={TOOLTIP_STYLE} />
-            <Legend verticalAlign="top" height={20} iconSize={8}
-              wrapperStyle={{ fontSize: '10px', color: 'hsl(var(--muted-foreground))' }} />
-            <Bar dataKey="violations" stackId="a" fill="#EF4444" fillOpacity={0.8} radius={[0, 0, 0, 0]} />
-            <Bar dataKey="overrides" stackId="a" fill="#F59E0B" fillOpacity={0.8} radius={[0, 4, 4, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      )}
-    </div>
-  );
-}
-
 // ─── Chart: Violation Trend ─────────────────────────────────
 
 function ViolationTrendChart({ trend }: { trend: ViolationTrendPoint[] }) {
@@ -561,37 +662,20 @@ function ViolationTrendChart({ trend }: { trend: ViolationTrendPoint[] }) {
     .map(([day, count]) => ({ day: day.slice(5), count }))
     .slice(-30);
 
-  const empty = chartData.length < 2;
+  if (chartData.length < 2) return null;
 
   return (
     <div>
       <span className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1.5 block">Violation Trend (30d)</span>
-      {empty ? (
-        <div className="relative">
-          <div style={{ height: 120 }} className="opacity-30">
-            <ResponsiveContainer width="100%" height={120}>
-              <AreaChart data={[{ day: '', count: 0 }]} margin={{ left: 0, right: 10, top: 5, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
-                <XAxis dataKey="day" tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }} />
-                <YAxis domain={[0, 10]} tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }} width={30} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-xs text-muted-foreground">No trend data yet</span>
-          </div>
-        </div>
-      ) : (
-        <ResponsiveContainer width="100%" height={120}>
-          <AreaChart data={chartData} margin={{ left: 0, right: 10, top: 5, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
-            <XAxis dataKey="day" tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }} />
-            <YAxis tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }} width={30} />
-            <RechartsTooltip contentStyle={TOOLTIP_STYLE} />
-            <Area type="monotone" dataKey="count" stroke="#EF4444" fill="#EF444420" strokeWidth={1.5} />
-          </AreaChart>
-        </ResponsiveContainer>
-      )}
+      <ResponsiveContainer width="100%" height={100}>
+        <AreaChart data={chartData} margin={{ left: 0, right: 10, top: 5, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+          <XAxis dataKey="day" tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }} />
+          <YAxis tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }} width={30} />
+          <RechartsTooltip contentStyle={TOOLTIP_STYLE} />
+          <Area type="monotone" dataKey="count" stroke="#EF4444" fill="#EF444420" strokeWidth={1.5} />
+        </AreaChart>
+      </ResponsiveContainer>
     </div>
   );
 }

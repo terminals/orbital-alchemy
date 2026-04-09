@@ -1,13 +1,7 @@
-import path from 'path';
 import { Router } from 'express';
 import type { SyncService } from '../services/sync-service.js';
 import type { ProjectManager } from '../project-manager.js';
-
-/** Validate that a relative path stays within bounds (no traversal). */
-function isValidRelativePath(relativePath: string): boolean {
-  const normalized = path.normalize(relativePath);
-  return !normalized.startsWith('..') && !path.isAbsolute(normalized) && !normalized.includes('\0');
-}
+import { isValidRelativePath } from '../utils/route-helpers.js';
 
 interface SyncRouteDeps {
   syncService: SyncService;
@@ -131,8 +125,11 @@ export function createSyncRoutes({ syncService, projectManager }: SyncRouteDeps)
   // ─── Project Management ─────────────────────────────────
 
   /** GET /projects — list all registered projects */
-  router.get('/projects', (_req, res) => {
-    res.json(projectManager.getProjectList());
+  router.get('/projects', (req, res) => {
+    const include = req.query.include as string | undefined;
+    res.json(projectManager.getProjectList({
+      includeWorkflow: include?.includes('workflow'),
+    }));
   });
 
   /** POST /projects — register a new project */

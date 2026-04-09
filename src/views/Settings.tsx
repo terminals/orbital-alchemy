@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
-import { Settings as SettingsIcon, Minus, Plus } from 'lucide-react';
+import { Settings as SettingsIcon, Minus, Plus, RotateCcw } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { ToggleSwitch } from '@/components/ui/toggle-switch';
 import { useSettings, FONT_CATALOG, preloadFontPreviews, type FontCategory } from '@/hooks/useSettings';
-import { cn } from '@/lib/utils';
+import { ConfigurationTile } from '@/components/ConfigurationTile';
+import { useOnboarding } from '@/components/onboarding/OnboardingProvider';
 
 const CATEGORY_LABELS: Record<FontCategory, string> = {
   'monospace': 'Monospace',
@@ -16,6 +17,7 @@ const CATEGORY_ORDER: FontCategory[] = ['monospace', 'sans-serif', 'display'];
 
 export function Settings() {
   const { settings, updateSetting } = useSettings();
+  const { restart: restartTour } = useOnboarding();
 
   useEffect(() => { preloadFontPreviews(); }, []);
 
@@ -30,15 +32,18 @@ export function Settings() {
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-1 min-h-0 flex-col">
       {/* Header */}
-      <div className="flex items-center gap-3 px-2 pb-4">
-        <SettingsIcon className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-lg font-medium tracking-wide">Settings</h1>
+      <div className="mb-4 flex items-center gap-3">
+        <SettingsIcon className="h-4 w-4 text-primary" />
+        <h1 className="text-xl font-light">Settings</h1>
       </div>
 
       <ScrollArea className="flex-1">
         <div className="flex flex-col gap-6 pr-4 pb-8">
+
+          {/* ── Configuration ── */}
+          <ConfigurationTile />
 
           {/* ── Appearance ── */}
           <section className="card-glass rounded-xl p-5">
@@ -47,46 +52,29 @@ export function Settings() {
             </h2>
 
             {/* Font Family */}
-            <div className="mb-5">
-              <label className="text-xs text-muted-foreground mb-3 block">Font Family</label>
-              {CATEGORY_ORDER.map(category => {
-                const fonts = FONT_CATALOG.filter(f => f.category === category);
-                return (
-                  <div key={category} className="mb-4 last:mb-0">
-                    <span className="text-xxs uppercase tracking-widest text-muted-foreground/60 mb-2 block">
-                      {CATEGORY_LABELS[category]}
-                    </span>
-                    <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
-                      {fonts.map(font => (
-                        <button
-                          key={font.family}
-                          onClick={() => updateSetting('fontFamily', font.family)}
-                          className={cn(
-                            'group relative flex flex-col items-start rounded-lg border px-3 py-2.5 text-left transition-all duration-200',
-                            settings.fontFamily === font.family
-                              ? 'border-[rgba(0,188,212,0.5)] bg-[rgba(0,188,212,0.08)] shadow-[0_0_12px_rgba(0,188,212,0.15)]'
-                              : 'border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] hover:border-[rgba(255,255,255,0.12)] hover:bg-[rgba(255,255,255,0.04)]'
-                          )}
-                        >
-                          <span
-                            className="text-sm text-foreground truncate w-full"
-                            style={{ fontFamily: `'${font.family}', ${category === 'monospace' ? 'monospace' : 'sans-serif'}` }}
-                          >
-                            {font.label}
-                          </span>
-                          <span
-                            className="text-xs text-muted-foreground/50 mt-0.5"
-                            style={{ fontFamily: `'${font.family}', ${category === 'monospace' ? 'monospace' : 'sans-serif'}` }}
-                          >
-                            Aa Bb 0123
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <SettingRow label="Font Family" description="Typeface used across the dashboard">
+              <select
+                value={settings.fontFamily}
+                onChange={e => updateSetting('fontFamily', e.target.value)}
+                style={{
+                  fontFamily: `'${settings.fontFamily}', ${FONT_CATALOG.find(f => f.family === settings.fontFamily)?.category === 'monospace' ? 'monospace' : 'sans-serif'}`,
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 8px center',
+                }}
+                className="h-8 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 pr-7 text-sm text-foreground outline-none transition-colors hover:border-[rgba(0,188,212,0.3)] focus:border-[rgba(0,188,212,0.5)] focus:shadow-[0_0_8px_rgba(0,188,212,0.15)] appearance-none cursor-pointer"
+              >
+                {CATEGORY_ORDER.map(category => (
+                  <optgroup key={category} label={CATEGORY_LABELS[category]}>
+                    {FONT_CATALOG.filter(f => f.category === category).map(font => (
+                      <option key={font.family} value={font.family}>
+                        {font.label}{font.family === 'Space Grotesk' ? ' (default)' : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </SettingRow>
 
             <Separator className="my-4" />
 
@@ -154,6 +142,23 @@ export function Settings() {
                 checked={settings.compactMode}
                 onCheckedChange={v => updateSetting('compactMode', v)}
               />
+            </SettingRow>
+          </section>
+
+          {/* ── Onboarding ── */}
+          <section className="card-glass rounded-xl p-5">
+            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground mb-5">
+              Onboarding
+            </h2>
+
+            <SettingRow label="Guided Tour" description="Interactive walkthrough of all pages">
+              <button
+                onClick={restartTour}
+                className="flex items-center gap-1.5 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-[rgba(0,188,212,0.3)] hover:text-foreground"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Restart tour
+              </button>
             </SettingRow>
           </section>
         </div>

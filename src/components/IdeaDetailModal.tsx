@@ -41,9 +41,11 @@ export function IdeaDetailModal({ scope, open, onClose, onDelete, onApprove, onR
       setSavedTitle(t);
       setSavedDescription(d);
       setConfirmDelete(false);
-      if (!isGhost) setTimeout(() => titleRef.current?.focus(), 100);
+      const focusTimer = !isGhost ? setTimeout(() => titleRef.current?.focus(), 100) : undefined;
+      return () => { clearTimeout(focusTimer); };
     }
-  }, [scope?.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- isGhost derives from scope; re-syncing on scope?.id is sufficient
+  }, [scope?.id, open]);
 
   const save = useCallback(async () => {
     if (!scope?.slug || !isDirty || saving || isGhost) return;

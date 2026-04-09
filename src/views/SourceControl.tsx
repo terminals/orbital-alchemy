@@ -18,8 +18,8 @@ import { RepoHealthScore } from '@/components/source-control/RepoHealthScore';
 import { DeployHistory } from '@/components/DeployHistory';
 
 export function SourceControl() {
-  const { activeProjectId, isMultiProject } = useProjects();
-  const isAllProjects = isMultiProject && activeProjectId === null;
+  const { activeProjectId, hasMultipleProjects } = useProjects();
+  const isAllProjects = hasMultipleProjects && activeProjectId === null;
 
   const sourceControl = useSourceControl();
   const aggregate = useAggregateSourceControl(isAllProjects);

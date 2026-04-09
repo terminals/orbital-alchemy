@@ -60,8 +60,8 @@ export default function WorkflowVisualizer() {
   const { engine } = useWorkflow();
   const { scopes } = useScopes();
   const { ccHooks } = useCcHooks();
-  const { activeProjectId, isMultiProject, projectEngines } = useProjects();
-  const isAllProjects = isMultiProject && activeProjectId === null;
+  const { activeProjectId, hasMultipleProjects, projectEngines } = useProjects();
+  const isAllProjects = hasMultipleProjects && activeProjectId === null;
   const config = engine.getConfig();
   const editor = useWorkflowEditor(config);
 

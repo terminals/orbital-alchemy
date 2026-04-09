@@ -37,6 +37,7 @@ interface DynamicProfile {
   'Badge Text': string;
   'Tab Color'?: ItermColor;
   'Use Tab Color'?: boolean;
+  [key: string]: unknown; // allow extra color properties from parent profile
 }
 
 /** Convert a hex color (#rrggbb) to iTerm2's color dictionary format. */
@@ -74,21 +75,33 @@ function profilesFilename(prefix: string): string {
   return `${prefix.toLowerCase()}-dispatch-profiles.json`;
 }
 
-function buildProfiles(colorMap: Map<WindowCategory, string>, profilePrefix?: string): { Profiles: DynamicProfile[] } {
+function buildProfiles(
+  colorMap: Map<WindowCategory, string>,
+  profilePrefix?: string,
+  parentColors?: Record<string, unknown>,
+): { Profiles: DynamicProfile[] } {
   const prefix = profilePrefix ?? getConfig().terminal.profilePrefix;
+  const useSeparateColors = parentColors?.['Use Separate Colors for Light and Dark Mode'] === true;
   return {
-    Profiles: CATEGORY_COLUMN_CANDIDATES.map(({ category }) => ({
-      Name: `${prefix}-${category}`,
-      Guid: deriveGuid(prefix, category),
-      'Dynamic Profile Parent Name': 'Default',
-      'Custom Window Title': category,
-      'Use Custom Window Title': true,
-      'Allow Title Setting': false,
-      'Title Components': 1,  // 1 = Session Name (not Job Name)
-      'Badge Text': category,
-      'Tab Color': hexToItermColor(colorMap.get(category) ?? FALLBACK_HEX),
-      'Use Tab Color': true,
-    })),
+    Profiles: CATEGORY_COLUMN_CANDIDATES.map(({ category }) => {
+      const stageColor = hexToItermColor(colorMap.get(category) ?? FALLBACK_HEX);
+      const badgeColor = { ...stageColor, 'Alpha Component': 0.5 };
+      return {
+        ...(parentColors ?? {}),  // inherited colors first — our overrides win
+        Name: `${prefix}-${category}`,
+        Guid: deriveGuid(prefix, category),
+        'Dynamic Profile Parent Name': 'Default',
+        'Custom Window Title': category,
+        'Use Custom Window Title': true,
+        'Allow Title Setting': false,
+        'Title Components': 1,  // 1 = Session Name (not Job Name)
+        'Badge Text': category,
+        'Tab Color': stageColor,
+        'Use Tab Color': true,
+        'Badge Color': badgeColor,
+        ...(useSeparateColors ? { 'Badge Color (Dark)': badgeColor, 'Badge Color (Light)': badgeColor } : {}),
+      };
+    }),
   };
 }
 
@@ -107,22 +120,58 @@ function resolveColorMap(engine: WorkflowEngine): Map<WindowCategory, string> {
   return colors;
 }
 
+const ITERM2_PLIST = path.join(os.homedir(), 'Library', 'Preferences', 'com.googlecode.iterm2.plist');
+
+/** Read all color properties from the user's iTerm2 parent profile.
+ *  Uses `plutil -extract` to pull the first bookmark as JSON, then filters
+ *  for color dicts (entries with "Red Component") and the separate-colors flag.
+ *  Returns an empty object on non-macOS or if iTerm2 prefs can't be read. */
+async function readParentProfileColors(): Promise<Record<string, unknown>> {
+  try {
+    const { stdout } = await execFileAsync(
+      'plutil', ['-extract', 'New Bookmarks.0', 'json', '-o', '-', ITERM2_PLIST],
+      { timeout: 5000 },
+    );
+    const profile = JSON.parse(stdout) as Record<string, unknown>;
+    const colors: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(profile)) {
+      if (value && typeof value === 'object' && 'Red Component' in (value as Record<string, unknown>)) {
+        colors[key] = value;
+      }
+      if (key === 'Use Separate Colors for Light and Dark Mode') {
+        colors[key] = value;
+      }
+    }
+    return colors;
+  } catch {
+    return {};
+  }
+}
+
 /** Write iTerm2 Dynamic Profiles for each workflow category.
  *  Derives tab colors from the active workflow's column definitions.
+ *  Reads the parent profile's colors to work around iTerm2's incomplete
+ *  inheritance of (Dark)/(Light) color variants.
  *  Idempotent — safe to call on every server startup. */
+const profilesWritten = new Set<string>();
 export async function ensureDynamicProfiles(engine: WorkflowEngine, profilePrefix?: string): Promise<void> {
+  const prefix = profilePrefix ?? getConfig().terminal.profilePrefix;
+  if (profilesWritten.has(prefix)) return;
+  profilesWritten.add(prefix);
   try {
     await fs.mkdir(DYNAMIC_PROFILES_DIR, { recursive: true });
-    const prefix = profilePrefix ?? getConfig().terminal.profilePrefix;
     const filePath = path.join(DYNAMIC_PROFILES_DIR, profilesFilename(prefix));
     const colorMap = resolveColorMap(engine);
-    // Write tmp file outside DynamicProfiles/ — iTerm2 watches that dir and reads ALL files
-    const tmpPath = path.join(os.tmpdir(), profilesFilename(prefix) + '.tmp');
-    await fs.writeFile(tmpPath, JSON.stringify(buildProfiles(colorMap, prefix), null, 2));
+    const parentColors = await readParentProfileColors();
+    // Write tmp file outside DynamicProfiles/ — iTerm2 watches that dir and reads ALL files.
+    // Use pid + timestamp to avoid races when multiple projects call concurrently.
+    const tmpPath = path.join(os.tmpdir(), `${profilesFilename(prefix)}.${process.pid}.${Date.now()}.tmp`);
+    await fs.writeFile(tmpPath, JSON.stringify(buildProfiles(colorMap, prefix, parentColors), null, 2));
     await fs.copyFile(tmpPath, filePath);
     await fs.unlink(tmpPath).catch(() => {});
+    log.info('iTerm2 profiles ready', { categories: CATEGORY_COLUMN_CANDIDATES.length });
   } catch (err) {
-    log.warn('Failed to write iTerm2 dynamic profiles', { error: (err as Error).message });
+    log.warn('iTerm2 profiles failed', { error: (err as Error).message });
   }
 }
 
@@ -228,8 +277,11 @@ async function createWindowWithCommand(command: string, category: WindowCategory
       '-e', '  return id of newWindow',
       '-e', 'end tell',
     ]);
-    return parseInt(stdout.trim(), 10);
-  } catch {
+    const id = parseInt(stdout.trim(), 10);
+    if (isNaN(id)) throw new Error('Failed to parse iTerm2 window ID');
+    return id;
+  } catch (e) {
+    if (e instanceof Error && e.message === 'Failed to parse iTerm2 window ID') throw e;
     // Profile missing — fall back to default profile
     const { stdout } = await execFileAsync('osascript', [
       '-e', 'tell application "iTerm2"',
@@ -243,7 +295,9 @@ async function createWindowWithCommand(command: string, category: WindowCategory
       '-e', '  return id of newWindow',
       '-e', 'end tell',
     ]);
-    return parseInt(stdout.trim(), 10);
+    const id = parseInt(stdout.trim(), 10);
+    if (isNaN(id)) throw new Error('Failed to parse iTerm2 window ID');
+    return id;
   }
 }
 

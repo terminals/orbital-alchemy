@@ -50,16 +50,16 @@ else
   JQ_ARGS=(--arg environment "$ENVIRONMENT" --arg status "$STATUS")
   JQ_EXPR='{environment: $environment, status: $status}'
 
-  [ -n "$COMMIT_SHA" ] && JQ_ARGS+=(--arg commit_sha "$COMMIT_SHA") && JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, commit_sha: $commit_sha}/')
-  [ -n "$BRANCH" ] && JQ_ARGS+=(--arg branch "$BRANCH") && JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, branch: $branch}/')
-  [ -n "$PR_NUMBER" ] && JQ_ARGS+=(--argjson pr_number "$PR_NUMBER") && JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, pr_number: $pr_number}/')
+  [ -n "$COMMIT_SHA" ] && JQ_ARGS+=(--arg commit_sha "$COMMIT_SHA") && JQ_EXPR="${JQ_EXPR%\}}, commit_sha: \$commit_sha}"
+  [ -n "$BRANCH" ] && JQ_ARGS+=(--arg branch "$BRANCH") && JQ_EXPR="${JQ_EXPR%\}}, branch: \$branch}"
+  [ -n "$PR_NUMBER" ] && JQ_ARGS+=(--argjson pr_number "$PR_NUMBER") && JQ_EXPR="${JQ_EXPR%\}}, pr_number: \$pr_number}"
 
   # Read health check URL from orbital.config.json if configured
   HEALTH_URL=""
   if command -v jq >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/.claude/orbital.config.json" ]; then
     HEALTH_URL=$(jq -r ".healthChecks[\"$ENVIRONMENT\"] // empty" "$PROJECT_ROOT/.claude/orbital.config.json" 2>/dev/null)
   fi
-  [ -n "$HEALTH_URL" ] && JQ_ARGS+=(--arg health_check_url "$HEALTH_URL") && JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, health_check_url: $health_check_url}/')
+  [ -n "$HEALTH_URL" ] && JQ_ARGS+=(--arg health_check_url "$HEALTH_URL") && JQ_EXPR="${JQ_EXPR%\}}, health_check_url: \$health_check_url}"
 
   PAYLOAD=$(jq -n "${JQ_ARGS[@]}" "$JQ_EXPR")
 

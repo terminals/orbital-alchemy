@@ -69,11 +69,11 @@ if [ -n "$SCOPE_ID" ]; then
 fi
 if [ -n "$AGENT" ]; then
   JQ_ARGS+=(--arg agent "$AGENT")
-  JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, agent: $agent}/')
+  JQ_EXPR="${JQ_EXPR%\}}, agent: \$agent}"
 fi
 if [ -n "$SESSION_ID" ]; then
   JQ_ARGS+=(--arg session_id "$SESSION_ID")
-  JQ_EXPR=$(echo "$JQ_EXPR" | sed 's/}$/, session_id: $session_id}/')
+  JQ_EXPR="${JQ_EXPR%\}}, session_id: \$session_id}"
 fi
 
 jq -n "${JQ_ARGS[@]}" "$JQ_EXPR" > "$EVENT_FILE"

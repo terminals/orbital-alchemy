@@ -1,8 +1,8 @@
-import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
 import { GLOBAL_PRIMITIVES_DIR, GLOBAL_WORKFLOW_PATH, getRegisteredProjects } from '../global-config.js';
 import { createLogger } from '../utils/logger.js';
+import { hashFile, hashTree } from '../manifest.js';
 import type {
   OrbitalSyncManifest,
   SyncFileRecord,
@@ -15,42 +15,12 @@ import type {
 
 const log = createLogger('sync');
 
-const MANIFEST_FILENAME = 'orbital-sync.json';
-
-// ─── Hash Computation ───────────────────────────────────────
-
-/** Compute SHA-256 hash of file content (first 16 hex chars). Normalizes line endings. */
-function hashFile(filePath: string): string {
-  const content = fs.readFileSync(filePath, 'utf-8').replace(/\r\n/g, '\n');
-  return crypto.createHash('sha256').update(content).digest('hex').slice(0, 16);
-}
-
-/** Compute hashes for all files in a directory tree. Returns Map<relativePath, hash>. */
-function hashTree(baseDir: string): Map<string, string> {
-  const result = new Map<string, string>();
-  if (!fs.existsSync(baseDir)) return result;
-
-  function walk(dir: string, prefix: string): void {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name.startsWith('.')) continue;
-      const full = path.join(dir, entry.name);
-      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
-        walk(full, rel);
-      } else {
-        result.set(rel, hashFile(full));
-      }
-    }
-  }
-
-  walk(baseDir, '');
-  return result;
-}
+const SYNC_MANIFEST_FILENAME = 'orbital-sync.json';
 
 // ─── Manifest I/O ───────────────────────────────────────────
 
 function manifestPath(projectRoot: string): string {
-  return path.join(projectRoot, '.claude', MANIFEST_FILENAME);
+  return path.join(projectRoot, '.claude', SYNC_MANIFEST_FILENAME);
 }
 
 /** Load a project's sync manifest, or return null if none exists. */

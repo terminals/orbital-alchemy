@@ -12,8 +12,8 @@ Takes ALL findings from the Phase 3 code review (`/test-code-review`) and execut
 
 ## Prerequisites
 
-- Phase 3 (`/test-code-review`) must have been run in the current post-review pipeline
-- Code review findings must exist in the conversation context
+- Phase 3 (`/test-code-review`) must have been run — either in the current pipeline or in a prior session
+- Code review findings must be available (conversation context OR `.claude/review-findings/NNN.json` on disk)
 - `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` must be enabled (a hook will block this skill otherwise)
 
 ## Steps
@@ -42,7 +42,10 @@ Takes ALL findings from the Phase 3 code review (`/test-code-review`) and execut
 
 ### Step 2: Collect and Organize Findings
 
-1. Gather ALL findings from the Phase 3 code review (from conversation context)
+1. **Load findings** — check both sources in order:
+   - **Disk first:** Read `.claude/review-findings/NNN.json` (where NNN is the scope ID). This file is written by `/test-code-review` Phase 4 and enables standalone `/scope-fix-review` without re-running Phase 3.
+   - **Conversation fallback:** If the file doesn't exist, gather findings from the Phase 3 code review conversation context.
+   - If neither source has findings, report "No findings to fix" and **EXIT**.
 2. Deduplicate findings across the 6 review agents
 3. Group findings by **file ownership domain**:
 

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import type { WorkflowEngine } from '../../shared/workflow-engine';
 import { useProjects } from './useProjectContext';
 
@@ -24,7 +24,7 @@ interface WorkflowProviderProps {
  * (individual views that need all engines use `useProjects().projectEngines`).
  */
 export function WorkflowProvider({ children }: WorkflowProviderProps) {
-  const { activeProjectId, projects, projectEngines } = useProjects();
+  const { activeProjectId, projects, projectEngines, loading } = useProjects();
 
   // Resolve the active engine from the cached map.
   // When "All Projects" is selected, prefer the first project's engine but fall
@@ -48,8 +48,14 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
     }
   }, [engine]);
 
-  if (!engine) {
-    // No projects at all — show error
+  // Memoize before early returns to keep hook count stable
+  const value = useMemo(() => engine ? { engine } : null, [engine]);
+
+  if (!value) {
+    // Still loading projects — render nothing to avoid error/spinner flash
+    if (loading) return null;
+
+    // Loading complete with no projects — show error
     if (projects.length === 0) {
       return (
         <div className="flex h-screen items-center justify-center bg-background">
@@ -63,7 +69,7 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
       );
     }
 
-    // Projects exist but no engine loaded yet — show spinner
+    // Projects exist but engine not loaded yet — show spinner
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
@@ -75,7 +81,7 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
   }
 
   return (
-    <WorkflowContext.Provider value={{ engine }}>
+    <WorkflowContext.Provider value={value}>
       {children}
     </WorkflowContext.Provider>
   );

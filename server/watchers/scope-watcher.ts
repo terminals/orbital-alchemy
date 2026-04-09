@@ -18,19 +18,31 @@ export function startScopeWatcher(
 
   watcher
     .on('add', (filePath: string) => {
-      if (!filePath.endsWith('.md') || scopeService.isSuppressed(filePath)) return;
-      log.info('Scope added', { file: path.basename(filePath) });
-      scopeService.updateFromFile(filePath);
+      try {
+        if (!filePath.endsWith('.md') || scopeService.isSuppressed(filePath)) return;
+        log.debug('Scope added', { file: path.basename(filePath) });
+        scopeService.updateFromFile(filePath);
+      } catch (err) {
+        log.error('Scope watcher add failed', { file: path.basename(filePath), error: String(err) });
+      }
     })
     .on('change', (filePath: string) => {
-      if (!filePath.endsWith('.md') || scopeService.isSuppressed(filePath)) return;
-      log.debug('Scope changed', { file: path.basename(filePath) });
-      scopeService.updateFromFile(filePath);
+      try {
+        if (!filePath.endsWith('.md') || scopeService.isSuppressed(filePath)) return;
+        log.debug('Scope changed', { file: path.basename(filePath) });
+        scopeService.updateFromFile(filePath);
+      } catch (err) {
+        log.error('Scope watcher change failed', { file: path.basename(filePath), error: String(err) });
+      }
     })
     .on('unlink', (filePath: string) => {
-      if (!filePath.endsWith('.md') || scopeService.isSuppressed(filePath)) return;
-      log.info('Scope removed', { file: path.basename(filePath) });
-      scopeService.removeByFilePath(filePath);
+      try {
+        if (!filePath.endsWith('.md') || scopeService.isSuppressed(filePath)) return;
+        log.info('Scope removed', { file: path.basename(filePath) });
+        scopeService.removeByFilePath(filePath);
+      } catch (err) {
+        log.error('Scope watcher unlink failed', { file: path.basename(filePath), error: String(err) });
+      }
     })
     .on('error', (err: unknown) => log.error('Scope watcher error', { error: String(err) }));
 

@@ -36,7 +36,7 @@ export function useTransitionReadiness(scopeId: number | null, projectId?: strin
     }
     function onNewEvent(event: OrbitalEvent) {
       // Filter by project first — ignore events from other projects
-      const eventProjectId = (event as unknown as Record<string, unknown>)._projectId as string | undefined;
+      const eventProjectId = (event as unknown as Record<string, unknown>).project_id as string | undefined;
       if (projectId && eventProjectId && eventProjectId !== projectId) return;
 
       if (

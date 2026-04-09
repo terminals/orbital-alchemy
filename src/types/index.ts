@@ -44,6 +44,7 @@ export interface Scope {
   sessions: Record<string, string[]>;
   /** Project this scope belongs to (multi-project mode) */
   project_id?: string;
+  favourite?: boolean;
 }
 
 // ─── Card Display Types ────────────────────────────────────
@@ -374,6 +375,8 @@ export interface ServerToClientEvents {
   'sync:file:created': (payload: { relativePath: string; autoSynced: string[]; pending: string[] }) => void;
   'sync:file:deleted': (payload: { relativePath: string; removed: string[]; preserved: string[] }) => void;
   'sync:drift:detected': (payload: { projectPath: string; relativePath: string }) => void;
+  // Manifest events
+  'manifest:changed': (payload: { action: string; file?: string }) => void;
 }
 
 export interface ClientToServerEvents {
@@ -573,4 +576,83 @@ export interface PipelineData {
   hookPathMap: Map<string, string>;
   agentPathMap: Map<string, string>;
   orchestratesMap: Map<string, string[]>;
+}
+
+// ─── Manifest / Configuration Types ─────────────────────
+
+export interface ManifestFileSummary {
+  total: number;
+  synced: number;
+  outdated: number;
+  modified: number;
+  pinned: number;
+  missing: number;
+  userOwned: number;
+  byType: Record<string, { synced: number; outdated: number; modified: number; pinned: number; missing: number; userOwned: number }>;
+}
+
+export interface ManifestStatus {
+  exists: boolean;
+  packageVersion: string;
+  installedVersion: string;
+  needsUpdate: boolean;
+  preset: string;
+  files: ManifestFileSummary;
+  lastUpdated: string;
+}
+
+export interface ManifestFileEntry {
+  path: string;
+  origin: 'template' | 'user';
+  status: 'synced' | 'outdated' | 'modified' | 'pinned' | 'missing' | 'user-owned';
+  templateHash?: string;
+  installedHash: string;
+  pinnedAt?: string;
+  pinnedReason?: string;
+  hasPrev: boolean;
+}
+
+export interface ManifestValidationReport {
+  results: Array<{
+    severity: 'error' | 'warning' | 'info';
+    message: string;
+    file?: string;
+    detail?: string;
+  }>;
+  errors: number;
+  warnings: number;
+}
+
+export interface UpdatePlanPreview {
+  toAdd: string[];
+  toUpdate: string[];
+  toRemove: string[];
+  toRename: Array<{ from: string; to: string }>;
+  toSkip: Array<{ file: string; reason: string }>;
+  settingsChanges: { hooksToAdd: string[]; hooksToRemove: string[] };
+  pendingMigrations: string[];
+  isEmpty: boolean;
+}
+
+export interface ProjectManifestOverview {
+  projectId: string;
+  projectName: string;
+  projectColor: string;
+  status: 'ok' | 'error' | 'no-manifest';
+  manifest: ManifestStatus | null;
+  error?: string;
+}
+
+export interface AggregateManifestSummary {
+  total: number;
+  projectsUpToDate: number;
+  projectsOutdated: number;
+  noManifest: number;
+  totalOutdated: number;
+  totalModified: number;
+  totalPinned: number;
+  totalMissing: number;
+  totalSynced: number;
+  totalUserOwned: number;
+  projects: ProjectManifestOverview[];
 }

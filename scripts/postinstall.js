@@ -9,14 +9,13 @@
  * 3. Otherwise, prints a banner with next steps.
  */
 
-import { existsSync, readFileSync } from 'fs';
+import { existsSync } from 'fs';
 import { execFileSync } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, '..');
-const orbitalHome = path.join(process.env.HOME || process.env.USERPROFILE || '~', '.orbital');
 
 // ─── 1. Esbuild safety net ─────────────────────────────────────
 
@@ -29,44 +28,9 @@ if (existsSync(esbuildInstall)) {
   }
 }
 
-// ─── 2. Setup wizard or banner ──────────────────────────────────
+// ─── 2. Post-install banner ─────────────────────────────────────
 
-const isInteractive = process.stdout.isTTY && !process.env.CI;
-const alreadySetUp = existsSync(path.join(orbitalHome, 'config.json'));
-
-if (isInteractive && !alreadySetUp) {
-  // Launch the Phase 1 setup wizard
-  try {
-    const pkg = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
-    const version = pkg.version || '0.0.0';
-
-    let wizard;
-    try {
-      wizard = await import('../dist/server/server/wizard/index.js');
-    } catch {
-      try {
-        wizard = await import('../server/wizard/index.js');
-      } catch {
-        // Wizard module not available — fall through to banner
-        wizard = null;
-      }
-    }
-
-    if (wizard) {
-      await wizard.runSetupWizard(version);
-    } else {
-      printBanner();
-    }
-  } catch {
-    printBanner();
-  }
-} else if (!alreadySetUp) {
-  printBanner();
-}
-
-function printBanner() {
-  console.log('');
-  console.log('  Orbital Command installed.');
-  console.log('  Run `orbital` in your project directory to get started.');
-  console.log('');
-}
+console.log('');
+console.log('  Orbital Command installed.');
+console.log('  Run \x1b[36morbital init\x1b[0m in your project directory to get started.');
+console.log('');

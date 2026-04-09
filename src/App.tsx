@@ -1,4 +1,4 @@
-import { lazy, Component, type ReactNode } from 'react';
+import { lazy, Suspense, Component, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ProjectProvider } from '@/hooks/useProjectContext';
@@ -15,6 +15,7 @@ const sourceControlImport = () => import('@/views/SourceControl').then(m => ({ d
 const sessionTimelineImport = () => import('@/views/SessionTimeline').then(m => ({ default: m.SessionTimeline }));
 const settingsImport = () => import('@/views/Settings').then(m => ({ default: m.Settings }));
 const workflowImport = () => import('@/views/WorkflowVisualizer');
+const landingImport = () => import('@/views/Landing').then(m => ({ default: m.Landing }));
 
 const PrimitivesConfig = lazy(primitivesImport);
 const QualityGates = lazy(qualityGatesImport);
@@ -22,6 +23,7 @@ const SourceControl = lazy(sourceControlImport);
 const SessionTimeline = lazy(sessionTimelineImport);
 const Settings = lazy(settingsImport);
 const WorkflowVisualizer = lazy(workflowImport);
+const Landing = lazy(landingImport);
 
 // Preload all chunks once the main bundle is idle so navigation never triggers Suspense
 requestIdleCallback(() => {
@@ -54,6 +56,7 @@ function AppInner() {
     <ActiveDispatchContext.Provider value={activeDispatchCtx}>
       <OnboardingErrorBoundary>
         <Routes>
+          <Route path="landing" element={<Suspense fallback={null}><Landing /></Suspense>} />
           <Route element={<DashboardLayout />}>
             <Route index element={<ScopeBoard />} />
             <Route path="primitives" element={<PrimitivesConfig />} />

@@ -36,11 +36,27 @@ function getFlagValue(args, flag) {
   return idx !== -1 && idx + 1 < args.length ? args[idx + 1] : undefined;
 }
 
+function isGitRepo() {
+  try {
+    execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function detectProjectRoot() {
   try {
-    return execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+    return execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: 'pipe' }).trim();
   } catch {
     return process.cwd();
+  }
+}
+
+function requireGitRepo() {
+  if (!isGitRepo()) {
+    console.error('Not a git repository. Run `orbital init` from inside a project directory.');
+    process.exit(1);
   }
 }
 
@@ -172,6 +188,7 @@ function autoRegisterProject(projectRoot) {
 async function cmdInit(args) {
   const isYes = args.includes('--yes') || args.includes('-y');
   const isInteractive = process.stdout.isTTY && !process.env.CI && !isYes;
+  requireGitRepo();
   const projectRoot = detectProjectRoot();
 
   if (isInteractive) {
@@ -957,6 +974,7 @@ async function main() {
       break;
     case undefined:
       if (process.stdout.isTTY && !process.env.CI) {
+        requireGitRepo();
         const wiz = await loadWizardModule();
         const version = getPackageVersion();
         if (!orbitalSetupDone()) {

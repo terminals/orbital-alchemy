@@ -192,7 +192,7 @@ fi
 # ─── Template scaffolding ───────────────────────────────────────
 TEMPLATE="$SCOPE_PROJECT_DIR/scopes/_template.md"
 if [ ! -f "$TEMPLATE" ]; then
-  echo "Error: Template not found: $TEMPLATE (run 'orbital init' first)" >&2
+  echo "Error: Template not found: $TEMPLATE (run 'orbital' first)" >&2
   exit 3
 fi
 

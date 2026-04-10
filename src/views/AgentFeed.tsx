@@ -33,7 +33,6 @@ const AGENTS = [
   'all',
   'attacker',
   'chaos',
-  'solana-expert',
   'frontend-designer',
   'architect',
   'rules-enforcer',
@@ -314,7 +313,6 @@ function formatEventMessage(event: OrbitalEvent): string {
 const AGENT_CHIP_CONFIG: Record<string, { emoji: string; label: string; color: string; activeColor: string; glowClass: string }> = {
   'attacker':          { emoji: '\u{1F5E1}\u{FE0F}', label: 'Attacker', color: 'text-agent-attacker', activeColor: 'bg-agent-attacker/25 ring-1 ring-agent-attacker/40', glowClass: 'glow-red' },
   'chaos':             { emoji: '\u{1F4A5}', label: 'Chaos', color: 'text-agent-chaos', activeColor: 'bg-agent-chaos/25 ring-1 ring-agent-chaos/40', glowClass: 'glow-amber' },
-  'solana-expert':     { emoji: '\u{26D3}\u{FE0F}', label: 'Solana', color: 'text-agent-solana', activeColor: 'bg-agent-solana/25 ring-1 ring-agent-solana/40', glowClass: 'glow-purple' },
   'frontend-designer': { emoji: '\u{1F3A8}', label: 'Frontend', color: 'text-agent-frontend', activeColor: 'bg-agent-frontend/25 ring-1 ring-agent-frontend/40', glowClass: 'glow-red' },
   'architect':         { emoji: '\u{1F3D7}\u{FE0F}', label: 'Architect', color: 'text-agent-architect', activeColor: 'bg-agent-architect/25 ring-1 ring-agent-architect/40', glowClass: 'glow-blue' },
   'rules-enforcer':    { emoji: '\u{1F4CB}', label: 'Rules', color: 'text-agent-rules', activeColor: 'bg-agent-rules/25 ring-1 ring-agent-rules/40', glowClass: '' },

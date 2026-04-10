@@ -225,14 +225,14 @@ const S = ({ color, children }: { color: string; children: ReactNode }) => (
 );
 
 const TERMINAL_LINES: TermLine[] = [
-  { elements: <>$ npx orbital-command init</>, delay: 400 },
+  { elements: <>$ orbital</>, delay: 400 },
   { elements: <>  Scaffolding hooks, skills, and agents...</>, delay: 800 },
   { elements: <>  Writing .claude/hooks/on-scope-change.sh</>, delay: 200 },
   { elements: <>  Writing .claude/hooks/on-quality-gate.sh</>, delay: 200 },
   { elements: <>  Creating orbital.config.json</>, delay: 300 },
   { elements: <>  <S color="#00e676">&#10003;</S> Orbital Command initialized</>, delay: 600 },
   { elements: <>&nbsp;</>, delay: 300 },
-  { elements: <>$ orbital dev</>, delay: 500 },
+  { elements: <>  Launching dashboard...</>, delay: 500 },
   { elements: <>  Server running on http://localhost:4444</>, delay: 400 },
   { elements: <>  Client running on http://localhost:4445</>, delay: 200 },
   { elements: <>  <S color="#00bcd4">&#9673;</S> Watching scopes/ for changes...</>, delay: 300 },
@@ -592,7 +592,7 @@ export function Landing() {
             animate={{ opacity: 1 }}
             transition={{ duration: 0.6, delay: 1.3 }}
           >
-            <code>npx orbital-command init</code>
+            <code>npm install -g orbital-command && orbital</code>
           </motion.div>
         </motion.div>
 
@@ -688,9 +688,9 @@ export function Landing() {
           </FadeUp>
 
           <div className="landing-steps-grid">
-            <HowItWorksStep number="01" title="Initialize" description="Run orbital init in your project. It scaffolds hooks, skills, agents, and config into your .claude/ directory. Zero lock-in — everything is plain files." icon={Terminal} delay={0} />
+            <HowItWorksStep number="01" title="Initialize" description="Run orbital in your project. The setup wizard scaffolds hooks, skills, agents, and config into your .claude/ directory. Zero lock-in — everything is plain files." icon={Terminal} delay={0} />
             <HowItWorksStep number="02" title="Define Scopes" description="Write markdown files with YAML frontmatter in scopes/. Each scope is a task card — title, status, category, priority, assignee. Claude reads and updates them." icon={GitBranch} delay={0.15} />
-            <HowItWorksStep number="03" title="Launch" description="Run orbital dev and open the dashboard. Watch your AI fleet in real-time as Claude agents pick up scopes, emit events, and progress through your workflow." icon={Rocket} delay={0.3} />
+            <HowItWorksStep number="03" title="Launch" description="Select Launch from the hub menu and open the dashboard. Watch your AI fleet in real-time as Claude agents pick up scopes, emit events, and progress through your workflow." icon={Rocket} delay={0.3} />
           </div>
         </div>
       </section>

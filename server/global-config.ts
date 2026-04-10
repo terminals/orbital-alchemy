@@ -27,6 +27,9 @@ export interface OrbitalGlobalConfig {
   version: 1;
   projects: ProjectRegistration[];
   privateMode?: boolean;
+  dispatchFlags?: import('../shared/api-types.js').DispatchFlags;
+  dispatch?: import('../shared/api-types.js').DispatchConfig;
+  terminalAdapter?: string;
 }
 
 // ─── Constants ──────────────────────────────────────────────

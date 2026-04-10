@@ -17,9 +17,10 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Environment
+# Environment & secrets
 .env
 .env.*
+.npmrc
 
 # Test coverage
 coverage/

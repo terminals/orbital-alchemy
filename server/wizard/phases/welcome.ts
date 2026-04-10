@@ -18,8 +18,7 @@ export async function phaseWelcome(state: ProjectSetupState): Promise<boolean> {
     const action = await p.select({
       message: 'What would you like to do?',
       options: [
-        { value: 'reinit', label: 'Re-initialize (--force)', hint: 'reset all templates to defaults' },
-        { value: 'configure', label: 'Open config editor', hint: 'modify settings without resetting' },
+        { value: 'configure', label: 'Open config editor', hint: 'modify settings' },
         { value: 'cancel', label: 'Cancel' },
       ],
     });
@@ -33,9 +32,6 @@ export async function phaseWelcome(state: ProjectSetupState): Promise<boolean> {
       await runConfigEditor(state.projectRoot, state.packageVersion, []);
       process.exit(0);
     }
-
-    // Re-init — continue through the full project setup with force
-    return true;
   }
 
   // Not initialized — continue normally

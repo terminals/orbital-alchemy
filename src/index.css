@@ -193,6 +193,18 @@
   border-bottom-color: rgba(var(--neon-cyan), 0.3);
 }
 
+/* ─── SETTINGS PANELS ─── */
+[data-theme="neon-glass"] .card-glass.settings-panel {
+  border: 1px solid rgba(var(--neon-cyan), 0.25) !important;
+}
+[data-theme="neon-glass"] .card-glass.settings-panel:hover {
+  border-color: rgba(var(--neon-cyan), 0.4) !important;
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+    0 0 20px -4px rgba(var(--neon-cyan), 0.15),
+    0 0 40px -8px rgba(var(--neon-cyan), 0.08);
+}
+
 /* ─── SIDEBAR ─── */
 [data-theme="neon-glass"] .sidebar-glass {
   backdrop-filter: blur(32px) saturate(1.6);
@@ -618,14 +630,12 @@
 /* ─── AGENT BADGE GLOWS (flat default, glow on hover) ─── */
 [data-theme="neon-glass"] .agent-glow-attacker,
 [data-theme="neon-glass"] .agent-glow-chaos,
-[data-theme="neon-glass"] .agent-glow-solana,
 [data-theme="neon-glass"] .agent-glow-frontend,
 [data-theme="neon-glass"] .agent-glow-architect,
 [data-theme="neon-glass"] .agent-glow-devops,
 [data-theme="neon-glass"] .agent-glow-rules { box-shadow: none; }
 [data-theme="neon-glass"] .agent-glow-attacker:hover  { box-shadow: 0 0 14px rgba(var(--neon-red), 0.35); }
 [data-theme="neon-glass"] .agent-glow-chaos:hover     { box-shadow: 0 0 14px rgba(249, 115, 22, 0.35); }
-[data-theme="neon-glass"] .agent-glow-solana:hover    { box-shadow: 0 0 14px rgba(var(--neon-purple), 0.35); }
 [data-theme="neon-glass"] .agent-glow-frontend:hover  { box-shadow: 0 0 14px rgba(var(--neon-pink), 0.35); }
 [data-theme="neon-glass"] .agent-glow-architect:hover { box-shadow: 0 0 14px rgba(var(--neon-blue), 0.35); }
 [data-theme="neon-glass"] .agent-glow-devops:hover    { box-shadow: 0 0 14px rgba(var(--neon-cyan), 0.35); }

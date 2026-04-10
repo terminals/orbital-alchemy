@@ -9,6 +9,7 @@ import { WorkflowEngine } from '../../shared/workflow-engine.js';
 import { createTestDb } from './helpers/db.js';
 import { createMockEmitter } from './helpers/mock-emitter.js';
 import { DEFAULT_CONFIG } from '../../shared/__fixtures__/workflow-configs.js';
+import { loadConfig } from '../config.js';
 import type Database from 'better-sqlite3';
 
 describe('data-routes', () => {
@@ -42,6 +43,7 @@ describe('data-routes', () => {
       engine,
       projectRoot: '/tmp/test-project',
       inferScopeStatus: vi.fn(),
+      config: loadConfig('/tmp/test-project'),
     });
 
     app = express();

@@ -55,7 +55,7 @@ function detectProjectRoot() {
 
 function requireGitRepo() {
   if (!isGitRepo()) {
-    console.error('Not a git repository. Run `orbital init` from inside a project directory.');
+    console.error('Not a git repository. Run `orbital` from inside a project directory.');
     process.exit(1);
   }
 }
@@ -96,26 +96,6 @@ function stampTemplateVersion(projectRoot) {
   } catch { /* ignore malformed config */ }
 }
 
-function checkTemplatesStaleness(projectRoot) {
-  const configPath = path.join(projectRoot, '.claude', 'orbital.config.json');
-  if (!fs.existsSync(configPath)) return;
-
-  try {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    const projectVersion = config.templateVersion || null;
-    const packageVersion = getPackageVersion();
-
-    if (projectVersion && projectVersion === packageVersion) return;
-
-    if (projectVersion) {
-      console.log(`\n  ⚠ Templates outdated (project: v${projectVersion}, package: v${packageVersion})`);
-    } else {
-      console.log(`\n  ⚠ Templates have no version stamp`);
-    }
-    console.log(`    Run \`orbital update\` to refresh templates.\n`);
-  } catch { /* ignore malformed config */ }
-}
-
 function openBrowser(url) {
   const platform = process.platform;
   if (platform === 'darwin') {
@@ -137,11 +117,9 @@ function openBrowser(url) {
  */
 async function loadSharedModule() {
   try {
-    // Production: compiled JS (tsconfig.server.json outputs to dist/server/server/)
     return await import('../dist/server/server/init.js');
   } catch {
     try {
-      // Dev: TypeScript source loaded via tsx
       return await import('../server/init.js');
     } catch {
       console.error('Error: Orbital Command server module not found.');
@@ -170,77 +148,40 @@ async function loadWizardModule() {
 }
 
 // ---------------------------------------------------------------------------
-// Commands
+// Multi-project registry
 // ---------------------------------------------------------------------------
+
+const ORBITAL_HOME = path.join(process.env.HOME || process.env.USERPROFILE || '~', '.orbital');
+const REGISTRY_PATH = path.join(ORBITAL_HOME, 'config.json');
+
+function loadRegistry() {
+  if (!fs.existsSync(REGISTRY_PATH)) return { version: 1, projects: [] };
+  try {
+    return JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf8'));
+  } catch {
+    return { version: 1, projects: [] };
+  }
+}
+
+function writeRegistryAtomic(registry) {
+  if (!fs.existsSync(ORBITAL_HOME)) fs.mkdirSync(ORBITAL_HOME, { recursive: true });
+  const tmp = REGISTRY_PATH + `.tmp.${process.pid}`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(registry, null, 2), 'utf8');
+    fs.renameSync(tmp, REGISTRY_PATH);
+  } catch (err) {
+    try { fs.unlinkSync(tmp); } catch { /* best-effort */ }
+    throw err;
+  }
+}
 
 function orbitalSetupDone() {
   return fs.existsSync(path.join(ORBITAL_HOME, 'config.json'));
 }
 
-function autoRegisterProject(projectRoot) {
-  if (!fs.existsSync(ORBITAL_HOME)) fs.mkdirSync(ORBITAL_HOME, { recursive: true });
-  const registry = loadRegistry();
-  if (!(registry.projects || []).some(p => p.path === projectRoot)) {
-    cmdRegister([projectRoot]);
-  }
-}
-
-async function cmdInit(args) {
-  const isYes = args.includes('--yes') || args.includes('-y');
-  const isInteractive = process.stdout.isTTY && !process.env.CI && !isYes;
-  requireGitRepo();
-  const projectRoot = detectProjectRoot();
-
-  if (isInteractive) {
-    const wiz = await loadWizardModule();
-    const version = getPackageVersion();
-
-    // If Orbital hasn't been set up yet, run Phase 1 first
-    if (!orbitalSetupDone()) {
-      await wiz.runSetupWizard(version);
-    }
-
-    // Phase 2: project setup for current directory
-    await wiz.runProjectSetup(projectRoot, version, args);
-    stampTemplateVersion(projectRoot);
-    return;
-  }
-
-  // Non-interactive / --yes fallback (existing behavior preserved)
-  const force = args.includes('--force');
-  const globalPrivate = loadRegistry().privateMode === true;
-  const isPrivate = args.includes('--private') || globalPrivate;
-  const preset = getFlagValue(args, '--preset');
-  const projectName = getFlagValue(args, '--project-name');
-  const serverPort = getFlagValue(args, '--server-port');
-  const clientPort = getFlagValue(args, '--client-port');
-
-  const { runInit } = await loadSharedModule();
-  runInit(projectRoot, {
-    force,
-    preset: preset || undefined,
-    projectName: projectName || undefined,
-    serverPort: serverPort ? Number(serverPort) : undefined,
-    clientPort: clientPort ? Number(clientPort) : undefined,
-  });
-  stampTemplateVersion(projectRoot);
-
-  if (isPrivate) {
-    const configPath = path.join(projectRoot, '.claude', 'orbital.config.json');
-    if (fs.existsSync(configPath)) {
-      try {
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-        if (!config.telemetry) config.telemetry = {};
-        config.telemetry.enabled = false;
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
-
-      } catch { /* leave config as-is */ }
-    }
-  }
-
-  autoRegisterProject(projectRoot);
-  console.log(`Run \`orbital launch\` to start the dashboard.\n`);
-}
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
 
 function cmdLaunchOrDev(forceViteFlag) {
   const shouldOpen = process.argv.includes('--open');
@@ -250,11 +191,14 @@ function cmdLaunchOrDev(forceViteFlag) {
   const serverPort = config.serverPort || 4444;
   const clientPort = config.clientPort || 4445;
 
-  autoRegisterProject(projectRoot);
-
   // Detect packaged mode: dist/index.html exists → serve pre-built frontend
   const hasPrebuiltFrontend = fs.existsSync(path.join(PACKAGE_ROOT, 'dist', 'index.html'));
   const useVite = forceVite || !hasPrebuiltFrontend;
+
+  // Detect compiled server: dist/server/server/launch.js exists → run with node
+  const compiledServer = path.join(PACKAGE_ROOT, 'dist', 'server', 'server', 'launch.js');
+  const hasCompiledServer = fs.existsSync(compiledServer);
+  const useCompiledServer = hasCompiledServer && !useVite;
 
   console.log(`\nOrbital Command — ${useVite ? 'dev' : 'launch'}`);
   console.log(`Project root: ${projectRoot}`);
@@ -265,8 +209,6 @@ function cmdLaunchOrDev(forceViteFlag) {
     console.log(`Dashboard: http://localhost:${serverPort}\n`);
   }
 
-  checkTemplatesStaleness(projectRoot);
-
   const env = {
     ...process.env,
     ORBITAL_LAUNCH_MODE: 'central',
@@ -274,23 +216,33 @@ function cmdLaunchOrDev(forceViteFlag) {
     ORBITAL_SERVER_PORT: String(serverPort),
   };
 
-  const serverScript = path.join(PACKAGE_ROOT, 'server', 'launch.ts');
-  const tsxBin = resolveBin('tsx');
-  const serverProcess = tsxBin
-    ? spawn(tsxBin, ['watch', serverScript],
-        { stdio: 'inherit', env, cwd: PACKAGE_ROOT })
-    : spawn('npx', ['tsx', 'watch', serverScript],
+  let serverProcess;
+
+  if (useCompiledServer) {
+    serverProcess = spawn(process.execPath, [compiledServer],
+      { stdio: 'inherit', env, cwd: PACKAGE_ROOT });
+  } else {
+    const tsxBin = resolveBin('tsx');
+    const serverScript = path.join(PACKAGE_ROOT, 'server', 'launch.ts');
+    if (tsxBin) {
+      serverProcess = spawn(tsxBin, ['watch', serverScript],
         { stdio: 'inherit', env, cwd: PACKAGE_ROOT });
+    } else {
+      console.error('Error: tsx not found. Install it with: npm install tsx');
+      process.exit(1);
+    }
+  }
 
   let viteProcess = null;
 
   if (useVite) {
     const viteBin = resolveBin('vite');
-    viteProcess = viteBin
-      ? spawn(viteBin, ['--config', path.join(PACKAGE_ROOT, 'vite.config.ts'), '--port', String(clientPort)],
-          { stdio: 'inherit', env, cwd: PACKAGE_ROOT })
-      : spawn('npx', ['vite', '--config', path.join(PACKAGE_ROOT, 'vite.config.ts'), '--port', String(clientPort)],
-          { stdio: 'inherit', env, cwd: PACKAGE_ROOT });
+    if (!viteBin) {
+      console.error('Error: vite not found. Install it with: npm install vite');
+      process.exit(1);
+    }
+    viteProcess = spawn(viteBin, ['--config', path.join(PACKAGE_ROOT, 'vite.config.ts'), '--port', String(clientPort)],
+      { stdio: 'inherit', env, cwd: PACKAGE_ROOT });
   }
 
   const dashboardUrl = useVite
@@ -335,11 +287,12 @@ function cmdBuild() {
   console.log(`\nOrbital Command — build\n`);
 
   const viteBin = resolveBin('vite');
-  const buildProcess = viteBin
-    ? spawn(viteBin, ['build', '--config', path.join(PACKAGE_ROOT, 'vite.config.ts')],
-        { stdio: 'inherit', cwd: PACKAGE_ROOT })
-    : spawn('npx', ['vite', 'build', '--config', path.join(PACKAGE_ROOT, 'vite.config.ts')],
-        { stdio: 'inherit', cwd: PACKAGE_ROOT });
+  if (!viteBin) {
+    console.error('Error: vite not found. Install it with: npm install vite');
+    process.exit(1);
+  }
+  const buildProcess = spawn(viteBin, ['build', '--config', path.join(PACKAGE_ROOT, 'vite.config.ts')],
+    { stdio: 'inherit', cwd: PACKAGE_ROOT });
 
   buildProcess.on('exit', (code) => {
     process.exit(code || 0);
@@ -421,7 +374,7 @@ async function cmdStatus() {
   const manifest = mod.loadManifest(projectRoot);
 
   if (!manifest) {
-    console.log('\nNo manifest found. Run `orbital init` or `orbital update` to create one.\n');
+    console.log('\nNo manifest found. Run `orbital` to set up this project.\n');
     return;
   }
 
@@ -444,7 +397,6 @@ async function cmdStatus() {
     console.log(`  ${type.padEnd(16)} ${parts.join(', ')}`);
   }
 
-  // Show outdated files (template moved ahead, user hasn't touched)
   const outdated = Object.entries(manifest.files)
     .filter(([, r]) => r.status === 'outdated');
   if (outdated.length > 0) {
@@ -454,7 +406,6 @@ async function cmdStatus() {
     }
   }
 
-  // Show modified files (user edited)
   const modified = Object.entries(manifest.files)
     .filter(([, r]) => r.status === 'modified');
   if (modified.length > 0) {
@@ -464,7 +415,6 @@ async function cmdStatus() {
     }
   }
 
-  // Show pinned files
   const pinned = Object.entries(manifest.files)
     .filter(([, r]) => r.status === 'pinned');
   if (pinned.length > 0) {
@@ -492,7 +442,7 @@ async function cmdPin(args) {
   const mod = await loadSharedModule();
   const manifest = mod.loadManifest(projectRoot);
   if (!manifest) {
-    console.error('No manifest found. Run `orbital init` first.');
+    console.error('No manifest found. Run `orbital` first.');
     process.exit(1);
   }
 
@@ -526,7 +476,7 @@ async function cmdUnpin(args) {
   const mod = await loadSharedModule();
   const manifest = mod.loadManifest(projectRoot);
   if (!manifest) {
-    console.error('No manifest found. Run `orbital init` first.');
+    console.error('No manifest found. Run `orbital` first.');
     process.exit(1);
   }
 
@@ -536,7 +486,6 @@ async function cmdUnpin(args) {
     process.exit(1);
   }
 
-  // Clear pinned state, then recompute
   record.status = 'synced';
   delete record.pinnedAt;
   delete record.pinnedReason;
@@ -559,7 +508,7 @@ async function cmdPins() {
   const mod = await loadSharedModule();
   const manifest = mod.loadManifest(projectRoot);
   if (!manifest) {
-    console.error('No manifest found. Run `orbital init` first.');
+    console.error('No manifest found. Run `orbital` first.');
     process.exit(1);
   }
 
@@ -596,7 +545,7 @@ async function cmdDiff(args) {
   const mod = await loadSharedModule();
   const manifest = mod.loadManifest(projectRoot);
   if (!manifest) {
-    console.error('No manifest found. Run `orbital init` first.');
+    console.error('No manifest found. Run `orbital` first.');
     process.exit(1);
   }
 
@@ -606,7 +555,6 @@ async function cmdDiff(args) {
     process.exit(1);
   }
 
-  // Resolve template path
   let templateRelPath = filePath;
   if (filePath.startsWith('config/workflows/')) {
     templateRelPath = filePath.replace('config/workflows/', 'presets/');
@@ -625,8 +573,6 @@ async function cmdDiff(args) {
     return;
   }
 
-  // Use git diff for nice formatting (safe: no user input in arguments)
-  const { execFileSync } = await import('child_process');
   try {
     const output = execFileSync(
       'git', ['diff', '--no-index', '--color', '--', templatePath, localPath],
@@ -634,7 +580,6 @@ async function cmdDiff(args) {
     );
     console.log(output);
   } catch (e) {
-    // git diff exits 1 when files differ — that's expected
     if (e.stdout) console.log(e.stdout);
     else console.log('Files differ but git diff is unavailable.');
   }
@@ -652,7 +597,7 @@ async function cmdReset(args) {
   const mod = await loadSharedModule();
   const manifest = mod.loadManifest(projectRoot);
   if (!manifest) {
-    console.error('No manifest found. Run `orbital init` first.');
+    console.error('No manifest found. Run `orbital` first.');
     process.exit(1);
   }
 
@@ -662,7 +607,6 @@ async function cmdReset(args) {
     process.exit(1);
   }
 
-  // Resolve and copy template file
   let templateRelPath = filePath;
   if (filePath.startsWith('config/workflows/')) {
     templateRelPath = filePath.replace('config/workflows/', 'presets/');
@@ -692,44 +636,26 @@ async function cmdReset(args) {
 // Multi-project commands
 // ---------------------------------------------------------------------------
 
-const ORBITAL_HOME = path.join(process.env.HOME || process.env.USERPROFILE || '~', '.orbital');
-const REGISTRY_PATH = path.join(ORBITAL_HOME, 'config.json');
-
-function loadRegistry() {
-  if (!fs.existsSync(REGISTRY_PATH)) return { version: 1, projects: [] };
-  try {
-    return JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf8'));
-  } catch {
-    return { version: 1, projects: [] };
-  }
-}
-
-// cmdLaunch removed — merged into cmdLaunchOrDev() above
-
 function cmdRegister(args) {
   const targetPath = args[0] ? path.resolve(args[0]) : detectProjectRoot();
   const nameFlag = args.indexOf('--alias');
   const name = nameFlag >= 0 ? args[nameFlag + 1] : path.basename(targetPath);
 
-  // Ensure ~/.orbital/ exists
   if (!fs.existsSync(ORBITAL_HOME)) fs.mkdirSync(ORBITAL_HOME, { recursive: true });
 
-  // Check the project has been initialized
   if (!fs.existsSync(path.join(targetPath, '.claude'))) {
     console.error(`Error: ${targetPath} has not been initialized with Orbital Command.`);
-    console.error(`Run \`orbital init\` in that directory first.`);
+    console.error(`Run \`orbital\` in that directory first.`);
     process.exit(1);
   }
 
   const registry = loadRegistry();
 
-  // Check if already registered
   if (registry.projects?.some(p => p.path === targetPath)) {
     console.log(`Project already registered: ${targetPath}`);
     return;
   }
 
-  // Color palette
   const COLORS = [
     '210 80% 55%', '340 75% 55%', '160 60% 45%', '30 90% 55%',
     '270 65% 55%', '50 85% 50%', '180 55% 45%', '0 70% 55%',
@@ -738,7 +664,6 @@ function cmdRegister(args) {
   const usedColors = (registry.projects || []).map(p => p.color);
   const color = COLORS.find(c => !usedColors.includes(c)) || COLORS[0];
 
-  // Generate slug
   const baseSlug = path.basename(targetPath).toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'project';
   const existingIds = (registry.projects || []).map(p => p.id);
   const slug = existingIds.includes(baseSlug)
@@ -756,7 +681,7 @@ function cmdRegister(args) {
 
   if (!registry.projects) registry.projects = [];
   registry.projects.push(project);
-  fs.writeFileSync(REGISTRY_PATH, JSON.stringify(registry, null, 2), 'utf8');
+  writeRegistryAtomic(registry);
 
   console.log(`Registered project: ${name}`);
   console.log(`  ID:    ${slug}`);
@@ -781,7 +706,7 @@ function cmdUnregister(args) {
   }
 
   const removed = registry.projects.splice(idx, 1)[0];
-  fs.writeFileSync(REGISTRY_PATH, JSON.stringify(registry, null, 2), 'utf8');
+  writeRegistryAtomic(registry);
 
   console.log(`Unregistered project: ${removed.name} (${removed.id})`);
   console.log(`  Project files in ${removed.path} are preserved.`);
@@ -793,7 +718,7 @@ function cmdProjects() {
 
   if (projects.length === 0) {
     console.log('\nNo projects registered.');
-    console.log('Use `orbital register` or `orbital init` to add a project.\n');
+    console.log('Run `orbital` in a project directory to get started.\n');
     return;
   }
 
@@ -822,26 +747,17 @@ async function cmdDoctor() {
 
 function printHelp() {
   console.log(`
-Orbital Command — CLI for the agentic project management system
+Orbital Command — mission control for Claude Code projects
 
 Usage:
-  orbital <command> [options]
+  orbital                Context-aware hub (setup, launch, config, etc.)
+  orbital <command>      Run a specific command directly
 
 Commands:
-  init              Set up Orbital Command (interactive wizard)
-  launch            Start the dashboard
   config            Modify project settings interactively
   doctor            Health check and version diagnostics
   update            Sync templates and apply migrations
   status            Show template sync status
-
-Aliases:
-  setup             Same as init
-  dev               Same as launch --vite (development with HMR)
-
-Config Subcommands:
-  config show       Print current config as JSON
-  config set <k> <v> Set a config value non-interactively
 
 Template Management:
   validate          Check cross-references and consistency
@@ -856,23 +772,13 @@ Project Management:
   unregister <id>   Remove a project from the dashboard
   projects          List all registered projects
 
-Other:
+Development:
+  dev               Start with Vite dev server (HMR)
   build             Production build of the dashboard frontend
+
+Other:
   emit <TYPE> <JSON>  Emit an orbital event
   uninstall         Remove Orbital artifacts from the project
-
-Init Options:
-  --force              Overwrite existing hooks, skills, and agents
-  --yes, -y            Skip the wizard, use auto-detected defaults
-  --private            Disable telemetry for this project
-  --preset <name>      Workflow preset (default/minimal/development/gitflow)
-  --project-name <n>   Override auto-detected project name
-  --server-port <n>    Override default server port (4444)
-  --client-port <n>    Override default client port (4445)
-
-Launch Options:
-  --open            Open the dashboard in the browser
-  --vite            Force Vite dev server for HMR
 
 Update Options:
   --dry-run         Preview changes without applying them
@@ -882,13 +788,103 @@ Uninstall Options:
   --keep-config     Keep orbital.config.json for re-initialization
 
 Examples:
-  orbital init
-  orbital launch --open
-  orbital config
-  orbital doctor
-  orbital update --dry-run
-  orbital status
+  orbital              # hub menu — setup, launch, config, etc.
+  orbital config       # modify project settings directly
+  orbital update       # sync templates to latest version
 `);
+}
+
+// ---------------------------------------------------------------------------
+// Hub Flow — the primary entry point
+// ---------------------------------------------------------------------------
+
+async function runHubFlow() {
+  if (!process.stdout.isTTY || process.env.CI) {
+    printHelp();
+    return;
+  }
+
+  const wiz = await loadWizardModule();
+  const hubVersion = getPackageVersion();
+
+  // First-time global setup — no menu, just run the wizard
+  if (!orbitalSetupDone()) {
+    await wiz.runSetupWizard(hubVersion);
+    return;
+  }
+
+  // Need a git repo for everything else
+  if (!isGitRepo()) {
+    requireGitRepo(); // exits with error
+    return;
+  }
+
+  const hubRoot = detectProjectRoot();
+  const isInitialized = fs.existsSync(
+    path.join(hubRoot, '.claude', 'orbital.config.json')
+  );
+  const hubRegistry = loadRegistry();
+  const projectNames = (hubRegistry.projects || []).map(p => p.name);
+
+  // Not initialized and no registered projects — just run setup wizard
+  if (!isInitialized && projectNames.length === 0) {
+    await wiz.runProjectSetup(hubRoot, hubVersion, []);
+    stampTemplateVersion(hubRoot);
+    return;
+  }
+
+  // Show hub menu (initialized OR has registered projects)
+  const projects = (hubRegistry.projects || [])
+    .filter(p => p.enabled !== false)
+    .map(p => ({ name: p.name, path: p.path }));
+
+  const hubResult = await wiz.runHub({
+    packageVersion: hubVersion,
+    isProjectInitialized: isInitialized,
+    projectNames,
+    itermPromptShown: hubRegistry.itermPromptShown === true,
+    isMac: process.platform === 'darwin',
+    lastUpdateCheck: hubRegistry.lastUpdateCheck,
+    latestVersion: hubRegistry.latestVersion,
+    projectPaths: projects,
+  });
+
+  // Persist registry changes in one write
+  let registryChanged = false;
+  if (hubResult.setItermPromptShown) {
+    hubRegistry.itermPromptShown = true;
+    registryChanged = true;
+  }
+  if (hubResult.updateCache) {
+    hubRegistry.lastUpdateCheck = hubResult.updateCache.lastUpdateCheck;
+    hubRegistry.latestVersion = hubResult.updateCache.latestVersion;
+    registryChanged = true;
+  }
+  if (registryChanged) {
+    writeRegistryAtomic(hubRegistry);
+  }
+
+  // Route the chosen action
+  switch (hubResult.action) {
+    case 'launch': cmdLaunchOrDev(false); break;
+    case 'init':
+      await wiz.runProjectSetup(hubRoot, hubVersion, []);
+      stampTemplateVersion(hubRoot);
+      break;
+    case 'config': await cmdConfig([]); break;
+    case 'doctor': await cmdDoctor(); break;
+    case 'update': await cmdUpdate([]); break;
+    case 'status': await cmdStatus(); break;
+    case 'reset': {
+      const { runInit } = await loadSharedModule();
+      runInit(hubRoot, { force: true });
+      stampTemplateVersion(hubRoot);
+      break;
+    }
+    default:
+      console.error(`Unknown action: ${hubResult.action}`);
+      process.exit(1);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -899,13 +895,15 @@ const [command, ...args] = process.argv.slice(2);
 
 async function main() {
   switch (command) {
-    case 'launch':
-      cmdLaunchOrDev(false);
-      break;
+    // Deprecated commands — silently redirect to hub
     case 'init':
     case 'setup':
-      await cmdInit(args);
+    case 'launch':
+    case undefined:
+      await runHubFlow();
       break;
+
+    // Active commands
     case 'config':
       await cmdConfig(args);
       break;
@@ -961,34 +959,14 @@ async function main() {
       const registry = loadRegistry();
       const enable = args[0] !== 'off';
       registry.privateMode = enable;
-      if (!fs.existsSync(ORBITAL_HOME)) fs.mkdirSync(ORBITAL_HOME, { recursive: true });
-      fs.writeFileSync(REGISTRY_PATH, JSON.stringify(registry, null, 2), 'utf8');
+      writeRegistryAtomic(registry);
       console.log(`Private mode ${enable ? 'enabled' : 'disabled'} globally.`);
-
       break;
     }
     case 'help':
     case '--help':
     case '-h':
       printHelp();
-      break;
-    case undefined:
-      if (process.stdout.isTTY && !process.env.CI) {
-        requireGitRepo();
-        const wiz = await loadWizardModule();
-        const version = getPackageVersion();
-        if (!orbitalSetupDone()) {
-          // First time — run Phase 1 setup
-          await wiz.runSetupWizard(version);
-        } else {
-          // Already set up — run Phase 2 for current directory
-          const projectRoot = detectProjectRoot();
-          await wiz.runProjectSetup(projectRoot, version, []);
-          stampTemplateVersion(projectRoot);
-        }
-      } else {
-        printHelp();
-      }
       break;
     default:
       console.error(`Unknown command: ${command}`);

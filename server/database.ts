@@ -2,7 +2,6 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { SCHEMA_DDL } from './schema.js';
-import { getConfig } from './config.js';
 import { createLogger } from './utils/logger.js';
 
 const log = createLogger('database');
@@ -14,7 +13,6 @@ const log = createLogger('database');
  * Creates the directory if needed, applies schema DDL and migrations.
  *
  * Each call returns a NEW connection — callers manage their own lifecycle.
- * This is the multi-project replacement for the getDatabase() singleton.
  */
 export function openProjectDatabase(dbDir: string): Database.Database {
   fs.mkdirSync(dbDir, { recursive: true });
@@ -31,22 +29,6 @@ export function openProjectDatabase(dbDir: string): Database.Database {
   runMigrations(database);
 
   return database;
-}
-
-// ─── Singleton (backward compat, used by index.ts) ──────────
-
-function getDbPaths(): { dir: string; file: string } {
-  const config = getConfig();
-  return { dir: config.dbDir, file: path.join(config.dbDir, 'orbital.db') };
-}
-
-let db: Database.Database | null = null;
-
-/** @deprecated Use openProjectDatabase() for multi-project support. */
-export function getDatabase(): Database.Database {
-  if (db) return db;
-  db = openProjectDatabase(getDbPaths().dir);
-  return db;
 }
 
 /** Check if a table exists in the database */
@@ -112,13 +94,5 @@ function runMigrations(database: Database.Database): void {
       -- Cleanup
       DROP TABLE IF EXISTS sprint_scopes_backup;
     `);
-  }
-}
-
-export function closeDatabase(): void {
-  if (db) {
-    db.close();
-    db = null;
-    log.debug('Database closed');
   }
 }

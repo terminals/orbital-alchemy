@@ -2,9 +2,11 @@ import type Database from 'better-sqlite3';
 import type { Emitter } from '../project-emitter.js';
 import type { SprintService } from './sprint-service.js';
 import type { ScopeService } from './scope-service.js';
-import { launchInCategorizedTerminal, escapeForAnsiC, snapshotSessionPids, discoverNewSession, isSessionPidAlive } from '../utils/terminal-launcher.js';
+import { launchInCategorizedTerminal, escapeForAnsiC, shellQuote, snapshotSessionPids, discoverNewSession, isSessionPidAlive } from '../utils/terminal-launcher.js';
 import { linkPidToDispatch, resolveDispatchEvent } from '../utils/dispatch-utils.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
+import type { OrbitalConfig } from '../config.js';
+import { buildClaudeFlags, buildEnvVarPrefix } from '../utils/flag-builder.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('batch');
@@ -20,6 +22,7 @@ export class BatchOrchestrator {
     private scopeService: ScopeService,
     private engine: WorkflowEngine,
     private projectRoot: string,
+    private config: OrbitalConfig,
   ) {}
 
   /** Dispatch a batch — validates constraints and routes to column-specific handler */
@@ -70,7 +73,9 @@ export class BatchOrchestrator {
 
     // Launch single CLI session with BATCH_SCOPE_IDS prepended to command
     const escaped = escapeForAnsiC(command);
-    const fullCmd = `cd '${this.projectRoot}' && BATCH_SCOPE_IDS='${scopeIdsStr}' MERGE_MODE='${mergeModeStr}' claude --dangerously-skip-permissions $'${escaped}'`;
+    const flagsStr = buildClaudeFlags({ ...this.config.claude.dispatchFlags, printMode: true });
+    const envPrefix = buildEnvVarPrefix(this.config.dispatch.envVars);
+    const fullCmd = `cd '${shellQuote(this.projectRoot)}' && ${envPrefix}BATCH_SCOPE_IDS='${scopeIdsStr}' MERGE_MODE='${mergeModeStr}' claude ${flagsStr} $'${escaped}'`;
     const beforePids = snapshotSessionPids(this.projectRoot);
 
     try {

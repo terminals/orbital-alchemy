@@ -24,52 +24,32 @@ Think of it as the control tower that turns a collection of AI-assisted coding s
 
 - **Node.js >= 18**
 - **Claude Code** installed and available as `claude` on your PATH
+- **iTerm2** (macOS, recommended) — sprint dispatch and batch orchestration use iTerm2 tabs to run parallel Claude Code sessions. Without it, sessions fall back to basic subprocess mode. The setup wizard will prompt you to install it.
 - **C++ compiler** for the `better-sqlite3` native module:
   - macOS: Xcode Command Line Tools (`xcode-select --install`)
   - Linux: `build-essential` (`apt install build-essential`)
 
-## Installation
-
-**Global install (recommended for regular use):**
-
-```bash
-npm install -g github:SakaraLabs/orbital-command
-```
-
-This registers the `orbital` command globally. Then in any project:
-
-```bash
-orbital init
-orbital dev
-```
-
-**Without global install:**
-
-```bash
-npx github:SakaraLabs/orbital-command init
-npx github:SakaraLabs/orbital-command dev
-```
-
 ## Quick Start
 
 ```bash
-# 1. Navigate to your project
+npm install orbital-command
 cd my-project
-
-# 2. Scaffold Orbital Command (hooks, skills, agents, config)
-orbital init
-
-# 3. Launch the dashboard
-orbital dev
+orbital
 ```
 
-Open [http://localhost:4445](http://localhost:4445) in your browser. The API server runs on port 4444.
+That's it. The `orbital` command detects your context and guides you through everything:
 
-The `init` command is non-destructive — it skips files that already exist. Pass `--force` to overwrite everything with the latest templates.
+1. **First run** — setup wizard configures Orbital globally
+2. **New project** — project setup wizard scaffolds hooks, skills, agents, and workflow config
+3. **Existing project** — hub menu lets you launch the dashboard, edit config, run diagnostics, or update templates
+
+On macOS, the wizard will recommend installing [iTerm2](https://iterm2.com) for the full dispatch experience — it polls for the install automatically so you can continue once it's ready.
+
+Open [http://localhost:4444](http://localhost:4444) after launching.
 
 ## What Gets Installed
 
-After `orbital init`, your project receives:
+After setup, your project receives:
 
 ```
 .claude/
@@ -111,15 +91,26 @@ scopes/
 
 ## CLI Reference
 
+The bare `orbital` command is the primary entry point — it detects context and shows the right options. All subcommands below are also available directly for scripting or when you know what you want.
+
 | Command | Description |
 |---------|-------------|
-| `orbital init` | Scaffold hooks, skills, agents, and config into the current project |
-| `orbital init --force` | Re-scaffold, overwriting all existing files with latest templates |
-| `orbital dev` | Start the API server and Vite dev server concurrently |
-| `orbital build` | Production build of the dashboard frontend |
+| `orbital` | Context-aware hub menu (setup, init, launch, config, etc.) |
+| `orbital` | Context-aware hub menu (setup, launch, config, doctor, etc.) |
+| `orbital config` | Modify project settings interactively |
+| `orbital doctor` | Health check and version diagnostics |
+| `orbital update` | Sync templates and apply migrations |
+| `orbital status` | Show template sync status |
 | `orbital emit <TYPE> [JSON]` | Emit an event to the file-based event bus |
-| `orbital update` | Re-copy hooks, skills, agents, and presets (overwrites). Pass `--include-examples` to include domain-specific example agents |
-| `orbital uninstall` | Remove all Orbital artifacts from the project. Preserves `scopes/` and event history |
+| `orbital validate` | Check cross-references and consistency |
+| `orbital register [path]` | Register a project with the dashboard |
+| `orbital unregister <id>` | Remove a project from the dashboard |
+| `orbital projects` | List all registered projects |
+| `orbital pin <path>` | Lock a file from template updates |
+| `orbital unpin <path>` | Unlock a pinned file |
+| `orbital diff <path>` | Show diff between template and local file |
+| `orbital reset <path>` | Restore a file from the current template |
+| `orbital uninstall` | Remove all Orbital artifacts from the project |
 
 ## Workflow Presets
 
@@ -351,7 +342,7 @@ When you dispatch a scope from the dashboard, Orbital:
 No. Orbital Command is purpose-built for Claude Code. The hooks, skills, agents, and session tracking all depend on Claude Code's lifecycle events and CLI.
 
 ### Do I need to keep the dashboard running?
-No. The file-based event bus means hooks write events as JSON files regardless of whether the server is running. Events queue up and get ingested when you next run `orbital dev`.
+No. The file-based event bus means hooks write events as JSON files regardless of whether the server is running. Events queue up and get ingested when you next launch the dashboard.
 
 ### How do I customize the workflow columns?
 Open the Workflow Visualizer (`/workflow` in the dashboard). You can add/remove columns, create transitions, attach hooks, and set confirmation levels. Or edit `.claude/config/workflow.json` directly. Changes take effect immediately.
@@ -370,7 +361,7 @@ Sprints group multiple scopes for batch execution. The orchestrator resolves dep
 ### How do I reset everything?
 ```bash
 orbital uninstall    # Remove all Orbital artifacts
-orbital init --force # Re-scaffold from scratch
+# Then run `orbital` and select "Reset to defaults"
 ```
 
 This preserves your `scopes/` directory and event history.
@@ -382,14 +373,48 @@ Yes. Set `terminal.adapter` in your config:
 - `"subprocess"` — Generic subprocess spawning (works everywhere)
 - `"none"` — Disable terminal dispatch
 
+## Development
+
+```bash
+# Install dependencies (includes all build/frontend packages as devDependencies)
+npm install
+
+# Start dev server with hot-reload
+npm run dev:local
+
+# Run the full validation pipeline (typecheck → test → build → build:server)
+npm run validate
+```
+
+| Script | Purpose |
+|--------|---------|
+| `npm run dev:local` | Express API + Vite dev server with hot-reload |
+| `npm run dev:server` | Express API only (tsx watch) |
+| `npm run dev:client` | Vite dev server only |
+| `npm run typecheck` | Type check client + server tsconfigs |
+| `npm run test` | Run all tests |
+| `npm run build` | Vite production build (frontend) |
+| `npm run build:server` | TypeScript compile server to dist/server |
+| `npm run validate` | Full pipeline: typecheck → test → build → build:server |
+
+### Releasing
+
+```bash
+npm run release             # patch bump (0.3.0 → 0.3.1)
+npm run release -- minor    # minor bump (0.3.0 → 0.4.0)
+npm run release -- major    # major bump (0.3.0 → 1.0.0)
+```
+
+This validates the full pipeline, bumps the version, creates a git tag, and pushes. The tag push triggers the publish workflow which validates again and publishes to npm with provenance.
+
 ## Contributing
+
+Open an issue first for large changes or new features.
 
 1. Fork the repository and clone locally
 2. Install dependencies: `npm install`
 3. Start development: `npm run dev:local`
-4. Typecheck: `npm run typecheck`
-
-Open an issue first for large changes or new features.
+4. Validate before submitting: `npm run validate`
 
 ## License
 

@@ -25,7 +25,21 @@ npm run build:server       # TypeScript compile server to dist/server
 npm run typecheck          # Checks both tsconfigs (client + server)
 tsc --noEmit               # Client/shared only
 tsc --noEmit -p tsconfig.server.json  # Server/shared only
+
+# Validation & release
+npm run validate           # Full pipeline: typecheck → test → build → build:server
+npm run release            # Validate, bump version, tag, push (triggers npm publish)
 ```
+
+## CLI Entry Point
+
+The bare `orbital` command is a context-aware hub:
+- **First run** — runs the setup wizard (creates `~/.orbital/`)
+- **New project** (no `.claude/orbital.config.json`) — runs project setup wizard
+- **Existing project** — shows hub menu: Launch, Config, Doctor, Update, Status
+- On **macOS**, prompts to install iTerm2 if not detected (one-time, with auto-detection polling)
+
+Subcommands like `orbital config`, `orbital update`, `orbital doctor` remain available as direct shortcuts.
 
 ## Architecture
 
@@ -59,8 +73,9 @@ tsc --noEmit -p tsconfig.server.json  # Server/shared only
 - `src/layouts/DashboardLayout.tsx` — Shell with sidebar nav, neon glass theme toggle, connection status, and event ticker.
 
 **CLI and templates:**
-- `bin/orbital.js` — CLI entry point. Commands: `init`, `dev`, `build`, `emit`, `update`, `uninstall`. Init scaffolds hooks/skills/agents/config into the target project.
-- `templates/` — Template files copied by `orbital init`: hooks (shell scripts), skills (markdown), agents (markdown), workflow presets, settings-hooks.json.
+- `bin/orbital.js` — CLI entry point. Bare `orbital` shows a context-aware hub menu (via `runHub()` in `server/wizard/index.ts`). Subcommands: `launch`, `init`, `config`, `doctor`, `update`, `status`, `emit`, `build`, `register`, `unregister`, `projects`, `pin`, `unpin`, `diff`, `reset`, `validate`, `uninstall`.
+- `server/wizard/` — Interactive wizard phases: setup (Phase 1), project setup (Phase 2), hub menu, config editor, doctor. Uses `@clack/prompts` for UI.
+- `templates/` — Template files copied during project setup: hooks (shell scripts), skills (markdown), agents (markdown), workflow presets, settings-hooks.json.
 - `schemas/` — JSON Schema for `orbital.config.json`.
 
 ## TypeScript Configuration

@@ -14,6 +14,7 @@ export interface TerminalConfig {
 export interface ClaudeConfig {
   executable: string;
   flags: string[];
+  dispatchFlags: DispatchFlags;
 }
 
 export interface CommandsConfig {
@@ -21,13 +22,12 @@ export interface CommandsConfig {
   lint: string | null;
   build: string | null;
   test: string | null;
-  validateTemplates: string | null;
-  validateDocs: string | null;
-  checkRules: string | null;
 }
 
-export type { AgentConfig } from '../shared/api-types.js';
-import type { AgentConfig } from '../shared/api-types.js';
+export type { AgentConfig, DispatchFlags, DispatchConfig } from '../shared/api-types.js';
+import type { AgentConfig, DispatchFlags, DispatchConfig } from '../shared/api-types.js';
+import { DEFAULT_DISPATCH_FLAGS, DEFAULT_DISPATCH_CONFIG } from '../shared/api-types.js';
+import { loadGlobalConfig as loadGlobal } from './global-config.js';
 
 export interface TelemetryConfig {
   enabled: boolean;
@@ -54,6 +54,9 @@ export interface OrbitalConfig {
 
   // Claude Code CLI
   claude: ClaudeConfig;
+
+  // Dispatch operational settings
+  dispatch: DispatchConfig;
 
   // Build/test commands
   commands: CommandsConfig;
@@ -86,15 +89,14 @@ const DEFAULT_CONFIG: Omit<OrbitalConfig, 'projectRoot'> = {
   claude: {
     executable: 'claude',
     flags: ['--dangerously-skip-permissions'],
+    dispatchFlags: DEFAULT_DISPATCH_FLAGS,
   },
+  dispatch: DEFAULT_DISPATCH_CONFIG,
   commands: {
     typeCheck: null,
     lint: null,
     build: null,
     test: null,
-    validateTemplates: null,
-    validateDocs: null,
-    checkRules: null,
   },
   logLevel: 'info' as const,
   telemetry: {
@@ -106,7 +108,6 @@ const DEFAULT_CONFIG: Omit<OrbitalConfig, 'projectRoot'> = {
   agents: [
     { id: 'attacker', label: 'Attacker', emoji: '\u{1F5E1}\u{FE0F}', color: '#ff1744' },
     { id: 'chaos', label: 'Chaos', emoji: '\u{1F4A5}', color: '#F97316' },
-    { id: 'solana-expert', label: 'Solana Expert', emoji: '\u{26D3}\u{FE0F}', color: '#8B5CF6' },
     { id: 'frontend-designer', label: 'Frontend Designer', emoji: '\u{1F3A8}', color: '#EC4899' },
     { id: 'architect', label: 'Architect', emoji: '\u{1F3D7}\u{FE0F}', color: '#536dfe' },
     { id: 'rules-enforcer', label: 'Rules Enforcer', emoji: '\u{1F4CB}', color: '#6B7280' },
@@ -201,10 +202,23 @@ export function loadConfig(projectRoot?: string): OrbitalConfig {
     ...(userConfig.terminal as Partial<TerminalConfig> ?? {}),
   };
 
+  // Dispatch settings are global — seed from ~/.orbital/config.json
+  let globalDispatchFlags = DEFAULT_DISPATCH_FLAGS;
+  let globalDispatch = DEFAULT_DISPATCH_CONFIG;
+  try {
+    const global = loadGlobal();
+    if (global.dispatchFlags) globalDispatchFlags = { ...DEFAULT_DISPATCH_FLAGS, ...global.dispatchFlags };
+    if (global.dispatch) globalDispatch = { ...DEFAULT_DISPATCH_CONFIG, ...global.dispatch };
+  } catch { /* global config may not exist yet */ }
+
+  const userClaude = (userConfig.claude as Partial<ClaudeConfig>) ?? {};
   const claude: ClaudeConfig = {
     ...DEFAULT_CONFIG.claude,
-    ...(userConfig.claude as Partial<ClaudeConfig> ?? {}),
+    ...userClaude,
+    dispatchFlags: globalDispatchFlags,
   };
+
+  const dispatch: DispatchConfig = globalDispatch;
 
   const commands: CommandsConfig = {
     ...DEFAULT_CONFIG.commands,
@@ -232,6 +246,7 @@ export function loadConfig(projectRoot?: string): OrbitalConfig {
     clientPort,
     terminal,
     claude,
+    dispatch,
     commands,
     logLevel,
     categories,

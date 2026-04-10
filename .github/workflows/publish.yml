@@ -18,10 +18,14 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: npm
       - run: npm ci
-      - run: npx tsc -p tsconfig.server.json
-        name: Build server
-      - run: npx vite build
+      - run: npm run typecheck
+        name: Type check
+      - run: npm test
+        name: Run tests
+      - run: npm run build
         name: Build frontend
+      - run: npm run build:server
+        name: Build server
       - run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

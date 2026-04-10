@@ -5,11 +5,13 @@ import type { ScopeService } from '../services/scope-service.js';
 import { launchInCategorizedTerminal, escapeForAnsiC, shellQuote, buildSessionName, snapshotSessionPids, discoverNewSession, renameSession } from '../utils/terminal-launcher.js';
 import { resolveDispatchEvent, resolveAbandonedDispatchesForScope, getActiveScopeIds, getAbandonedScopeIds, linkPidToDispatch } from '../utils/dispatch-utils.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
+import type { OrbitalConfig } from '../config.js';
+import { buildClaudeFlags, buildEnvVarPrefix } from '../utils/flag-builder.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('dispatch');
 
-const MAX_BATCH_SIZE = 20;
+const DEFAULT_MAX_BATCH_SIZE = 20;
 
 interface DispatchBody {
   scope_id?: number;
@@ -24,9 +26,10 @@ interface DispatchRouteDeps {
   scopeService: ScopeService;
   projectRoot: string;
   engine: WorkflowEngine;
+  config: OrbitalConfig;
 }
 
-export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine }: DispatchRouteDeps): Router {
+export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine, config }: DispatchRouteDeps): Router {
   const router = Router();
 
   router.get('/dispatch/active-scopes', (_req, res) => {
@@ -79,6 +82,19 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
       }
     }
 
+    // Max concurrent dispatches guard
+    const maxConcurrent = config.dispatch.maxConcurrent;
+    if (maxConcurrent > 0) {
+      const activeCount = (db.prepare(
+        `SELECT COUNT(*) as count FROM events
+         WHERE type = 'DISPATCH' AND JSON_EXTRACT(data, '$.resolved') IS NULL`
+      ).get() as { count: number }).count;
+      if (activeCount >= maxConcurrent) {
+        res.status(429).json({ error: `Max concurrent dispatches reached (${maxConcurrent})` });
+        return;
+      }
+    }
+
     // Update scope status if transition provided
     if (scope_id != null && transition?.to) {
       const result = scopeService.updateStatus(scope_id, transition.to, 'dispatch');
@@ -107,10 +123,12 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
     const sessionName = buildSessionName({ scopeId: scope_id ?? undefined, title: scope?.title, command });
     const beforePids = snapshotSessionPids(projectRoot);
 
-    // Launch in iTerm — interactive TUI mode (no -p) for full visibility
+    // Launch in iTerm — interactive TUI mode (no -p unless printMode) for full visibility
     const promptText = prompt ?? command;
     const escaped = escapeForAnsiC(promptText);
-    const fullCmd = `cd '${shellQuote(projectRoot)}' && ORBITAL_DISPATCH_ID='${shellQuote(eventId)}' claude --dangerously-skip-permissions $'${escaped}'`;
+    const flagsStr = buildClaudeFlags(config.claude.dispatchFlags);
+    const envPrefix = buildEnvVarPrefix(config.dispatch.envVars);
+    const fullCmd = `cd '${shellQuote(projectRoot)}' && ${envPrefix}ORBITAL_DISPATCH_ID='${shellQuote(eventId)}' claude ${flagsStr} $'${escaped}'`;
     try {
       await launchInCategorizedTerminal(command, fullCmd, sessionName);
       res.json({ ok: true, dispatch_id: eventId, scope_id: scope_id ?? null });
@@ -215,8 +233,9 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
     }
 
     // W-12: Validate batch size and scope ID types
-    if (scope_ids.length > MAX_BATCH_SIZE) {
-      res.status(400).json({ error: `Maximum batch size is ${MAX_BATCH_SIZE}` });
+    const maxBatch = config.dispatch.maxBatchSize || DEFAULT_MAX_BATCH_SIZE;
+    if (scope_ids.length > maxBatch) {
+      res.status(400).json({ error: `Maximum batch size is ${maxBatch}` });
       return;
     }
     if (!scope_ids.every(id => Number.isInteger(id) && id > 0)) {
@@ -249,10 +268,12 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
       timestamp: new Date().toISOString(),
     });
 
-    // Launch single CLI session
+    // Launch single CLI session — batch always uses -p
     const batchEscaped = escapeForAnsiC(command);
     const beforePids = snapshotSessionPids(projectRoot);
-    const fullCmd = `cd '${shellQuote(projectRoot)}' && ORBITAL_DISPATCH_ID='${shellQuote(eventId)}' claude --dangerously-skip-permissions -p $'${batchEscaped}'`;
+    const batchFlags = buildClaudeFlags({ ...config.claude.dispatchFlags, printMode: true });
+    const envPrefix = buildEnvVarPrefix(config.dispatch.envVars);
+    const fullCmd = `cd '${shellQuote(projectRoot)}' && ${envPrefix}ORBITAL_DISPATCH_ID='${shellQuote(eventId)}' claude ${batchFlags} $'${batchEscaped}'`;
     try {
       await launchInCategorizedTerminal(command, fullCmd);
       res.json({ ok: true, dispatch_id: eventId, scope_ids });

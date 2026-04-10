@@ -6,6 +6,9 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import type { GateRow } from './services/gate-service.js';
 import { launchInTerminal } from './utils/terminal-launcher.js';
+import { buildClaudeFlags } from './utils/flag-builder.js';
+import { DEFAULT_DISPATCH_FLAGS, DEFAULT_DISPATCH_CONFIG, validateDispatchFlags, validateDispatchConfig } from '../shared/api-types.js';
+import type { DispatchFlags, DispatchConfig } from '../shared/api-types.js';
 import { getClaudeSessions, getSessionStats } from './services/claude-session-service.js';
 import { getActiveScopeIds, getAbandonedScopeIds } from './utils/dispatch-utils.js';
 import { ConfigService, isValidPrimitiveType } from './services/config-service.js';
@@ -30,6 +33,7 @@ import { getPackageVersion } from './utils/package-info.js';
 import {
   ensureOrbitalHome,
   loadGlobalConfig,
+  saveGlobalConfig,
   registerProject as registerProjectGlobal,
   ORBITAL_HOME,
 } from './global-config.js';
@@ -290,22 +294,25 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
       return;
     }
 
-    // Find the session's project root
+    // Find the session's project root and config
     let matchedProjectRoot: string | undefined;
+    let matchedConfig: import('./config.js').OrbitalConfig | undefined;
     for (const [, ctx] of projectManager.getAllContexts()) {
       const row = ctx.db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
       if (row) {
         matchedProjectRoot = ctx.config.projectRoot;
+        matchedConfig = ctx.config;
         break;
       }
     }
 
-    if (!matchedProjectRoot) {
+    if (!matchedProjectRoot || !matchedConfig) {
       res.status(404).json({ error: 'Session not found' });
       return;
     }
 
-    const resumeCmd = `cd '${matchedProjectRoot}' && claude --dangerously-skip-permissions --resume '${claude_session_id}'`;
+    const flagsStr = buildClaudeFlags(matchedConfig.claude.dispatchFlags);
+    const resumeCmd = `cd '${matchedProjectRoot}' && claude ${flagsStr} --resume '${claude_session_id}'`;
     try {
       await launchInTerminal(resumeCmd);
       res.json({ ok: true, session_id: claude_session_id });
@@ -918,6 +925,53 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
       log.error('Update all projects failed', { error: String(err) });
       res.status(500).json({ error: 'Failed to update all projects' });
     }
+  });
+
+  // ─── Global: Dispatch Config ────────────────────────────────
+  // Dispatch settings are global — stored in ~/.orbital/config.json.
+  // Changes propagate to all active projects' in-memory config.
+
+  app.get('/api/orbital/aggregate/config/dispatch-flags', (_req, res) => {
+    const global = loadGlobalConfig();
+    res.json({ success: true, data: global.dispatchFlags ?? DEFAULT_DISPATCH_FLAGS });
+  });
+
+  app.put('/api/orbital/aggregate/config/dispatch-flags', (req, res) => {
+    const updates = req.body as Partial<DispatchFlags>;
+    const error = validateDispatchFlags(updates);
+    if (error) { res.status(400).json({ success: false, error }); return; }
+    const global = loadGlobalConfig();
+    const merged: DispatchFlags = { ...(global.dispatchFlags ?? DEFAULT_DISPATCH_FLAGS), ...updates };
+    global.dispatchFlags = merged;
+    saveGlobalConfig(global);
+    for (const [, ctx] of projectManager.getAllContexts()) {
+      ctx.config.claude.dispatchFlags = merged;
+    }
+    res.json({ success: true, data: merged });
+  });
+
+  app.get('/api/orbital/aggregate/config/dispatch-settings', (_req, res) => {
+    const global = loadGlobalConfig();
+    res.json({
+      success: true,
+      data: { ...(global.dispatch ?? DEFAULT_DISPATCH_CONFIG), terminalAdapter: global.terminalAdapter ?? 'auto' },
+    });
+  });
+
+  app.put('/api/orbital/aggregate/config/dispatch-settings', (req, res) => {
+    const { terminalAdapter, ...dispatchUpdates } = req.body as Partial<DispatchConfig> & { terminalAdapter?: string };
+    const error = validateDispatchConfig({ ...dispatchUpdates, terminalAdapter });
+    if (error) { res.status(400).json({ success: false, error }); return; }
+    const global = loadGlobalConfig();
+    const mergedDispatch: DispatchConfig = { ...(global.dispatch ?? DEFAULT_DISPATCH_CONFIG), ...dispatchUpdates };
+    global.dispatch = mergedDispatch;
+    if (terminalAdapter) global.terminalAdapter = terminalAdapter;
+    saveGlobalConfig(global);
+    for (const [, ctx] of projectManager.getAllContexts()) {
+      ctx.config.dispatch = mergedDispatch;
+      if (terminalAdapter) ctx.config.terminal.adapter = terminalAdapter as typeof ctx.config.terminal.adapter;
+    }
+    res.json({ success: true, data: { ...mergedDispatch, terminalAdapter: global.terminalAdapter ?? 'auto' } });
   });
 
   // ─── Aggregate: Config Primitives (Global) ────────────────

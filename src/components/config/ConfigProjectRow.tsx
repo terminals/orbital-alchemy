@@ -91,7 +91,7 @@ export function ConfigProjectRow({
             className="h-2 w-2 rounded-full shrink-0"
             style={{ backgroundColor: `hsl(${projectColor})` }}
           />
-          <span className="text-sm text-foreground truncate w-[140px] shrink-0">{projectName}</span>
+          <span className="text-sm text-foreground truncate w-[80px] sm:w-[140px] shrink-0">{projectName}</span>
           <Badge variant="outline" className={cn(
             'text-[10px] px-1.5 py-0 shrink-0',
             m.needsUpdate
@@ -105,7 +105,7 @@ export function ConfigProjectRow({
               → v{m.packageVersion}
             </span>
           )}
-          <span className="flex items-center text-xs shrink-0 tabular-nums">
+          <span className="hidden md:flex items-center text-xs shrink-0 tabular-nums">
             <span className={cn('w-[80px] text-center', m.files.missing > 0 ? 'text-red-400' : 'text-red-400/25')}>{m.files.missing} missing</span>
             <span className={cn('w-[80px] text-center', m.files.outdated > 0 ? 'text-amber-400' : 'text-amber-400/25')}>{m.files.outdated} outdated</span>
             <span className={cn('w-[80px] text-center', m.files.modified > 0 ? 'text-orange-400' : 'text-orange-400/25')}>{m.files.modified} modified</span>
@@ -123,7 +123,7 @@ export function ConfigProjectRow({
             onClick={hasUpdatable ? onUpdate : undefined}
             disabled={!hasUpdatable || actionLoading === `preview:${projectId}` || actionLoading === `update:${projectId}`}
             className={cn(
-              'h-6 px-2 text-xs w-[130px] justify-center',
+              'h-6 px-2 text-xs w-auto sm:w-[130px] justify-center',
               hasUpdatable
                 ? 'border-[rgba(0,188,212,0.3)] text-cyan-400 hover:bg-cyan-500/10'
                 : 'border-green-500/30 text-green-400/60',

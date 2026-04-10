@@ -1,6 +1,6 @@
 /**
- * Shared init logic — used by both the CLI (`orbital init`) and
- * programmatic callers (e.g. tests).
+ * Shared init logic — used by the wizard and
+ * programmatic callers (e.g. tests, API routes).
  */
 
 import fs from 'fs';
@@ -929,7 +929,7 @@ export function runUpdate(projectRoot: string, options: UpdateOptions = {}): voi
       manifest = loadManifest(projectRoot);
     }
     if (!manifest) {
-      console.log('  No manifest found. Run `orbital init` first.');
+      console.log('  No manifest found. Run `orbital` first.');
       return;
     }
   }

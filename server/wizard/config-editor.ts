@@ -15,7 +15,7 @@ export async function runConfigEditor(projectRoot: string, packageVersion: strin
   if (subcommand === 'show') {
     const config = loadProjectConfig(projectRoot);
     if (!config) {
-      console.error('No config found. Run `orbital init` first.');
+      console.error('No config found. Run `orbital` first.');
       process.exit(1);
     }
     console.log(JSON.stringify(config, null, 2));
@@ -37,7 +37,7 @@ export async function runConfigEditor(projectRoot: string, packageVersion: strin
   // Interactive mode
   const config = loadProjectConfig(projectRoot);
   if (!config) {
-    p.log.error('No config found. Run `orbital init` first.');
+    p.log.error('No config found. Run `orbital` first.');
     process.exit(1);
   }
 
@@ -166,7 +166,7 @@ async function editGlobalSection(): Promise<void> {
   const registryPath = path.join(homedir, '.orbital', 'config.json');
 
   if (!fs.existsSync(registryPath)) {
-    p.log.info('No global registry found. Run `orbital init` in a project first.');
+    p.log.info('No global registry found. Run `orbital` in a project first.');
     return;
   }
 
@@ -210,7 +210,7 @@ function saveProjectConfig(projectRoot: string, config: Record<string, unknown>)
 function setConfigValue(projectRoot: string, key: string, value: string): void {
   const config = loadProjectConfig(projectRoot);
   if (!config) {
-    console.error('No config found. Run `orbital init` first.');
+    console.error('No config found. Run `orbital` first.');
     process.exit(1);
   }
 

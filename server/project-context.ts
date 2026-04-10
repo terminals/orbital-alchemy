@@ -123,7 +123,7 @@ export async function createProjectContext(
   const deployService = new DeployService(db, emitter);
   const sprintService = new SprintService(db, emitter, scopeService);
   const sprintOrchestrator = new SprintOrchestrator(db, emitter, sprintService, scopeService, workflowEngine, config.projectRoot);
-  const batchOrchestrator = new BatchOrchestrator(db, emitter, sprintService, scopeService, workflowEngine, config.projectRoot);
+  const batchOrchestrator = new BatchOrchestrator(db, emitter, sprintService, scopeService, workflowEngine, config.projectRoot, config);
   const readinessService = new ReadinessService(scopeService, gateService, workflowEngine, config.projectRoot);
   const workflowService = new WorkflowService(config.configDir, workflowEngine, config.scopesDir, getDefaultConfigPath());
   workflowService.setSocketServer(emitter);
@@ -220,7 +220,7 @@ export async function createProjectContext(
   if (staleBatchesResolved > 0) log.info('Resolved stale batches', { count: staleBatchesResolved });
 
   // Resolve stale dispatches
-  resolveStaleDispatches(db, emitter, scopeService, workflowEngine);
+  resolveStaleDispatches(db, emitter, scopeService, workflowEngine, config.dispatch.staleTimeoutMinutes);
 
   // Initial session sync + legacy purge (Fix 7)
   syncClaudeSessionsToDB(db, scopeService, config.projectRoot).then((count) => {
@@ -245,7 +245,7 @@ export async function createProjectContext(
   }, 30_000));
 
   intervals.push(setInterval(() => {
-    resolveStaleDispatches(db, emitter, scopeService, workflowEngine);
+    resolveStaleDispatches(db, emitter, scopeService, workflowEngine, config.dispatch.staleTimeoutMinutes);
   }, 30_000));
 
   intervals.push(setInterval(async () => {

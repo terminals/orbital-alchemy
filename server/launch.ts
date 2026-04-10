@@ -1,5 +1,5 @@
 /**
- * Entry point for `orbital launch` — starts the central multi-project server.
+ * Entry point for the central multi-project server.
  *
  * Reads environment variables set by bin/orbital.js:
  *   ORBITAL_LAUNCH_MODE=central

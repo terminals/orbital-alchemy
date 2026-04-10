@@ -338,11 +338,11 @@ export class ProjectManager {
     router.use(createDataRoutes({
       db, io: emitter, eventService, gateService, deployService, gitService,
       engine: workflowEngine, projectRoot: config.projectRoot,
-      inferScopeStatus,
+      inferScopeStatus, config,
     }));
     router.use(createDispatchRoutes({
       db, io: emitter, scopeService,
-      projectRoot: config.projectRoot, engine: workflowEngine,
+      projectRoot: config.projectRoot, engine: workflowEngine, config,
     }));
     router.use(createSprintRoutes({
       sprintService, sprintOrchestrator, batchOrchestrator,

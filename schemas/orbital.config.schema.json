@@ -35,10 +35,7 @@
         "typeCheck": { "type": ["string", "null"], "default": null },
         "lint": { "type": ["string", "null"], "default": null },
         "build": { "type": ["string", "null"], "default": null },
-        "test": { "type": ["string", "null"], "default": null },
-        "validateTemplates": { "type": ["string", "null"], "default": null },
-        "validateDocs": { "type": ["string", "null"], "default": null },
-        "checkRules": { "type": ["string", "null"], "default": null }
+        "test": { "type": ["string", "null"], "default": null }
       },
       "additionalProperties": false
     },

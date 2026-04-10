@@ -166,7 +166,7 @@ export function createManifestRoutes({
       }
 
       if (!manifest) {
-        return res.status(400).json({ success: false, error: 'No manifest. Run orbital init first.' });
+        return res.status(400).json({ success: false, error: 'No manifest. Run orbital first.' });
       }
 
       if (dryRun) {

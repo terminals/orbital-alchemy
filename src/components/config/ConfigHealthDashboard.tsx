@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   Package, Loader2, CheckCircle2, AlertTriangle,
   RotateCcw, Minus, ArrowRight, Download, RefreshCw,
@@ -35,11 +35,17 @@ export function ConfigHealthDashboard() {
     checkForUpdate, performUpdate,
   } = useVersion();
 
+  // Track updateStage via ref so the async callback reads the latest value
+  const updateStageRef = useRef(updateStage);
+  updateStageRef.current = updateStage;
+
   // Update package, then propagate templates to all projects
   const updatePackageAndPropagate = useCallback(async () => {
     await performUpdate();
-    // After package update, auto-update synced/outdated files across all projects
-    await updateAll();
+    // Only propagate if the package update succeeded
+    if (updateStageRef.current !== 'error') {
+      await updateAll();
+    }
   }, [performUpdate, updateAll]);
 
   const isUpdatingPackage = updateStage === 'pulling' || updateStage === 'installing';
@@ -156,7 +162,7 @@ export function ConfigHealthDashboard() {
           ) : (
             <AlertTriangle className="h-2 w-2 text-amber-400 shrink-0" />
           )}
-          <span className="text-sm text-foreground truncate w-[140px] shrink-0">
+          <span className="text-sm text-foreground truncate w-[80px] sm:w-[140px] shrink-0">
             All Projects
           </span>
           {version && (
@@ -164,7 +170,7 @@ export function ConfigHealthDashboard() {
               v{version.version}
             </Badge>
           )}
-          <span className="flex items-center text-xs shrink-0 tabular-nums">
+          <span className="hidden md:flex items-center text-xs shrink-0 tabular-nums">
             <span className={cn('w-[80px] text-center', summary.totalMissing > 0 ? 'text-red-400' : 'text-red-400/25')}>{summary.totalMissing} missing</span>
             <span className={cn('w-[80px] text-center', summary.totalOutdated > 0 ? 'text-amber-400' : 'text-amber-400/25')}>{summary.totalOutdated} outdated</span>
             <span className={cn('w-[80px] text-center', summary.totalModified > 0 ? 'text-orange-400' : 'text-orange-400/25')}>{summary.totalModified} modified</span>
@@ -181,7 +187,7 @@ export function ConfigHealthDashboard() {
               variant="outline"
               onClick={() => setShowUpdateAllConfirm(true)}
               disabled={actionLoading === 'update-all'}
-              className="h-6 px-2 text-xs w-[130px] justify-center border-[rgba(0,188,212,0.3)] text-cyan-400 hover:bg-cyan-500/10"
+              className="h-6 px-2 text-xs w-auto sm:w-[130px] justify-center border-[rgba(0,188,212,0.3)] text-cyan-400 hover:bg-cyan-500/10"
             >
               {actionLoading === 'update-all'
                 ? <Loader2 className="h-3 w-3 mr-1 animate-spin" />
@@ -193,7 +199,7 @@ export function ConfigHealthDashboard() {
               size="sm"
               variant="outline"
               disabled
-              className="h-6 px-2 text-xs w-[130px] justify-center border-green-500/30 text-green-400/60"
+              className="h-6 px-2 text-xs w-auto sm:w-[130px] justify-center border-green-500/30 text-green-400/60"
             >
               <Package className="h-3 w-3 mr-1" />
               Up to Date

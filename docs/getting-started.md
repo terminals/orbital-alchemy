@@ -27,6 +27,7 @@ Orbital Command is a real-time project management dashboard for Claude Code proj
 - **Node.js** 18 or later
 - **Claude Code** CLI installed and authenticated
 - A **git** repository (Orbital uses git to detect the project root)
+- **iTerm2** (macOS, recommended) — used for sprint dispatch and batch orchestration with parallel tabbed sessions. The setup wizard prompts you to install it on first run.
 
 ---
 
@@ -34,13 +35,11 @@ Orbital Command is a real-time project management dashboard for Claude Code proj
 
 ```bash
 npm install orbital-command
+cd my-project
+orbital
 ```
 
-This installs the `orbital` CLI. After installing, initialize your project:
-
-```bash
-npx orbital init
-```
+The `orbital` command is a context-aware hub. On first run it walks you through global setup and project initialization. On subsequent runs in an initialized project, it shows a menu to launch, configure, diagnose, or update.
 
 ---
 
@@ -85,29 +84,12 @@ After confirming, init scaffolds the following into your project:
 
 The wizard also appends Orbital patterns to `.gitignore` and registers the project in `~/.orbital/config.json`.
 
-### Non-Interactive Init
-
-```bash
-npx orbital init --yes
-```
-
-Accepts all auto-detected defaults. Useful in CI or scripted setups. Additional flags:
-
-| Flag | Description |
-|---|---|
-| `--force` | Re-initialize an already-initialized project |
-| `--private` | Disable telemetry for this project |
-| `--preset <name>` | Choose workflow preset (`default`, `minimal`, `development`, `gitflow`) |
-| `--project-name <name>` | Override project name |
-| `--server-port <port>` | Override API server port |
-| `--client-port <port>` | Override dev client port |
-
 ---
 
 ## Starting the Dashboard
 
 ```bash
-npx orbital launch --open
+orbital              # then select "Launch dashboard"
 ```
 
 Starts the Express API server and serves the pre-built frontend. The `--open` flag opens your browser automatically. By default, the dashboard runs on **http://localhost:4444**.
@@ -115,7 +97,7 @@ Starts the Express API server and serves the pre-built frontend. The `--open` fl
 For development with hot module replacement:
 
 ```bash
-npx orbital dev
+orbital dev
 ```
 
 This starts the API server on port 4444 and a Vite dev server on port 4445 with HMR. The Vite server proxies `/api/orbital` and `/socket.io` requests to the API server.
@@ -127,9 +109,9 @@ This starts the API server on port 4444 and a Vite dev server on port 4445 with 
 Project configuration lives at `.claude/orbital.config.json`. You can edit it directly or use the interactive editor:
 
 ```bash
-npx orbital config          # Interactive editor
-npx orbital config show     # Print current config
-npx orbital config set <key> <value>
+orbital config          # Interactive editor
+orbital config show     # Print current config
+orbital config set <key> <value>
 ```
 
 ### All Options
@@ -241,7 +223,7 @@ Anonymous usage telemetry. Disable with `"enabled": false` or by setting `ORBITA
 
 ## Workflow Presets
 
-The workflow engine defines your Kanban columns, allowed transitions between them, branching strategy, and lifecycle hooks. Choose a preset during `orbital init` or switch later via the dashboard's Workflow Visualizer.
+The workflow engine defines your Kanban columns, allowed transitions between them, branching strategy, and lifecycle hooks. Choose a preset during setup or switch later via the dashboard's Workflow Visualizer.
 
 ### Default (7 columns, trunk-based)
 
@@ -443,23 +425,23 @@ Orbital Command can manage multiple projects from a single dashboard.
 
 ```bash
 # Register the current project
-npx orbital register
+orbital register
 
 # Register with an alias
-npx orbital register /path/to/project --alias my-app
+orbital register /path/to/project --alias my-app
 
 # List all registered projects
-npx orbital projects
+orbital projects
 
 # Remove a project
-npx orbital unregister <id>
+orbital unregister <id>
 ```
 
 Projects are tracked in `~/.orbital/config.json`. Each gets a unique ID (derived from directory name), a color for visual distinction, and an enabled/disabled toggle.
 
 ### Central Dashboard
 
-When you run `orbital launch`, the dashboard shows all registered projects. You can:
+When you launch the dashboard, it shows all registered projects. You can:
 
 - Switch between projects using the project selector
 - View scopes across all projects with cross-project swim lanes
@@ -469,30 +451,32 @@ When you run `orbital launch`, the dashboard shows all registered projects. You 
 
 ## CLI Reference
 
+The bare `orbital` command is the primary entry point — it detects context and shows the right options. All subcommands are also available directly.
+
 | Command | Description |
 |---|---|
-| `npx orbital init` (or `setup`) | Interactive project setup wizard |
-| `npx orbital launch [--open]` | Start the dashboard server |
-| `npx orbital dev` | Start with Vite dev server (HMR) |
-| `npx orbital config` | Interactive config editor |
-| `npx orbital config show` | Print current config |
-| `npx orbital config set <key> <value>` | Set a config value |
-| `npx orbital doctor` | Health check and diagnostics |
-| `npx orbital status` | Show template sync status |
-| `npx orbital update [--dry-run]` | Sync templates to latest version |
-| `npx orbital validate` | Check cross-references and consistency |
-| `npx orbital build` | Production build of frontend |
-| `npx orbital emit <TYPE> <JSON>` | Emit an event to the event bus |
-| `npx orbital register [path] [--alias]` | Register a project with the dashboard |
-| `npx orbital unregister <id>` | Remove a project from the dashboard |
-| `npx orbital projects` | List all registered projects |
-| `npx orbital pin <path> [--reason "..."]` | Lock a file from template updates |
-| `npx orbital unpin <path>` | Unlock a pinned file |
-| `npx orbital pins` | List all pinned files |
-| `npx orbital diff <path>` | Show diff between local file and template |
-| `npx orbital reset <path>` | Restore a file from its template |
-| `npx orbital private [off]` | Toggle global private mode |
-| `npx orbital uninstall [--dry-run] [--keep-config]` | Remove Orbital artifacts |
+| `orbital` | Context-aware hub menu (setup, init, launch, config, etc.) |
+| `orbital` | Context-aware hub menu (setup, launch, config, etc.) |
+| `orbital` | Context-aware hub — launch, config, doctor, etc. |
+| `orbital config` | Interactive config editor |
+| `orbital config show` | Print current config |
+| `orbital config set <key> <value>` | Set a config value |
+| `orbital doctor` | Health check and diagnostics |
+| `orbital status` | Show template sync status |
+| `orbital update [--dry-run]` | Sync templates to latest version |
+| `orbital validate` | Check cross-references and consistency |
+| `orbital build` | Production build of frontend |
+| `orbital emit <TYPE> <JSON>` | Emit an event to the event bus |
+| `orbital register [path] [--alias]` | Register a project with the dashboard |
+| `orbital unregister <id>` | Remove a project from the dashboard |
+| `orbital projects` | List all registered projects |
+| `orbital pin <path> [--reason "..."]` | Lock a file from template updates |
+| `orbital unpin <path>` | Unlock a pinned file |
+| `orbital pins` | List all pinned files |
+| `orbital diff <path>` | Show diff between local file and template |
+| `orbital reset <path>` | Restore a file from its template |
+| `orbital private [off]` | Toggle global private mode |
+| `orbital uninstall [--dry-run] [--keep-config]` | Remove Orbital artifacts |
 
 ---
 
@@ -503,7 +487,7 @@ Orbital tracks every file it installs via a manifest (`.claude/orbital-manifest.
 ### Updating
 
 ```bash
-npx orbital update
+orbital update
 ```
 
 This compares your installed files against the latest templates. Files you haven't modified are updated automatically. Files you've edited are left alone (status: `modified`). Use `--dry-run` to preview changes.
@@ -511,7 +495,7 @@ This compares your installed files against the latest templates. Files you haven
 ### Checking Status
 
 ```bash
-npx orbital status
+orbital status
 ```
 
 Shows the sync status of all managed files, grouped by type (hooks, skills, agents, config). Statuses:
@@ -528,29 +512,29 @@ Shows the sync status of all managed files, grouped by type (hooks, skills, agen
 
 ```bash
 # Lock a file from updates
-npx orbital pin .claude/hooks/my-hook.sh --reason "Custom logic for our CI"
+orbital pin .claude/hooks/my-hook.sh --reason "Custom logic for our CI"
 
 # View all pins
-npx orbital pins
+orbital pins
 
 # Unlock
-npx orbital unpin .claude/hooks/my-hook.sh
+orbital unpin .claude/hooks/my-hook.sh
 ```
 
 ### Comparing and Resetting
 
 ```bash
 # See what changed between your file and the template
-npx orbital diff .claude/hooks/init-session.sh
+orbital diff .claude/hooks/init-session.sh
 
 # Restore a file to the template version
-npx orbital reset .claude/hooks/init-session.sh
+orbital reset .claude/hooks/init-session.sh
 ```
 
 ### Running Diagnostics
 
 ```bash
-npx orbital doctor
+orbital doctor
 ```
 
 Checks that your installation is healthy: verifies config, templates, hooks, permissions, and reports any issues.

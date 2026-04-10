@@ -62,9 +62,6 @@ const NESTED_DEFAULTS: Record<string, Record<string, unknown>> = {
     lint: null,
     build: null,
     test: null,
-    validateTemplates: null,
-    validateDocs: null,
-    checkRules: null,
   },
 };
 

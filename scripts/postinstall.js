@@ -32,5 +32,5 @@ if (existsSync(esbuildInstall)) {
 
 console.log('');
 console.log('  Orbital Command installed.');
-console.log('  Run \x1b[36morbital init\x1b[0m in your project directory to get started.');
+console.log('  Run \x1b[36morbital\x1b[0m in your project directory to get started.');
 console.log('');

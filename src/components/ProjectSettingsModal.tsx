@@ -65,6 +65,7 @@ export function ProjectSettingsModal({ open, onClose, projects }: ProjectSetting
       setAddError(err instanceof Error ? err.message : 'Failed to add project');
     } finally {
       setAdding(false);
+      if (folderInputRef.current) folderInputRef.current.value = '';
     }
   }
 

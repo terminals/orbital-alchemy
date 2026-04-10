@@ -19,16 +19,15 @@ ${pc.cyan('.claude/')} directory — no database or external service required.`,
 
   setupComplete: `${pc.bold('Setup complete.')}
 
-  ${pc.cyan('orbital init')}            Add a project (run in a project directory)
-  ${pc.cyan('orbital launch --open')}   Start the dashboard
+  ${pc.cyan('orbital')}                 Add a project or launch the dashboard
   ${pc.cyan('orbital doctor')}          Health check & version info`,
 
-  addProject: `You can add projects now or later with ${pc.cyan('orbital init')}.
+  addProject: `You can add projects now or later by running ${pc.cyan('orbital')} in a project directory.
 Each project gets its own workflow, scopes, and quality gates.`,
 
   // Phase 2: Project setup (runs per-project)
   reconfigure: `This project is already initialized with Orbital Command.
-You can reconfigure settings or run ${pc.cyan('orbital init --force')} to reset.`,
+You can reconfigure settings or select ${pc.cyan('Reset to defaults')} from the hub menu.`,
 
   projectConfig: `${pc.bold('Project Config')} ${pc.dim('(.claude/orbital.config.json)')}
 
@@ -56,16 +55,16 @@ ${pc.cyan('Quality Gates')}  Automated checks (lint, typecheck, tests) before tr
 
   nextSteps: `${pc.bold('Next Steps')}
 
-  1. ${pc.cyan('orbital launch --open')}   Open the dashboard
+  1. Run ${pc.cyan('orbital')} and select ${pc.bold('Launch dashboard')}
   2. Create a scope from the board or use ${pc.cyan('/scope-create')}
   3. Use ${pc.cyan('/scope-implement')} to start working on a scope
 
 ${pc.bold('Useful Commands')}
 
+  ${pc.cyan('orbital')}           Hub menu — launch, config, doctor, etc.
   ${pc.cyan('orbital status')}    See template sync status
   ${pc.cyan('orbital config')}    Modify project settings
-  ${pc.cyan('orbital update')}    Sync to latest templates
-  ${pc.cyan('orbital doctor')}    Health check & version info`,
+  ${pc.cyan('orbital update')}    Sync to latest templates`,
 };
 
 // ─── Formatting Helpers ─────────────────────────────────────────

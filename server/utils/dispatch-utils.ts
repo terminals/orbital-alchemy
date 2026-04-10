@@ -208,13 +208,13 @@ export function resolveDispatchesByDispatchId(
   return [row.id];
 }
 
-/** Fallback age threshold for dispatches without a linked PID (10 minutes). */
-const STALE_AGE_MS = 10 * 60 * 1000;
+/** Default fallback age threshold for dispatches without a linked PID (10 minutes). */
+const DEFAULT_STALE_AGE_MS = 10 * 60 * 1000;
 
 /** Get all scope IDs that have actively running DISPATCH events.
  *  Uses PID liveness (process.kill(pid, 0)) when available, falls back to
  *  age-based heuristic for legacy dispatches without a linked PID. */
-export function getActiveScopeIds(db: Database.Database, scopeService: ScopeService, engine: WorkflowEngine): number[] {
+export function getActiveScopeIds(db: Database.Database, scopeService: ScopeService, engine: WorkflowEngine, staleTimeoutMinutes?: number): number[] {
   const rows = db.prepare(
     `SELECT scope_id, data FROM events
      WHERE type = 'DISPATCH'
@@ -222,7 +222,8 @@ export function getActiveScopeIds(db: Database.Database, scopeService: ScopeServ
        AND JSON_EXTRACT(data, '$.resolved') IS NULL`,
   ).all() as Array<{ scope_id: number; data: string }>;
 
-  const cutoff = new Date(Date.now() - STALE_AGE_MS).toISOString();
+  const staleMs = staleTimeoutMinutes != null ? staleTimeoutMinutes * 60 * 1000 : DEFAULT_STALE_AGE_MS;
+  const cutoff = new Date(Date.now() - staleMs).toISOString();
   const active = new Set<number>();
 
   for (const row of rows) {
@@ -310,8 +311,9 @@ export function getActiveScopeIds(db: Database.Database, scopeService: ScopeServ
  *  safe recovery for edges like backlog→implementing where the session crashed
  *  before doing meaningful work. Edges without autoRevert leave the scope in place
  *  for manual recovery from the dashboard. */
-export function resolveStaleDispatches(db: Database.Database, io: Emitter, scopeService: ScopeService, engine: WorkflowEngine): number {
-  const cutoff = new Date(Date.now() - STALE_AGE_MS).toISOString();
+export function resolveStaleDispatches(db: Database.Database, io: Emitter, scopeService: ScopeService, engine: WorkflowEngine, staleTimeoutMinutes?: number): number {
+  const staleMs = staleTimeoutMinutes != null ? staleTimeoutMinutes * 60 * 1000 : DEFAULT_STALE_AGE_MS;
+  const cutoff = new Date(Date.now() - staleMs).toISOString();
 
   // Single query on events only — split by cache status
   const rows = db.prepare(

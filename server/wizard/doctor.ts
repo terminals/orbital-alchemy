@@ -49,7 +49,7 @@ export async function runDoctor(projectRoot: string, packageVersion: string): Pr
       checks.push({ label: 'Global', status: pc.yellow('~/.orbital/ exists (registry unreadable)') });
     }
   } else {
-    checks.push({ label: 'Global', status: pc.dim('~/.orbital/ not found (run `orbital init` to create)') });
+    checks.push({ label: 'Global', status: pc.dim('~/.orbital/ not found (run `orbital` to create)') });
   }
 
   // 4. Project initialization
@@ -63,7 +63,7 @@ export async function runDoctor(projectRoot: string, packageVersion: string): Pr
       checks.push({ label: 'Project', status: pc.yellow('config exists but unreadable') });
     }
   } else {
-    checks.push({ label: 'Project', status: pc.dim('not initialized (run `orbital init`)') });
+    checks.push({ label: 'Project', status: pc.dim('not initialized (run `orbital`)') });
   }
 
   // 5. Workflow

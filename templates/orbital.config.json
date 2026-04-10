@@ -19,10 +19,7 @@
     "typeCheck": null,
     "lint": null,
     "build": null,
-    "test": null,
-    "validateTemplates": null,
-    "validateDocs": null,
-    "checkRules": null
+    "test": null
   },
   "categories": ["feature", "bugfix", "refactor", "infrastructure", "docs"],
   "agents": [

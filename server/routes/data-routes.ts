@@ -12,6 +12,8 @@ import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 import { getHookEnforcement } from '../../shared/workflow-config.js';
 import { getClaudeSessions, getSessionStats, type SessionStats } from '../services/claude-session-service.js';
 import { launchInTerminal } from '../utils/terminal-launcher.js';
+import type { OrbitalConfig } from '../config.js';
+import { buildClaudeFlags } from '../utils/flag-builder.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('server');
@@ -44,10 +46,11 @@ interface DataRouteDeps {
   engine: WorkflowEngine;
   projectRoot: string;
   inferScopeStatus: (type: string, scopeId: unknown, data: Record<string, unknown>) => void;
+  config: OrbitalConfig;
 }
 
 export function createDataRoutes({
-  db, io, eventService, gateService, deployService, gitService, engine, projectRoot, inferScopeStatus,
+  db, io, eventService, gateService, deployService, gitService, engine, projectRoot, inferScopeStatus, config,
 }: DataRouteDeps): Router {
   const router = Router();
 
@@ -353,7 +356,8 @@ export function createDataRoutes({
       return;
     }
 
-    const resumeCmd = `cd '${projectRoot}' && claude --dangerously-skip-permissions --resume '${claude_session_id}'`;
+    const flagsStr = buildClaudeFlags(config.claude.dispatchFlags);
+    const resumeCmd = `cd '${projectRoot}' && claude ${flagsStr} --resume '${claude_session_id}'`;
 
     try {
       await launchInTerminal(resumeCmd);

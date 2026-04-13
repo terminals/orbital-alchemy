@@ -1,0 +1,6 @@
+{
+  "telemetry": {
+    "enabled": true,
+    "url": "https://orbital-telemetry.mike-calle.workers.dev/ingest/a7f3x9k2m1"
+  }
+}

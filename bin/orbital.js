@@ -5,8 +5,6 @@ import path from 'path';
 import {
   detectProjectRoot,
   getPackageVersion,
-  isGitRepo,
-  requireGitRepo,
   loadRegistry,
   writeRegistryAtomic,
   loadSharedModule,
@@ -39,12 +37,6 @@ async function runHubFlow() {
   // First-time global setup — no menu, just run the wizard
   if (!orbitalSetupDone()) {
     await wiz.runSetupWizard(hubVersion);
-    return;
-  }
-
-  // Need a git repo for everything else
-  if (!isGitRepo()) {
-    requireGitRepo(); // exits with error
     return;
   }
 

@@ -115,14 +115,16 @@ export class SprintOrchestrator {
   async onScopeReachedDev(scopeId: number): Promise<void> {
     const match = this.sprintService.findActiveSprintForScope(scopeId);
     if (!match) return;
-    log.debug('Scope reached dev', { scopeId, sprintId: match.sprint_id });
 
+    // Batches are managed by BatchOrchestrator — don't dispatch individual scopes
     const sprintId = match.sprint_id;
+    const sprint = this.sprintService.getById(sprintId);
+    if (!sprint || sprint.group_type === 'batch') return;
+
+    log.debug('Scope reached dev', { scopeId, sprintId });
     this.sprintService.updateScopeStatus(sprintId, scopeId, 'completed');
 
     // Ensure sprint is in 'in_progress' state
-    const sprint = this.sprintService.getById(sprintId);
-    if (!sprint) return;
     if (sprint.status === 'dispatched') {
       this.sprintService.updateStatus(sprintId, 'in_progress');
     }

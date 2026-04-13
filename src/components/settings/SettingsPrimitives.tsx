@@ -19,7 +19,7 @@ export function SegmentedControl({
   label?: string;
 }) {
   return (
-    <div role="group" aria-label={label} className="inline-flex flex-wrap rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] p-0.5">
+    <div role="group" aria-label={label} className="card-glass inline-flex flex-wrap rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] p-0.5">
       {options.map(opt => (
         <button
           key={opt.value}

@@ -39,6 +39,9 @@ Find scopes in `scopes/review/` that have a passing verdict:
 
 1. List files in `scopes/review/*.md`
 2. For each, extract the scope number and check `.claude/review-verdicts/{NNN}.json`
+
+If BATCH_SCOPE_IDS is set, only process those specific scopes (skip any not in the list).
+
 3. If verdict exists and `verdict === "PASS"`:
    - Transition: `bash .claude/hooks/scope-transition.sh --from review --to completed --scope {NNN}`
    - Update DASHBOARD: `📦 **Status**: Committed`

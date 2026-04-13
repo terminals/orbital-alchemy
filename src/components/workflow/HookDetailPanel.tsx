@@ -61,9 +61,9 @@ export function HookDetailPanel({ hook, edges, onClose, onViewSource, onNavigate
   const TypeIcon = hasWorkflow ? (TYPE_ICONS[hook.workflow!.type] ?? Terminal) : Bot;
 
   return (
-    <div className="flex h-full w-96 shrink-0 flex-col rounded-lg border border-zinc-800 bg-zinc-900/95 backdrop-blur">
+    <div className="card-glass flex h-full w-96 shrink-0 flex-col rounded-lg border border-border bg-card">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2 min-w-0">
           <CatIcon className="h-4 w-4 shrink-0" style={{ color: catColor }} />
           <span className="text-sm font-medium text-zinc-200 truncate">{hook.label}</span>
@@ -129,7 +129,7 @@ export function HookDetailPanel({ hook, edges, onClose, onViewSource, onNavigate
 
         {/* Script Path */}
         <Section title="Script Path">
-          <div className="flex items-center gap-2 rounded border border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-[11px] text-emerald-400">
+          <div className="flex items-center gap-2 rounded border border-border bg-zinc-950 px-3 py-2 font-mono text-[11px] text-emerald-400">
             <TypeIcon className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
             <span className="truncate">{hook.scriptPath}</span>
           </div>
@@ -155,7 +155,7 @@ export function HookDetailPanel({ hook, edges, onClose, onViewSource, onNavigate
                     <button
                       key={`${e.from}:${e.to}`}
                       onClick={() => onNavigateToEdge?.(e.from, e.to)}
-                      className="flex w-full items-center gap-2 rounded border border-zinc-800/50 bg-zinc-950/30 px-2 py-1.5 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-900/50"
+                      className="flex w-full items-center gap-2 rounded border border-border/50 bg-zinc-950/30 px-2 py-1.5 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-900/50"
                     >
                       <span className="rounded px-1 py-0.5 text-[9px] uppercase" style={{ backgroundColor: `${color}20`, color }}>
                         {e.direction}
@@ -174,7 +174,7 @@ export function HookDetailPanel({ hook, edges, onClose, onViewSource, onNavigate
       </div>
 
       {/* Footer — View Source */}
-      <div className="border-t border-zinc-800 p-3">
+      <div className="border-t border-border p-3">
         <button
           onClick={() => onViewSource(hook)}
           className="flex w-full items-center justify-center gap-2 rounded border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-xs text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-800"
@@ -195,7 +195,7 @@ function CCTriggerList({ triggers }: { triggers: CcTrigger[] }) {
       {triggers.map((t, i) => {
         const evColor = CC_EVENT_COLORS[t.event] ?? '#10b981';
         return (
-          <div key={i} className="flex items-center gap-2 rounded border border-zinc-800/50 bg-zinc-950/30 px-2 py-1.5">
+          <div key={i} className="flex items-center gap-2 rounded border border-border/50 bg-zinc-950/30 px-2 py-1.5">
             <span
               className="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase"
               style={{ backgroundColor: `${evColor}20`, color: evColor }}

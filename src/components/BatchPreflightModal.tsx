@@ -63,7 +63,7 @@ export function BatchPreflightModal({ open, batch, onConfirm, onCancel }: BatchP
 
         <div className="px-5 pb-4 space-y-3">
           {/* Scope list */}
-          <div className="max-h-48 overflow-y-auto space-y-1 rounded border border-border bg-black/40 px-3 py-2">
+          <div className="max-h-48 overflow-y-auto space-y-1 rounded border border-border bg-surface/30 px-3 py-2">
             {batch.scopes.map((ss) => (
               <div key={ss.scope_id} className="flex items-center gap-2 text-xs">
                 <span className="font-mono text-muted-foreground w-8 shrink-0">
@@ -76,7 +76,7 @@ export function BatchPreflightModal({ open, batch, onConfirm, onCancel }: BatchP
 
           {/* Command preview */}
           {batchCommand && (
-            <div className="flex items-center gap-2 rounded border border-border bg-black/40 px-3 py-2">
+            <div className="flex items-center gap-2 rounded border border-border bg-surface/30 px-3 py-2">
               <Terminal className="h-3.5 w-3.5 shrink-0 text-primary" />
               <code className="text-xs font-mono text-primary">{batchCommand}</code>
             </div>

@@ -36,9 +36,9 @@ export function EdgeDetailPanel({ edge, hooks, onClose, onHookClick }: EdgeDetai
   }, [hooks]);
 
   return (
-    <div className="flex h-full w-80 shrink-0 flex-col rounded-lg border border-zinc-800 bg-zinc-900/95 backdrop-blur">
+    <div className="card-glass flex h-full w-80 shrink-0 flex-col rounded-lg border border-border bg-card">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2 text-sm font-medium">
           <span className="text-zinc-300">{edge.from}</span>
           <ArrowRight className="h-3.5 w-3.5 text-zinc-600" />
@@ -68,7 +68,7 @@ export function EdgeDetailPanel({ edge, hooks, onClose, onHookClick }: EdgeDetai
         {/* Command */}
         {edge.command && (
           <Section title="Command">
-            <div className="flex items-center gap-2 rounded border border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-emerald-400">
+            <div className="flex items-center gap-2 rounded border border-border bg-zinc-950 px-3 py-2 font-mono text-emerald-400">
               <Terminal className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
               {edge.command}
             </div>
@@ -198,7 +198,7 @@ function HookDetail({ hook, onClick }: { hook: WorkflowHook; onClick?: (hook: Wo
           {hook.type}
         </span>
       </div>
-      <div className="mt-1.5 flex items-center gap-1.5 rounded border border-zinc-800 bg-zinc-900 px-2 py-1 font-mono text-[10px] text-zinc-400">
+      <div className="mt-1.5 flex items-center gap-1.5 rounded border border-border bg-zinc-900 px-2 py-1 font-mono text-[10px] text-zinc-400">
         <TypeIcon className="h-3 w-3 shrink-0 text-zinc-600" />
         <span className="truncate">{hook.target}</span>
       </div>

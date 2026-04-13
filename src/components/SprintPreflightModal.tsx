@@ -76,14 +76,14 @@ export function SprintPreflightModal({
         <div className="px-5 pb-4 space-y-3">
           {/* Command preview */}
           {sprintCommand && (
-            <div className="flex items-center gap-2 rounded border border-border bg-black/40 px-3 py-2">
+            <div className="flex items-center gap-2 rounded border border-border bg-surface/30 px-3 py-2">
               <Terminal className="h-3.5 w-3.5 shrink-0 text-primary" />
               <code className="text-xs font-mono text-primary">{sprintCommand}</code>
             </div>
           )}
 
           {/* Execution Graph */}
-          <div className="max-h-64 overflow-y-auto space-y-3 rounded border border-border bg-black/40 px-3 py-2">
+          <div className="max-h-64 overflow-y-auto space-y-3 rounded border border-border bg-surface/30 px-3 py-2">
             {layers.map((layer, idx) => (
               <div key={layer.join('-')}>
                 <div className="flex items-center gap-2 mb-1">

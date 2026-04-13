@@ -111,7 +111,7 @@ export function DashboardLayout() {
 
       {/* Main content */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden relative z-[1]" style={settings.fontScale !== 1 ? { zoom: settings.fontScale } : undefined}>
-        <div className="flex flex-1 flex-col overflow-hidden p-4 pt-12 pb-12">
+        <div className="flex flex-1 flex-col overflow-hidden p-4 pt-12 pb-0">
           <ErrorBoundary>
             <Suspense fallback={LazyFallback}>
               <Outlet />

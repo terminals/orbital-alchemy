@@ -89,7 +89,7 @@ export function DispatchPopover({
 
         {/* Command preview */}
         {displayCommand && (
-          <div className="mb-3 flex items-center gap-1.5 rounded bg-black/40 px-2 py-1.5">
+          <div className="mb-3 flex items-center gap-1.5 rounded bg-surface/30 px-2 py-1.5">
             <Terminal className="h-3 w-3 shrink-0 text-primary" />
             <code className="text-xxs font-mono text-primary">{displayCommand}</code>
           </div>

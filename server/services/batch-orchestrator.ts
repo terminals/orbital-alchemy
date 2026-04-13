@@ -73,7 +73,7 @@ export class BatchOrchestrator {
 
     // Launch single CLI session with BATCH_SCOPE_IDS prepended to command
     const escaped = escapeForAnsiC(command);
-    const flagsStr = buildClaudeFlags({ ...this.config.claude.dispatchFlags, printMode: true });
+    const flagsStr = buildClaudeFlags(this.config.claude.dispatchFlags);
     const envPrefix = buildEnvVarPrefix(this.config.dispatch.envVars);
     const fullCmd = `cd '${shellQuote(this.projectRoot)}' && ${envPrefix}BATCH_SCOPE_IDS='${scopeIdsStr}' MERGE_MODE='${mergeModeStr}' claude ${flagsStr} $'${escaped}'`;
     const beforePids = snapshotSessionPids(this.projectRoot);

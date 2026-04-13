@@ -93,7 +93,7 @@ export function DispatchModal({
 
           {/* Command block */}
           {command && (
-            <div className="flex items-center gap-2 rounded border border-border bg-black/40 px-3 py-2">
+            <div className="flex items-center gap-2 rounded border border-border bg-surface/30 px-3 py-2">
               <Terminal className="h-3.5 w-3.5 shrink-0 text-primary" />
               <code className="text-xs font-mono text-primary">{command}</code>
             </div>

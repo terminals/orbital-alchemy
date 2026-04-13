@@ -32,9 +32,9 @@ export function NodeDetailPanel({ list, hooks, connectedEdges, onClose, onHookCl
   }, [hooks]);
 
   return (
-    <div className="flex h-full w-80 shrink-0 flex-col rounded-lg border border-zinc-800 bg-zinc-900/95 backdrop-blur">
+    <div className="card-glass flex h-full w-80 shrink-0 flex-col rounded-lg border border-border bg-card">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <div className="h-3 w-3 rounded-full" style={{ backgroundColor: list.hex }} />
           <span className="text-sm font-medium">{list.label}</span>
@@ -203,7 +203,7 @@ function NodeHookDetail({ hook, onClick }: { hook: WorkflowHook; onClick?: (hook
           {hook.type}
         </span>
       </div>
-      <div className="mt-1.5 flex items-center gap-1.5 rounded border border-zinc-800 bg-zinc-900 px-2 py-1 font-mono text-[10px] text-zinc-400">
+      <div className="mt-1.5 flex items-center gap-1.5 rounded border border-border bg-zinc-900 px-2 py-1 font-mono text-[10px] text-zinc-400">
         <TypeIcon className="h-3 w-3 shrink-0 text-zinc-600" />
         <span className="truncate">{hook.target}</span>
       </div>
@@ -221,7 +221,7 @@ const DIRECTION_COLORS: Record<string, string> = {
 function EdgeRow({ edge, showField }: { edge: WorkflowEdge; showField: 'from' | 'to' }) {
   const color = DIRECTION_COLORS[edge.direction] ?? '#22c55e';
   return (
-    <div className="flex items-center gap-2 rounded border border-zinc-800/50 bg-zinc-950/30 px-2 py-1.5">
+    <div className="flex items-center gap-2 rounded border border-border/50 bg-zinc-950/30 px-2 py-1.5">
       <span className="rounded px-1 py-0.5 text-[9px] uppercase" style={{ backgroundColor: `${color}20`, color }}>
         {edge.direction}
       </span>

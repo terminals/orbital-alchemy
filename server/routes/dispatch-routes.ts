@@ -268,10 +268,10 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
       timestamp: new Date().toISOString(),
     });
 
-    // Launch single CLI session — batch always uses -p
+    // Launch single CLI session with batch env vars
     const batchEscaped = escapeForAnsiC(command);
     const beforePids = snapshotSessionPids(projectRoot);
-    const batchFlags = buildClaudeFlags({ ...config.claude.dispatchFlags, printMode: true });
+    const batchFlags = buildClaudeFlags(config.claude.dispatchFlags);
     const envPrefix = buildEnvVarPrefix(config.dispatch.envVars);
     const fullCmd = `cd '${shellQuote(projectRoot)}' && ${envPrefix}ORBITAL_DISPATCH_ID='${shellQuote(eventId)}' claude ${batchFlags} $'${batchEscaped}'`;
     try {

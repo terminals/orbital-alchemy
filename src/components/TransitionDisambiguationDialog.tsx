@@ -17,7 +17,7 @@ export function TransitionDisambiguationDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-80 rounded-lg border border-border bg-card p-4 shadow-xl space-y-3">
+      <div className="card-glass w-80 rounded-lg border border-border bg-card p-4 shadow-xl space-y-3">
         <h3 className="text-sm font-medium">Choose Transition</h3>
         <p className="text-xs text-muted-foreground">
           Multiple transitions are available for this move. Select one:

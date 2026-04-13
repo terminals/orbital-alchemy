@@ -19,6 +19,7 @@ interface SourceControlState {
   branches: BranchInfoData[];
   worktrees: WorktreeDetail[];
   github: GitHubStatus | null;
+  githubChecking: boolean;
   drift: DriftPair[];
   health: RepoHealthMetrics | null;
   activity: ActivityDataPoint[];
@@ -31,13 +32,14 @@ interface SourceControlState {
 
 const COMMIT_PAGE_SIZE = 50;
 
-export function useSourceControl(): SourceControlState {
+export function useSourceControl(enabled: boolean = true): SourceControlState {
   const buildUrl = useProjectUrl();
   const [overview, setOverview] = useState<GitOverview | null>(null);
   const [commits, setCommits] = useState<CommitEntry[]>([]);
   const [branches, setBranches] = useState<BranchInfoData[]>([]);
   const [worktrees, setWorktrees] = useState<WorktreeDetail[]>([]);
   const [github, setGitHub] = useState<GitHubStatus | null>(null);
+  const [githubChecking, setGitHubChecking] = useState(true);
   const [drift, setDrift] = useState<DriftPair[]>([]);
   const [health, setHealth] = useState<RepoHealthMetrics | null>(null);
   const [activity, setActivity] = useState<ActivityDataPoint[]>([]);
@@ -46,6 +48,7 @@ export function useSourceControl(): SourceControlState {
   const offsetRef = useRef(0);
 
   const fetchCore = useCallback(async (signal?: AbortSignal) => {
+    if (!enabled) return;
     try {
       const [overviewRes, commitsRes, branchesRes, worktreesRes, driftRes, healthRes, activityRes] = await Promise.all([
         fetch(buildUrl('/git/overview'), { signal }),
@@ -75,17 +78,21 @@ export function useSourceControl(): SourceControlState {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [buildUrl]);
+  }, [buildUrl, enabled]);
 
   // GitHub status fetched separately (can be slow)
   const fetchGitHub = useCallback(async (signal?: AbortSignal) => {
+    if (!enabled) return;
+    setGitHubChecking(true);
     try {
       const res = await fetch(buildUrl('/github/status'), { signal });
       if (res.ok) setGitHub(await res.json());
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
+    } finally {
+      if (!signal?.aborted) setGitHubChecking(false);
     }
-  }, [buildUrl]);
+  }, [buildUrl, enabled]);
 
   const refetch = useCallback(() => {
     fetchCore();
@@ -105,11 +112,16 @@ export function useSourceControl(): SourceControlState {
   }, [buildUrl]);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      setGitHubChecking(false);
+      return;
+    }
     const controller = new AbortController();
     fetchCore(controller.signal);
     fetchGitHub(controller.signal);
     return () => controller.abort();
-  }, [fetchCore, fetchGitHub]);
+  }, [enabled, fetchCore, fetchGitHub]);
 
   useReconnect(refetch);
 
@@ -122,5 +134,5 @@ export function useSourceControl(): SourceControlState {
     return () => { socket.off('git:status:changed', onGitChange); };
   }, [fetchCore]);
 
-  return { overview, commits, branches, worktrees, github, drift, health, activity, loading, refetch, loadMoreCommits, hasMoreCommits, buildUrl };
+  return { overview, commits, branches, worktrees, github, githubChecking, drift, health, activity, loading, refetch, loadMoreCommits, hasMoreCommits, buildUrl };
 }

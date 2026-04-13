@@ -4,6 +4,7 @@ import { socket } from '../socket';
 import { WorkflowEngine } from '../../shared/workflow-engine';
 import { isWorkflowConfig } from '../../shared/workflow-config';
 import { useReconnect } from './useReconnect';
+import { useCoalescedRefetch } from './useCoalescedRefetch';
 import type { Project } from '@/types';
 
 // ─── Context ──────────────────────────────────────────────
@@ -103,25 +104,34 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
     }
   }, [projects, projectParam, setSearchParams]);
 
-  // Listen for project registration/unregistration events
+  // Auto-reset to "All Projects" if the active project is hidden or no longer exists.
+  // Triggered when the projects list refreshes after a `project:updated` socket event
+  // (e.g. the user hides the active project via Project Settings).
   useEffect(() => {
-    const onRegistered = () => fetchProjects();
-    const onUnregistered = () => fetchProjects();
-    const onStatusChanged = () => fetchProjects();
-    const onUpdated = () => fetchProjects();
+    if (loading || !activeProjectId || projects.length === 0) return;
+    const active = projects.find(p => p.id === activeProjectId);
+    if (!active || !active.enabled) {
+      setActiveProjectId(null);
+    }
+  }, [projects, activeProjectId, loading, setActiveProjectId]);
 
-    socket.on('project:registered', onRegistered);
-    socket.on('project:unregistered', onUnregistered);
-    socket.on('project:status:changed', onStatusChanged);
-    socket.on('project:updated', onUpdated);
+  // Listen for project registration/unregistration events.
+  // All four events coalesce to a single refetch so a burst arriving within
+  // 100ms of each other (e.g. on socket connect) doesn't produce 3-4× requests.
+  const coalescedFetchProjects = useCoalescedRefetch(fetchProjects);
+  useEffect(() => {
+    socket.on('project:registered', coalescedFetchProjects);
+    socket.on('project:unregistered', coalescedFetchProjects);
+    socket.on('project:status:changed', coalescedFetchProjects);
+    socket.on('project:updated', coalescedFetchProjects);
 
     return () => {
-      socket.off('project:registered', onRegistered);
-      socket.off('project:unregistered', onUnregistered);
-      socket.off('project:status:changed', onStatusChanged);
-      socket.off('project:updated', onUpdated);
+      socket.off('project:registered', coalescedFetchProjects);
+      socket.off('project:unregistered', coalescedFetchProjects);
+      socket.off('project:status:changed', coalescedFetchProjects);
+      socket.off('project:updated', coalescedFetchProjects);
     };
-  }, [fetchProjects]);
+  }, [coalescedFetchProjects]);
 
   // Subscribe to appropriate socket rooms when project changes or socket reconnects
   useEffect(() => {
@@ -167,12 +177,11 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
 
   const [projectEngines, setProjectEngines] = useState<Map<string, WorkflowEngine>>(new Map());
 
-  // Re-fetch projects + engines on workflow:changed
+  // Re-fetch projects + engines on workflow:changed (coalesced)
   useEffect(() => {
-    const handler = () => { fetchProjects(); };
-    socket.on('workflow:changed', handler);
-    return () => { socket.off('workflow:changed', handler); };
-  }, [fetchProjects]);
+    socket.on('workflow:changed', coalescedFetchProjects);
+    return () => { socket.off('workflow:changed', coalescedFetchProjects); };
+  }, [coalescedFetchProjects]);
 
   // Re-fetch projects + engines on socket reconnect or tab visibility change
   useReconnect(fetchProjects);

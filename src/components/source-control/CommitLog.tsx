@@ -49,7 +49,7 @@ export function CommitLog({ commits, branches, hasMore, onLoadMore }: Props) {
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-base">
             <GitCommit className="h-4 w-4 text-primary" />
-            Commits
+            Commits{' '}
             <Badge variant="secondary">{filtered.length}</Badge>
           </CardTitle>
           <div className="flex gap-1">

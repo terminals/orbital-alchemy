@@ -15,6 +15,7 @@ export default defineConfig({
           include: [
             'shared/**/*.test.ts',
             'server/services/scope-cache.test.ts',
+            'src/**/*.test.ts',
           ],
           environment: 'node',
         },

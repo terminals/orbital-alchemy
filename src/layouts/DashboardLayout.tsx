@@ -88,9 +88,9 @@ export function DashboardLayout() {
         </ScrollArea>
 
         {/* Settings — anchored at bottom */}
-        <div className="px-4 py-3">
+        <div className="px-4 py-3 border-t border-border/40">
           <NavLink
-            to={`/settings${search}`}
+            to={`/settings${searchStr}`}
             data-tour="nav-settings"
             className={({ isActive }) =>
               cn(

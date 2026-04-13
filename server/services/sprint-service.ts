@@ -157,10 +157,10 @@ export class SprintService {
     return this.buildDetail(row);
   }
 
-  /** Delete a sprint (only if assembling) */
+  /** Delete a sprint/batch (assembling, failed, or cancelled) */
   delete(id: number): boolean {
     const row = this.db.prepare('SELECT status FROM sprints WHERE id = ?').get(id) as { status: string } | undefined;
-    if (!row || row.status !== 'assembling') return false;
+    if (!row || !['assembling', 'failed', 'cancelled', 'completed'].includes(row.status)) return false;
 
     this.db.prepare('DELETE FROM sprint_scopes WHERE sprint_id = ?').run(id);
     this.db.prepare('DELETE FROM sprints WHERE id = ?').run(id);

@@ -85,6 +85,17 @@ These are **automatic** suggestions based on session state, not user phrases.
 
 ---
 
+## Agent Auto-Triggers by Phrase
+
+| User Says | Agent | Why |
+|-----------|-------|-----|
+| "Refactor", "clean up", "simplify" | 🔬 Deep Dive | Codebase health review needed |
+| "Tech debt", "health check", "audit" | 🔬 Deep Dive | Structural assessment |
+| "Pre-launch review", "before we release" | 🔬 Deep Dive | Comprehensive pre-release audit |
+| "Deep dive", "thorough review" | 🔬 Deep Dive | Explicit invocation |
+
+---
+
 ## Priority Order
 
 When multiple skills could apply, prioritize:

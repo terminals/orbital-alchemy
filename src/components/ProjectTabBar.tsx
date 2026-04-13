@@ -22,6 +22,7 @@ export function ProjectTabBar({ countOverrides }: ProjectTabBarProps = {}) {
     <div className="card-glass -mt-8 mb-3 flex items-center gap-0.5 overflow-x-auto rounded border border-white/[0.08] px-1 py-1">
       {/* All Projects tab */}
       <button
+        type="button"
         onClick={() => setActiveProjectId(null)}
         className={cn(
           'flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium whitespace-nowrap',
@@ -55,6 +56,7 @@ export function ProjectTabBar({ countOverrides }: ProjectTabBarProps = {}) {
         const isActive = activeProjectId === project.id;
         return (
           <button
+            type="button"
             key={project.id}
             onClick={() => setActiveProjectId(project.id)}
             className={cn(
@@ -92,6 +94,7 @@ export function ProjectTabBar({ countOverrides }: ProjectTabBarProps = {}) {
       {/* Edit button */}
       <div className="ml-auto shrink-0 pl-1">
         <button
+          type="button"
           onClick={() => setSettingsOpen(true)}
           className="flex items-center justify-center rounded p-1.5 text-muted-foreground/60 hover:text-foreground hover:bg-white/[0.06] transition-colors"
           title="Project settings"

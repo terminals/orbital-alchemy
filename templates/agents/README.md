@@ -86,6 +86,7 @@ Every enforcement rule exists because a past mistake taught us it matters. Bypas
 │  "Protect quality and standards"                                           │
 │                                                                             │
 │     🏗️ Architect       - Patterns, structure, module boundaries            │
+│     🔬 Deep Dive       - Codebase audits, refactors, health reviews       │
 │     📋 Rules Enforcer  - Non-negotiable project rules (automated)          │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘

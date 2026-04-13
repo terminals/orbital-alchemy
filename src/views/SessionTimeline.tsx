@@ -324,7 +324,7 @@ function DetailPane({ session, detail, loading, resuming, onResume }: {
   return (
     <div className="flex h-full flex-col">
       <div className="px-5 pt-4 pb-3">
-        <p className="text-xxs text-muted-foreground">
+        <div className="text-xxs text-muted-foreground">
           {session.started_at && format(new Date(session.started_at), 'MMM d, yyyy — h:mm a')}
           {scopeIds.length > 0 && scopeIds.slice(0, 4).map((id) => (
             <span key={id} className="ml-1.5">
@@ -332,7 +332,7 @@ function DetailPane({ session, detail, loading, resuming, onResume }: {
             </span>
           ))}
           {scopeIds.length > 4 && <span className="ml-1 text-xxs">+{scopeIds.length - 4}</span>}
-        </p>
+        </div>
         <h2 className="mt-1 text-sm font-light">{displayName ? truncate(displayName, 120) : 'Untitled Session'}</h2>
       </div>
 

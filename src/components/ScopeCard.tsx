@@ -36,13 +36,6 @@ const CATEGORY_COLOR: Record<string, string> = {
   'docs':           'border-category-docs text-category-docs',
 };
 
-const CATEGORY_BORDER: Record<string, string> = {
-  'feature':        'border-l-2 border-l-category-feature scope-cat-feature',
-  'bugfix':         'border-l-2 border-l-category-bugfix scope-cat-bugfix',
-  'refactor':       'border-l-2 border-l-category-refactor scope-cat-refactor',
-  'infrastructure': 'border-l-2 border-l-category-infrastructure scope-cat-infrastructure',
-  'docs':           'border-l-2 border-l-category-docs scope-cat-docs',
-};
 
 const GHOST = 'inline-block rounded border px-1.5 py-0 text-[10px] uppercase bg-transparent';
 
@@ -58,7 +51,7 @@ function AbandonedPopover({ scopeId, projectId, info, onRecover, onDismiss }: Ab
   return (
     <Popover>
       <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
-        <button className="flex items-center gap-0.5 text-amber-500 hover:text-amber-400 transition-colors">
+        <button type="button" className="flex items-center gap-0.5 text-amber-500 hover:text-amber-400 transition-colors">
           <AlertTriangle className="h-3 w-3" />
         </button>
       </PopoverTrigger>
@@ -74,6 +67,7 @@ function AbandonedPopover({ scopeId, projectId, info, onRecover, onDismiss }: Ab
         <div className="flex flex-col gap-1.5">
           {info.from_status && (
             <button
+              type="button"
               className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 transition-colors"
               onClick={() => onRecover(scopeId, info.from_status!, projectId)}
             >
@@ -82,6 +76,7 @@ function AbandonedPopover({ scopeId, projectId, info, onRecover, onDismiss }: Ab
             </button>
           )}
           <button
+            type="button"
             className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
             onClick={() => onDismiss(scopeId, projectId)}
           >
@@ -184,7 +179,7 @@ export function ScopeCard({ scope, onClick, isDragOverlay, cardDisplay, dimmed, 
           ? 'scope-card-ghost ghost-shimmer opacity-70'
           : isIdea
           ? 'border-l-2 border-dashed border-l-warning-amber/60'
-          : !project && scope.category ? CATEGORY_BORDER[scope.category] : '',
+          : '',
         isDispatched && 'scope-card-dispatched',
         isAbandoned && 'scope-card-abandoned',
         isDragging && 'opacity-30',
@@ -221,6 +216,7 @@ export function ScopeCard({ scope, onClick, isDragOverlay, cardDisplay, dimmed, 
               {isAbandoned && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
               {formatScopeId(scope.id)}
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   fetch(buildUrl(`/scopes/${scope.id}`), {

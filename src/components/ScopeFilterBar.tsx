@@ -110,6 +110,7 @@ export function ScopeFilterBar({
                 <div key={field}>
                   {/* Accordion header */}
                   <button
+                    type="button"
                     onClick={() => setOpenField(isOpen ? null : field)}
                     className={cn(
                       'flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs transition-colors',
@@ -136,6 +137,7 @@ export function ScopeFilterBar({
                         const checked = filters[field].has(opt.value);
                         return (
                           <button
+                            type="button"
                             key={opt.value}
                             onClick={() => onToggle(field, opt.value)}
                             className={cn(
@@ -169,6 +171,7 @@ export function ScopeFilterBar({
                       })}
                       {count > 0 && (
                         <button
+                          type="button"
                           onClick={() => onClearField(field)}
                           className="w-full rounded px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors text-left"
                         >
@@ -186,6 +189,7 @@ export function ScopeFilterBar({
             <>
               <div className="my-2 border-t border-white/[0.06]" />
               <button
+                type="button"
                 onClick={onClearAll}
                 className="w-full rounded px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors text-center"
               >

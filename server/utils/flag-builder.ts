@@ -1,5 +1,5 @@
 import type { DispatchFlags } from '../../shared/api-types.js';
-import { VALID_MODELS, VALID_REASONING_EFFORTS, VALID_OUTPUT_FORMATS, validateToolName, validateEnvKey } from '../../shared/api-types.js';
+import { VALID_OUTPUT_FORMATS, validateToolName, validateEnvKey } from '../../shared/api-types.js';
 import { shellQuote } from './terminal-launcher.js';
 
 /**
@@ -21,13 +21,6 @@ export function buildClaudeFlags(flags: DispatchFlags): string {
   if (flags.noMarkdown) parts.push('--no-markdown');
   if (flags.printMode) parts.push('-p');
 
-  if (flags.model && VALID_MODELS.includes(flags.model)) {
-    parts.push('--model', flags.model);
-  }
-  if (flags.maxTurns > 0) parts.push('--max-turns', String(Math.floor(flags.maxTurns)));
-  if (flags.reasoningEffort && VALID_REASONING_EFFORTS.includes(flags.reasoningEffort)) {
-    parts.push('--reasoning-effort', flags.reasoningEffort);
-  }
   if (flags.outputFormat && VALID_OUTPUT_FORMATS.includes(flags.outputFormat)) {
     parts.push('--output-format', flags.outputFormat);
   }

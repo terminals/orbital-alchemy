@@ -33,7 +33,7 @@ import { IdeaDetailModal } from '@/components/IdeaDetailModal';
 import { ScopeFilterBar } from '@/components/ScopeFilterBar';
 import { SearchInput } from '@/components/SearchInput';
 import { SprintPreflightModal } from '@/components/SprintPreflightModal';
-import { BatchPreflightModal } from '@/components/BatchPreflightModal';
+
 import { SprintDependencyDialog } from '@/components/SprintDependencyDialog';
 import { ColumnHeaderActions } from '@/components/ColumnHeaderActions';
 import { sprintAwareCollision } from '@/lib/collisionDetection';
@@ -41,6 +41,7 @@ import { computeSwimLanes } from '@/lib/swimlane';
 import { computeAllProjectsBoard } from '@/lib/all-projects-board';
 import { partitionByFavourites } from '@/lib/favourite-sort';
 import { scopeKey } from '@/lib/scope-key';
+import { sprintKey } from '@/lib/sprint-key';
 import { WorkflowNormalizer } from '../../shared/workflow-normalizer';
 import { ProjectTabBar } from '@/components/ProjectTabBar';
 import { TransitionDisambiguationDialog } from '@/components/TransitionDisambiguationDialog';
@@ -59,7 +60,6 @@ export function ScopeBoard() {
   const [selectedScopeKey, setSelectedScopeKey] = useState<string | null>(null);
   const selectedScope = useMemo(() => scopes.find((s) => scopeKey(s) === selectedScopeKey) ?? null, [scopes, selectedScopeKey]);
   const [selectedIdea, setSelectedIdea] = useState<Scope | null>(null);
-  const [pendingBatchDispatch, setPendingBatchDispatch] = useState<number | null>(null);
 
   // Dynamic board columns from engine
   const boardColumns = useMemo(() => engine.getBoardColumns(), [engine]);
@@ -74,13 +74,12 @@ export function ScopeBoard() {
   // Effective columns: All Projects board columns or single-project columns
   const effectiveColumns = allProjectsBoard?.columns ?? boardColumns;
 
-  // Project lookup for card badges
+  // Project lookup for card/sprint project colors
   const projectLookup = useMemo(() => {
-    if (!hasMultipleProjects) return undefined;
     const map = new Map<string, Project>();
     for (const p of projects) map.set(p.id, p);
-    return map;
-  }, [hasMultipleProjects, projects]);
+    return map.size > 0 ? map : undefined;
+  }, [projects]);
 
   const {
     sprints,
@@ -91,9 +90,13 @@ export function ScopeBoard() {
     removeScopes: removeScopesFromSprint,
     dispatchSprint,
     getGraph,
+    moveSprintToProject,
   } = useSprints();
 
-  const [editingSprintId, setEditingSprintId] = useState<number | null>(null);
+  const [editingSprintId, setEditingSprintId] = useState<string | null>(null);
+
+  // Default project for creation in All Projects mode (first enabled project)
+  const defaultProjectId = isAllProjects ? projects.find(p => p.enabled)?.id : undefined;
 
   const {
     filters,
@@ -155,6 +158,7 @@ export function ScopeBoard() {
     onRemoveFromSprint: removeScopesFromSprint,
     isPhaseView: isAllProjects && allProjectsBoard != null && !allProjectsBoard.isUnified,
     projectEngines: isAllProjects ? projectEngines : undefined,
+    defaultProjectId,
   });
 
   // 8px activation constraint so clicks pass through to detail modal
@@ -164,11 +168,11 @@ export function ScopeBoard() {
   );
   const modifiers = useZoomModifier();
 
-  // Build scope lookup from full set so sprint containers always resolve
-  // Uses numeric ID since sprints are per-project (not aggregated in All Projects)
+  // Build scope lookup keyed by composite scopeKey (project_id::id) so sprints
+  // from different projects resolve to the correct scope in All Projects mode.
   const scopeLookup = useMemo(() => {
-    const map = new Map<number, Scope>();
-    for (const scope of scopes) map.set(scope.id, scope);
+    const map = new Map<string, Scope>();
+    for (const scope of scopes) map.set(scopeKey(scope), scope);
     return map;
   }, [scopes]);
 
@@ -213,29 +217,28 @@ export function ScopeBoard() {
   const sprintsByColumn = useMemo(() => {
     const map: Record<string, typeof sprints> = {};
     for (const group of sprints) {
-      // Hide completed batches — failed batches stay visible for attention
-      if (group.group_type === 'batch' && group.status === 'completed') continue;
-      // Active sprints render in implementing; everything else uses target_column
-      const col = group.group_type === 'sprint' && group.status !== 'assembling'
-        ? 'implementing'
+      // Assembling groups stay in their source column; dispatched/active/completed/failed
+      // groups render in the destination column (same visual model as single-card moves)
+      const col = group.status !== 'assembling'
+        ? engine.getBatchTargetStatus(group.target_column) ?? group.target_column
         : group.target_column;
       (map[col] ??= []).push(group);
     }
     return map;
-  }, [sprints]);
+  }, [sprints, engine]);
 
-  // Global set of scope IDs in active sprint/batch groups across ALL columns.
-  // Used for cross-column deduplication so a scope never renders as both
-  // a loose card in one column and inside a group container in another.
+  // Global set of scope composite keys in sprint/batch groups across ALL columns.
+  // Uses scopeKey format (project_id::id) so scopes from different projects with
+  // the same numeric ID don't collide in All Projects mode.
   const globalSprintScopeIds = useMemo(() => {
-    const ids = new Set<number>();
+    const keys = new Set<string>();
     for (const group of sprints) {
-      if (group.group_type === 'batch' && group.status === 'completed') continue;
-      for (const scopeId of group.scope_ids) {
-        ids.add(scopeId);
+      const pid = group.project_id ?? '';
+      for (const id of group.scope_ids) {
+        keys.add(pid ? `${pid}::${id}` : String(id));
       }
     }
-    return ids;
+    return keys;
   }, [sprints]);
 
   // Swimlane computation (only when in swimlane mode)
@@ -261,6 +264,13 @@ export function ScopeBoard() {
   // Compute valid drop targets for the currently dragged item
   const validTargets = useMemo(() => {
     if (dndState.activeScope) {
+      // If scope is inside an assembling group, only its own column is valid (to remove it)
+      const inGroup = sprints.some((s) =>
+        s.status === 'assembling' && s.scope_ids.includes(dndState.activeScope!.id),
+      );
+      if (inGroup) {
+        return new Set<string>([dndState.activeScope.status]);
+      }
       // In All Projects phase view, resolve targets through the scope's project engine
       if (isAllProjects && allProjectsBoard && !allProjectsBoard.isUnified && dndState.activeScope.project_id) {
         const scopeEngine = projectEngines.get(dndState.activeScope.project_id);
@@ -275,10 +285,14 @@ export function ScopeBoard() {
       return new Set(engine.getValidTargets(dndState.activeScope.status));
     }
     if (dndState.activeSprint) {
-      return new Set<string>(['implementing']);
+      const group = dndState.activeSprint;
+      const effectiveCol = group.status !== 'assembling'
+        ? engine.getBatchTargetStatus(group.target_column) ?? group.target_column
+        : group.target_column;
+      return new Set(engine.getValidTargets(effectiveCol));
     }
     return new Set<string>();
-  }, [dndState.activeScope, dndState.activeSprint, engine, isAllProjects, allProjectsBoard, projectEngines]);
+  }, [dndState.activeScope, dndState.activeSprint, engine, sprints, isAllProjects, allProjectsBoard, projectEngines]);
 
   // ─── Sprint Preflight ───────────────────────────────────
   const preflight = useSprintPreflight(
@@ -308,10 +322,16 @@ export function ScopeBoard() {
   }, [addScopesToSprint, showUnmetDeps]);
 
   const handleCreateGroup = useCallback(async (name: string, options: { target_column: string; group_type: 'sprint' | 'batch' }) => {
-    const sprint = await createSprint(name, options);
-    if (sprint) setEditingSprintId(sprint.id);
+    const sprint = await createSprint(name, { ...options, projectId: defaultProjectId });
+    if (sprint) setEditingSprintId(sprintKey(sprint));
     return sprint;
-  }, [createSprint]);
+  }, [createSprint, defaultProjectId]);
+
+  const handleProjectChange = useCallback(async (sprintId: number, newProjectId: string) => {
+    const sprint = sprints.find(s => s.id === sprintId);
+    if (!sprint?.project_id) return;
+    await moveSprintToProject(sprintId, sprint.project_id, newProjectId);
+  }, [sprints, moveSprintToProject]);
 
   if (loading && scopes.length === 0) {
     return (
@@ -401,16 +421,16 @@ export function ScopeBoard() {
                   label={col.label}
                   color={col.color}
                   scopes={scopesByStatus[col.id] ?? []}
-                  sprints={isAllProjects ? undefined : sprintsByColumn[col.id]}
+                  sprints={sprintsByColumn[col.id]}
                   scopeLookup={scopeLookup}
-                  globalSprintScopeIds={isAllProjects ? undefined : globalSprintScopeIds}
+                  globalSprintScopeIds={globalSprintScopeIds}
                   onScopeClick={handleScopeClick}
-                  onDeleteSprint={isAllProjects ? undefined : deleteSprint}
-                  onDispatchSprint={isAllProjects ? undefined : (id) => setPendingBatchDispatch(id)}
-                  onRenameSprint={isAllProjects ? undefined : (id, name) => renameSprint(id, name)}
-                  editingSprintId={isAllProjects ? undefined : editingSprintId}
-                  onSprintEditingDone={isAllProjects ? undefined : () => setEditingSprintId(null)}
-                  onAddAllToSprint={isAllProjects ? undefined : handleAddAllToSprint}
+                  onDeleteSprint={deleteSprint}
+
+                  onRenameSprint={(id, name) => renameSprint(id, name)}
+                  editingSprintId={editingSprintId}
+                  onSprintEditingDone={() => setEditingSprintId(null)}
+                  onAddAllToSprint={handleAddAllToSprint}
                   isDragActive={!!(dndState.activeScope || dndState.activeSprint)}
                   isValidDrop={validTargets.has(col.id)}
                   sortField={sortField}
@@ -421,7 +441,8 @@ export function ScopeBoard() {
                   cardDisplay={cardDisplay}
                   dimmedIds={mergedDimmedIds}
                   projectLookup={projectLookup}
-                  headerExtra={isAllProjects ? undefined :
+                  onProjectChange={handleProjectChange}
+                  headerExtra={isAllProjects && allProjectsBoard && !allProjectsBoard.isUnified ? undefined :
                     <ColumnHeaderActions
                       columnId={col.id}
                       dispatching={dndState.dispatching}
@@ -440,6 +461,8 @@ export function ScopeBoard() {
           activeScope={dndState.activeScope}
           activeSprint={dndState.activeSprint}
           cardDisplay={cardDisplay}
+          projectLookup={projectLookup}
+          scopeLookup={scopeLookup}
         />
 
         {/* Quick confirm dialog */}
@@ -513,16 +536,6 @@ export function ScopeBoard() {
           onCancel={preflight.onCancel}
         />
 
-        {/* Batch preflight modal */}
-        <BatchPreflightModal
-          open={pendingBatchDispatch != null}
-          batch={sprints.find((s) => s.id === pendingBatchDispatch) ?? null}
-          onConfirm={() => {
-            if (pendingBatchDispatch != null) dispatchSprint(pendingBatchDispatch);
-            setPendingBatchDispatch(null);
-          }}
-          onCancel={() => setPendingBatchDispatch(null)}
-        />
 
         {/* Unmet dependency dialog */}
         <SprintDependencyDialog

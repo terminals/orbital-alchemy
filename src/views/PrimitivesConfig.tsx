@@ -29,7 +29,6 @@ import { usePipelineData } from '@/hooks/usePipelineData';
 import { useFileEditor } from '@/hooks/useFileEditor';
 import { cn } from '@/lib/utils';
 import type { ConfigPrimitiveType, ConfigFileNode } from '@/types';
-import type { HookCategory } from '../../shared/workflow-config';
 
 /** Extract a logical ID from a file path: folder name or filename without extension */
 function extractIdFromPath(path: string): string {
@@ -268,92 +267,12 @@ export function PrimitivesConfig() {
     }
   }, [editor, savingWorkflow, buildUrl]);
 
-  const { activePaths, hookCategoryMap } = useMemo(() => {
-    const activeHookPaths = new Set<string>();
-    const activeSkillPaths = new Set<string>();
-    const activeAgentPaths = new Set<string>();
-    const catMap = new Map<string, HookCategory>();
-
-    // Collect active hooks from pipeline (global + stage + edge hooks)
-    const allResolved = [
-      ...pipelineData.globalHooks,
-      ...pipelineData.stages.flatMap(s => s.stageHooks),
-      ...pipelineData.stages.flatMap(s => s.forwardEdges.flatMap(e => e.edgeHooks)),
-    ];
-    for (const hook of allResolved) {
-      if (hook.filePath) {
-        activeHookPaths.add(hook.filePath);
-        catMap.set(hook.filePath, hook.category);
-      }
-    }
-
-    // Build category map for ALL defined hooks (including inactive ones)
-    const allDefinedHooks = engine.getAllHooks();
-    for (const hook of allDefinedHooks) {
-      const filePath = pipelineData.hookPathMap.get(hook.id);
-      if (filePath && !catMap.has(filePath)) {
-        catMap.set(filePath, hook.category);
-      }
-    }
-
-    // Active skills (edges with commands)
-    for (const stage of pipelineData.stages) {
-      for (const edge of stage.forwardEdges) {
-        if (edge.skillPath) activeSkillPaths.add(edge.skillPath);
-      }
-    }
-
-    // Transitively activate sub-skills via orchestratesMap
-    const { orchestratesMap, skillPathMap } = pipelineData;
-    if (orchestratesMap.size > 0) {
-      // Reverse lookup: skill path → skill name
-      const skillNameByPath = new Map<string, string>();
-      for (const [name, path] of skillPathMap) {
-        skillNameByPath.set(path, name);
-      }
-      // BFS from directly-active skills
-      const visited = new Set<string>();
-      const queue: string[] = [];
-      for (const path of activeSkillPaths) {
-        const name = skillNameByPath.get(path);
-        if (name && orchestratesMap.has(name)) {
-          queue.push(name);
-          visited.add(name);
-        }
-      }
-      while (queue.length > 0) {
-        const current = queue.shift()!;
-        for (const sub of orchestratesMap.get(current) ?? []) {
-          const subPath = skillPathMap.get(sub);
-          if (subPath) activeSkillPaths.add(subPath);
-          if (!visited.has(sub) && orchestratesMap.has(sub)) {
-            visited.add(sub);
-            queue.push(sub);
-          }
-        }
-      }
-    }
-
-    // Active agents (always-on + review teams)
-    for (const stage of pipelineData.stages) {
-      for (const agent of stage.alwaysOnAgents) {
-        if (agent.filePath) activeAgentPaths.add(agent.filePath);
-      }
-      for (const team of stage.reviewTeams) {
-        for (const agent of team.agents) {
-          if (agent.filePath) activeAgentPaths.add(agent.filePath);
-        }
-      }
-    }
-
-    const pathsByType: Record<ConfigPrimitiveType, Set<string>> = {
-      hooks: activeHookPaths,
-      skills: activeSkillPaths,
-      agents: activeAgentPaths,
-    };
-
-    return { activePaths: pathsByType[activeTab], hookCategoryMap: catMap };
-  }, [pipelineData, activeTab, engine]);
+  const { activeSkills, activeSkillPaths, activeAgentPaths, activeHookPaths, hookCategoryMap } = pipelineData;
+  const activePaths = activeTab === 'skills'
+    ? activeSkillPaths
+    : activeTab === 'agents'
+      ? activeAgentPaths
+      : activeHookPaths;
 
   // Build agent team map: file path → { team (parent folder), color matched to team name }
   const agentTeamMap = useMemo(() => {
@@ -509,6 +428,7 @@ export function PrimitivesConfig() {
               onRefresh={refresh}
               onTabChange={handleTabChange}
               activePaths={activePaths}
+              activeSkills={activeTab === 'skills' ? activeSkills : undefined}
               hookCategoryMap={activeTab === 'hooks' ? hookCategoryMap : undefined}
               agentTeamMap={agentTeamMap}
             />

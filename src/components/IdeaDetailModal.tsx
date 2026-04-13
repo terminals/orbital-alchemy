@@ -4,7 +4,9 @@ import { useProjectUrl } from '@/hooks/useProjectUrl';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import type { Scope } from '@/types';
@@ -97,6 +99,14 @@ export function IdeaDetailModal({ scope, open, onClose, onDelete, onApprove, onR
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) handleClose(); }}>
       <DialogContent className="max-w-md p-0 gap-0 flex flex-col max-h-[70vh]">
+        <DialogTitle className="sr-only">
+          {isGhost ? 'AI suggested idea' : 'Edit idea'}
+        </DialogTitle>
+        <DialogDescription className="sr-only">
+          {isGhost
+            ? 'Review and approve or reject this AI-suggested idea'
+            : 'Edit idea title and description, or delete the idea'}
+        </DialogDescription>
         {/* Header */}
         <DialogHeader className="px-4 pt-3 pb-2">
           <div className="flex items-center gap-2 pr-8">

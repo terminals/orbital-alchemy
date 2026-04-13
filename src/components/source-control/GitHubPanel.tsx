@@ -9,10 +9,11 @@ import type { GitHubStatus } from '@/types';
 
 interface Props {
   github: GitHubStatus | null;
+  githubChecking: boolean;
   onConnectionChange?: () => void;
 }
 
-export function GitHubPanel({ github, onConnectionChange }: Props) {
+export function GitHubPanel({ github, githubChecking, onConnectionChange }: Props) {
   const buildUrl = useProjectUrl();
   const [expanded, setExpanded] = useState(true);
 
@@ -55,7 +56,12 @@ export function GitHubPanel({ github, onConnectionChange }: Props) {
 
       {expanded && (
         <CardContent>
-          {!github || !github.connected ? (
+          {githubChecking ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span className="h-3 w-3 animate-spin rounded-full border border-muted-foreground border-t-transparent" />
+              Checking GitHub connection…
+            </div>
+          ) : !github || !github.connected ? (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 Connect to GitHub to see repository info, pull requests, and CI status.

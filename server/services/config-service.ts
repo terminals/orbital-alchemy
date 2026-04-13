@@ -120,7 +120,16 @@ export class ConfigService {
       const fullPath = path.join(currentPath, entry.name);
       const relPath = path.relative(basePath, fullPath);
 
-      if (entry.isDirectory()) {
+      // Resolve symlinks: Dirent.isDirectory() returns false for symlinks-to-dirs.
+      // Self-hosted projects symlink .claude/agents/*, .claude/hooks/*, etc. into templates/.
+      let stat: fs.Stats;
+      try {
+        stat = fs.statSync(fullPath);
+      } catch {
+        continue; // broken symlink — skip silently
+      }
+
+      if (stat.isDirectory()) {
         const children = this.walkDir(fullPath, basePath, parseFrontmatter);
         nodes.push({ name: entry.name, path: relPath, type: 'folder', children });
       } else {

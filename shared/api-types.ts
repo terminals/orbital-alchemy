@@ -24,11 +24,8 @@ export interface AgentConfig {
 export interface DispatchFlags {
   permissionMode: 'bypass' | 'default' | 'plan' | 'acceptEdits';
   verbose: boolean;
-  model: string;
-  maxTurns: number;
   allowedTools: string[];
   disallowedTools: string[];
-  reasoningEffort: '' | 'low' | 'medium' | 'high';
   appendSystemPrompt: string;
   outputFormat: '' | 'text' | 'json' | 'stream-json';
   noMarkdown: boolean;
@@ -38,11 +35,8 @@ export interface DispatchFlags {
 export const DEFAULT_DISPATCH_FLAGS: DispatchFlags = {
   permissionMode: 'bypass',
   verbose: true,
-  model: '',
-  maxTurns: 0,
   allowedTools: [],
   disallowedTools: [],
-  reasoningEffort: '',
   appendSystemPrompt: '',
   outputFormat: '',
   noMarkdown: false,
@@ -68,8 +62,6 @@ export const DEFAULT_DISPATCH_CONFIG: DispatchConfig = {
 // ─── Validation ─────────────────────────────────────────────
 
 export const VALID_PERMISSION_MODES = ['bypass', 'default', 'plan', 'acceptEdits'] as const;
-export const VALID_MODELS = ['', 'sonnet', 'opus', 'haiku'];
-export const VALID_REASONING_EFFORTS = ['', 'low', 'medium', 'high'];
 export const VALID_OUTPUT_FORMATS = ['', 'text', 'json', 'stream-json'];
 export const VALID_TERMINAL_ADAPTERS = ['auto', 'iterm2', 'subprocess', 'none'];
 
@@ -88,17 +80,8 @@ export function validateDispatchFlags(flags: Partial<DispatchFlags>): string | n
   if (flags.permissionMode !== undefined && !VALID_PERMISSION_MODES.includes(flags.permissionMode as typeof VALID_PERMISSION_MODES[number])) {
     return `Invalid permissionMode: ${flags.permissionMode}`;
   }
-  if (flags.model !== undefined && !VALID_MODELS.includes(flags.model)) {
-    return `Invalid model: ${flags.model}`;
-  }
-  if (flags.reasoningEffort !== undefined && !VALID_REASONING_EFFORTS.includes(flags.reasoningEffort as string)) {
-    return `Invalid reasoningEffort: ${flags.reasoningEffort}`;
-  }
   if (flags.outputFormat !== undefined && !VALID_OUTPUT_FORMATS.includes(flags.outputFormat as string)) {
     return `Invalid outputFormat: ${flags.outputFormat}`;
-  }
-  if (flags.maxTurns !== undefined && (typeof flags.maxTurns !== 'number' || flags.maxTurns < 0 || !Number.isInteger(flags.maxTurns))) {
-    return 'maxTurns must be a non-negative integer';
   }
   if (flags.allowedTools !== undefined) {
     if (!Array.isArray(flags.allowedTools)) return 'allowedTools must be an array';

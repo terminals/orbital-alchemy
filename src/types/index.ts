@@ -569,13 +569,24 @@ export interface StageData {
   backwardEdges: import('../../shared/workflow-config').WorkflowEdge[];
 }
 
+export interface ActiveSkillEntry {
+  path: string;
+  name: string;
+  parentPath: string | null;
+  depth: number;
+}
+
 export interface PipelineData {
   globalHooks: ResolvedHook[];
   stages: StageData[];
   skillPathMap: Map<string, string>;
   hookPathMap: Map<string, string>;
   agentPathMap: Map<string, string>;
-  orchestratesMap: Map<string, string[]>;
+  activeSkills: ActiveSkillEntry[];
+  activeSkillPaths: Set<string>;
+  activeAgentPaths: Set<string>;
+  activeHookPaths: Set<string>;
+  hookCategoryMap: Map<string, import('../../shared/workflow-config').HookCategory>;
 }
 
 // ─── Manifest / Configuration Types ─────────────────────

@@ -14,10 +14,11 @@ import type { GitOverview, GitHubStatus, ActivityDataPoint } from '@/types';
 interface Props {
   overview: GitOverview;
   github: GitHubStatus | null;
+  githubChecking: boolean;
   activity?: ActivityDataPoint[];
 }
 
-export function GitOverviewBar({ overview, github, activity }: Props) {
+export function GitOverviewBar({ overview, github, githubChecking, activity }: Props) {
   return (
     <Card className="mb-6">
       <CardContent className="flex flex-wrap items-center gap-4 py-3">
@@ -86,7 +87,12 @@ export function GitOverviewBar({ overview, github, activity }: Props) {
         {/* GitHub connection badge — pushed to the right */}
         <div className="ml-auto flex items-center gap-1.5">
           <Github className="h-3.5 w-3.5 text-muted-foreground" />
-          {github?.connected ? (
+          {githubChecking ? (
+            <Badge variant="outline" className="text-xs text-muted-foreground gap-1.5">
+              <span className="h-2 w-2 animate-spin rounded-full border border-muted-foreground border-t-transparent" />
+              Checking…
+            </Badge>
+          ) : github?.connected ? (
             <Tooltip>
               <TooltipTrigger>
                 <Badge variant="secondary" className="text-xs gap-1">

@@ -28,6 +28,7 @@ rm -f "$PROJECT_DIR/.claude/metrics/.session-ids/$PID" 2>/dev/null
 
 # Clean up skill guard flags
 rm -f "$PROJECT_DIR/.claude/.block-push-active" 2>/dev/null
+rm -f "$PROJECT_DIR/.claude/.implementing-session" 2>/dev/null
 
 # SessionEnd hooks must never block termination
 exit 0

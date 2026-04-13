@@ -33,6 +33,7 @@ fi
 rm -f "$PROJECT_DIR/.claude/metrics/.scope-create-session"
 rm -f "$PROJECT_DIR/.claude/metrics/.exploration-count"
 rm -f "$PROJECT_DIR/.claude/metrics/.active-scope"
+rm -f "$PROJECT_DIR/.claude/.implementing-session"
 
 # Resolve project name from orbital.config.json or git repo name
 PROJECT_NAME=""

@@ -148,7 +148,16 @@ append_session_uuid() {
     flock -x 200 2>/dev/null || true
     awk -v key="$key" -v uuid="$uuid" '
       BEGIN { found_sessions=0; found_key=0; added=0 }
-      /^sessions:/ { found_sessions=1 }
+      /^sessions:/ {
+        found_sessions=1
+        if ($0 == "sessions: {}") {
+          $0 = "sessions:"
+          print
+          print "  " key ": [" uuid "]"
+          found_key=1; added=1
+          next
+        }
+      }
       found_sessions && $0 ~ "^  " key ":" {
         found_key=1
         if (index($0, uuid) > 0) { added=1; print; next }

@@ -8,6 +8,7 @@ import { createLogger } from '../utils/logger.js';
 const log = createLogger('event');
 
 const ARCHIVE_DIR_NAME = 'processed';
+const processingFiles = new Set<string>();
 
 /**
  * Watch .claude/orbital-events/ for new JSON event files.
@@ -81,20 +82,31 @@ function processEventFile(
   eventService: EventService,
   archiveDir: string
 ): void {
-  const event = parseEventFile(filePath);
-  if (!event) return;
-
-  eventService.ingest(event);
-
-  // Move to archive
-  const fileName = path.basename(filePath);
+  if (processingFiles.has(filePath)) return;
+  processingFiles.add(filePath);
   try {
-    fs.renameSync(filePath, path.join(archiveDir, fileName));
-  } catch (err) {
-    log.warn('Failed to archive event file', { file: filePath, error: (err as Error).message });
-    // If rename fails (cross-device), just delete the source
-    try { fs.unlinkSync(filePath); } catch (unlinkErr) {
-      log.warn('Failed to delete event file', { file: filePath, error: (unlinkErr as Error).message });
+    const event = parseEventFile(filePath);
+    if (!event) return;
+
+    eventService.ingest(event);
+
+    // Move to archive
+    const fileName = path.basename(filePath);
+    try {
+      fs.renameSync(filePath, path.join(archiveDir, fileName));
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') return; // Already archived by concurrent handler
+      log.warn('Failed to archive event file', { file: filePath, error: (err as Error).message });
+      // If rename fails (cross-device), just delete the source
+      try { fs.unlinkSync(filePath); } catch (unlinkErr) {
+        const unlinkCode = (unlinkErr as NodeJS.ErrnoException).code;
+        if (unlinkCode !== 'ENOENT') {
+          log.warn('Failed to delete event file', { file: filePath, error: (unlinkErr as Error).message });
+        }
+      }
     }
+  } finally {
+    processingFiles.delete(filePath);
   }
 }

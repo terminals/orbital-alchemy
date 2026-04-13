@@ -1,12 +1,13 @@
 import { useMemo } from 'react';
 import {
-  Shield, Zap, Bot, ShieldCheck, AlertTriangle, Cog, Eye,
+  Shield, Zap, Bot,
   ChevronRight, Clock,
 } from 'lucide-react';
 import type {
   WorkflowEdge, HookCategory, UnifiedHook, CcHookEvent,
 } from '../../../shared/workflow-config';
 import { HookExecutionLog } from './HookExecutionLog';
+import { CATEGORY_CONFIG } from '@/lib/workflow-constants';
 
 // ─── Types ──────────────────────────────────────────
 
@@ -20,15 +21,6 @@ interface MatcherGroup {
   matcher: string;
   hooks: UnifiedHook[];
 }
-
-// ─── Constants ──────────────────────────────────────────
-
-const CATEGORY_CONFIG: Record<HookCategory, { icon: typeof Shield; color: string; label: string }> = {
-  guard: { icon: ShieldCheck, color: '#ef4444', label: 'Guards' },
-  gate: { icon: AlertTriangle, color: '#f59e0b', label: 'Gates' },
-  lifecycle: { icon: Cog, color: '#3b82f6', label: 'Lifecycle' },
-  observer: { icon: Eye, color: '#6b7280', label: 'Observers' },
-};
 
 const CATEGORY_ORDER: HookCategory[] = ['guard', 'gate', 'lifecycle', 'observer'];
 
@@ -124,16 +116,21 @@ export function HooksDashboard({ hooks, edges, onHookClick }: HooksDashboardProp
           Hooks that fire during scope transitions
         </p>
 
-        <div className="flex gap-1 items-stretch">
-          {/* BEFORE label */}
-          <div className="flex items-center">
+        <div className="flex flex-col md:flex-row gap-3 md:gap-1 items-stretch">
+          {/* BEFORE label — vertical on desktop, horizontal pill on narrow */}
+          <div className="md:flex md:items-center hidden">
             <span className="rounded-l bg-yellow-500/10 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-yellow-500 [writing-mode:vertical-lr] rotate-180">
               Before
             </span>
           </div>
+          <div className="md:hidden">
+            <span className="inline-block rounded bg-yellow-500/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-yellow-500">
+              Before Transition
+            </span>
+          </div>
 
           {/* First 3 columns: Guards, Gates, Lifecycle */}
-          <div className="grid flex-1 grid-cols-3 gap-3">
+          <div className="grid flex-1 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {CATEGORY_ORDER.slice(0, 3).map((cat, i) => (
               <PipelineColumn
                 key={cat}
@@ -145,20 +142,25 @@ export function HooksDashboard({ hooks, edges, onHookClick }: HooksDashboardProp
             ))}
           </div>
 
-          {/* BEFORE/AFTER divider */}
-          <div className="flex flex-col items-center justify-center px-2">
+          {/* BEFORE/AFTER divider — hidden on narrow (stacked) */}
+          <div className="hidden md:flex flex-col items-center justify-center px-2">
             <div className="h-full w-px bg-zinc-800" />
           </div>
 
-          {/* AFTER label */}
-          <div className="flex items-center">
+          {/* AFTER label — vertical on desktop, horizontal pill on narrow */}
+          <div className="md:flex md:items-center hidden">
             <span className="rounded-l bg-cyan-500/10 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-cyan-500 [writing-mode:vertical-lr] rotate-180">
               After
             </span>
           </div>
+          <div className="md:hidden">
+            <span className="inline-block rounded bg-cyan-500/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-cyan-500">
+              After Transition
+            </span>
+          </div>
 
           {/* Last column: Observers */}
-          <div className="w-56">
+          <div className="w-full md:w-56">
             <PipelineColumn
               category="observer"
               hooks={categoryGroups.get('observer') ?? []}
@@ -259,6 +261,7 @@ function PipelineColumn({ category, hooks, onHookClick, showArrow }: {
         <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: config.color }}>
           {config.label}
         </span>
+        {' '}
         <span className="text-[9px] text-zinc-600">({hooks.length})</span>
       </div>
 

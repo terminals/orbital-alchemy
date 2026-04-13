@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
-import { socket } from '../socket';
-import { useReconnect } from './useReconnect';
+import { useState, useCallback } from 'react';
 import { useProjectUrl } from './useProjectUrl';
+import { useFetch } from './useFetch';
+import { useSocketListener } from './useSocketListener';
 import type { OrbitalEvent } from '../types';
 
 interface UseEventsOptions {
@@ -13,48 +13,26 @@ export function useEvents(options: UseEventsOptions = {}) {
   const buildUrl = useProjectUrl();
   const { limit = 50, type } = options;
   const [events, setEvents] = useState<OrbitalEvent[]>([]);
-  const [loading, setLoading] = useState(true);
 
   const fetchEvents = useCallback(async () => {
-    try {
-      const params = new URLSearchParams();
-      params.set('limit', String(limit));
-      if (type) params.set('type', type);
+    const params = new URLSearchParams();
+    params.set('limit', String(limit));
+    if (type) params.set('type', type);
 
-      const res = await fetch(buildUrl(`/events?${params}`));
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setEvents(data);
-    } catch {
-      // Silently fail on fetch errors — events will come via socket
-    } finally {
-      setLoading(false);
-    }
+    const res = await fetch(buildUrl(`/events?${params}`));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    setEvents(await res.json());
   }, [limit, type, buildUrl]);
 
-  useEffect(() => {
-    fetchEvents();
-  }, [fetchEvents]);
-
-  useReconnect(fetchEvents);
+  const { loading } = useFetch(fetchEvents);
 
   // Real-time updates — prepend new events
-  useEffect(() => {
-    function onNewEvent(event: OrbitalEvent) {
-      // If we have a type filter, only add matching events
-      if (type && event.type !== type) return;
-
-      setEvents((prev) => {
-        // Prevent duplicates
-        if (prev.some((e) => e.id === event.id)) return prev;
-        return [event, ...prev].slice(0, limit);
-      });
-    }
-
-    socket.on('event:new', onNewEvent);
-    return () => {
-      socket.off('event:new', onNewEvent);
-    };
+  useSocketListener('event:new', (event: OrbitalEvent) => {
+    if (type && event.type !== type) return;
+    setEvents((prev) => {
+      if (prev.some((e) => e.id === event.id)) return prev;
+      return [event, ...prev].slice(0, limit);
+    });
   }, [limit, type]);
 
   return { events, loading, refetch: fetchEvents };

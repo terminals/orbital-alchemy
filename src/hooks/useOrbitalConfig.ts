@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import type { AgentConfig } from '../types/index.js';
 import { useProjects } from './useProjectContext';
 import { useProjectUrl } from './useProjectUrl';
-import { useReconnect } from './useReconnect';
+import { useFetch } from './useFetch';
 
 export interface OrbitalConfig {
   projectName: string;
@@ -46,28 +46,20 @@ export function useOrbitalConfig(): OrbitalConfig {
       return;
     }
 
-    try {
-      const res = await fetch(buildUrl('/config'));
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: OrbitalConfig = await res.json();
-      configCache.set(cacheKey, data);
-      setConfig(data);
+    const res = await fetch(buildUrl('/config'));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data: OrbitalConfig = await res.json();
+    configCache.set(cacheKey, data);
+    setConfig(data);
 
-      // Inject CSS variables for agent colors
-      const root = document.documentElement;
-      for (const agent of data.agents) {
-        root.style.setProperty(`--agent-${agent.id}`, agent.color);
-      }
-    } catch (err) {
-      console.warn('[Orbital] Config fetch failed:', err);
+    // Inject CSS variables for agent colors
+    const root = document.documentElement;
+    for (const agent of data.agents) {
+      root.style.setProperty(`--agent-${agent.id}`, agent.color);
     }
   }, [buildUrl, activeProjectId]);
 
-  useEffect(() => {
-    fetchConfig();
-  }, [fetchConfig]);
-
-  useReconnect(fetchConfig);
+  useFetch(fetchConfig);
 
   return config;
 }

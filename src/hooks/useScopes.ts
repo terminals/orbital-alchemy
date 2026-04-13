@@ -1,45 +1,35 @@
 import { useEffect, useState, useCallback } from 'react';
 import { socket } from '../socket';
-import { useReconnect } from './useReconnect';
 import { useProjectUrl } from './useProjectUrl';
 import { useProjects } from './useProjectContext';
+import { useFetch } from './useFetch';
+import { useCoalescedRefetch } from './useCoalescedRefetch';
 import type { Scope } from '../types';
 
 export function useScopes() {
   const buildUrl = useProjectUrl();
   const { activeProjectId } = useProjects();
   const [scopes, setScopes] = useState<Scope[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const fetchScopes = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const res = await fetch(buildUrl('/scopes'), { signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: Scope[] = await res.json();
-      // Per-project endpoints don't stamp project_id — fill it in client-side
-      if (activeProjectId) {
-        for (const scope of data) {
-          if (!scope.project_id) scope.project_id = activeProjectId;
-        }
+  const fetchScopes = useCallback(async () => {
+    const res = await fetch(buildUrl('/scopes'));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data: Scope[] = await res.json();
+    // Per-project endpoints don't stamp project_id — fill it in client-side
+    if (activeProjectId) {
+      for (const scope of data) {
+        if (!scope.project_id) scope.project_id = activeProjectId;
       }
-      setScopes(data);
-      setError(null);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      setError(err instanceof Error ? err.message : 'Failed to fetch scopes');
-    } finally {
-      if (!signal?.aborted) setLoading(false);
     }
+    setScopes(data);
   }, [buildUrl, activeProjectId]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchScopes(controller.signal);
-    return () => controller.abort();
-  }, [fetchScopes]);
+  const { loading, error } = useFetch(fetchScopes);
 
-  useReconnect(fetchScopes);
+  // Coalesce rapid socket-driven refetches (workflow:changed + project:updated +
+  // project:status:changed often fire together on connect, which caused 3-4×
+  // duplicate GET /aggregate/scopes on init — F-003).
+  const coalescedFetchScopes = useCoalescedRefetch(fetchScopes);
 
   // Real-time updates via Socket.io
   useEffect(() => {
@@ -71,10 +61,8 @@ export function useScopes() {
     }
 
     function onScopeDeleted(scopeId: number) {
-      // scope:deleted only sends a numeric ID — in All Projects mode we can't
-      // disambiguate which project's scope was deleted, so refetch.
       if (!activeProjectId) {
-        fetchScopes();
+        coalescedFetchScopes();
         return;
       }
       setScopes((prev) => prev.filter((s) => s.id !== scopeId));
@@ -83,18 +71,25 @@ export function useScopes() {
     function onProjectUpdated(payload: { id: string; enabled?: boolean }) {
       if (payload.enabled === undefined) return;
       if (activeProjectId && payload.id !== activeProjectId) return;
-      fetchScopes();
+      // Active project is being disabled — clear state and let the
+      // auto-switch in useProjectContext trigger a new aggregate fetch.
+      // Refetching here would race against a now-dead router (404).
+      if (payload.enabled === false && payload.id === activeProjectId) {
+        setScopes([]);
+        return;
+      }
+      coalescedFetchScopes();
     }
 
     function onProjectStatusChanged(payload: { id: string; status: string }) {
       if (activeProjectId && payload.id !== activeProjectId) return;
-      if (payload.status === 'active') fetchScopes();
+      if (payload.status === 'active') coalescedFetchScopes();
     }
 
     socket.on('scope:updated', onScopeUpdated);
     socket.on('scope:created', onScopeCreated);
     socket.on('scope:deleted', onScopeDeleted);
-    socket.on('workflow:changed', fetchScopes);
+    socket.on('workflow:changed', coalescedFetchScopes);
     socket.on('project:updated', onProjectUpdated);
     socket.on('project:status:changed', onProjectStatusChanged);
 
@@ -102,11 +97,11 @@ export function useScopes() {
       socket.off('scope:updated', onScopeUpdated);
       socket.off('scope:created', onScopeCreated);
       socket.off('scope:deleted', onScopeDeleted);
-      socket.off('workflow:changed', fetchScopes);
+      socket.off('workflow:changed', coalescedFetchScopes);
       socket.off('project:updated', onProjectUpdated);
       socket.off('project:status:changed', onProjectStatusChanged);
     };
-  }, [fetchScopes, activeProjectId]);
+  }, [coalescedFetchScopes, activeProjectId]);
 
   return { scopes, loading, error, refetch: fetchScopes };
 }

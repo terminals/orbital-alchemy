@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
-import { socket } from '../socket';
-import { useReconnect } from './useReconnect';
+import { useState, useCallback } from 'react';
 import { useProjectUrl } from './useProjectUrl';
+import { useFetch } from './useFetch';
+import { useSocketListener } from './useSocketListener';
 import type { OrbitalEvent } from '../types';
 
 interface ViolationsByRule {
@@ -35,32 +35,19 @@ export function useViolations() {
     byRule: [], byFile: [], overrides: [],
     totalViolations: 0, totalOverrides: 0,
   });
-  const [loading, setLoading] = useState(true);
 
   const fetchSummary = useCallback(async () => {
-    try {
-      const res = await fetch(buildUrl('/events/violations/summary'));
-      if (res.ok) setSummary(await res.json());
-    } catch (err) {
-      console.warn('[Orbital] Failed to fetch violations:', err);
-    } finally {
-      setLoading(false);
-    }
+    const res = await fetch(buildUrl('/events/violations/summary'));
+    if (res.ok) setSummary(await res.json());
   }, [buildUrl]);
 
-  useEffect(() => { fetchSummary(); }, [fetchSummary]);
-
-  useReconnect(fetchSummary);
+  const { loading } = useFetch(fetchSummary);
 
   // Real-time: re-fetch when new VIOLATION or OVERRIDE events arrive
-  useEffect(() => {
-    function onNewEvent(event: OrbitalEvent) {
-      if (event.type === 'VIOLATION' || event.type === 'OVERRIDE') {
-        fetchSummary();
-      }
+  useSocketListener('event:new', (event: OrbitalEvent) => {
+    if (event.type === 'VIOLATION' || event.type === 'OVERRIDE') {
+      fetchSummary();
     }
-    socket.on('event:new', onNewEvent);
-    return () => { socket.off('event:new', onNewEvent); };
   }, [fetchSummary]);
 
   return { ...summary, loading, refetch: fetchSummary };

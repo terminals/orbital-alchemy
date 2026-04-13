@@ -3,6 +3,8 @@ import { ArrowRight, AlertTriangle, Terminal, ExternalLink } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -57,6 +59,14 @@ export function DispatchPopover({
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onCancel(); }}>
       <DialogContent className="max-w-xs p-3 gap-0">
+        <DialogTitle className="sr-only">
+          {isIdeaPromotion ? 'Promote idea' : 'Confirm transition'}
+        </DialogTitle>
+        <DialogDescription className="sr-only">
+          {isIdeaPromotion
+            ? `Create a scope from idea "${scope.title}"`
+            : `Move ${formatScopeId(scope.id)} from ${transition.from} to ${transition.to}`}
+        </DialogDescription>
         {/* Transition arrow */}
         <div className="mb-2.5 flex items-center gap-2">
           <Badge variant="outline" className="text-xxs capitalize">{transition.from}</Badge>

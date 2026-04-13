@@ -90,6 +90,7 @@ Before committing:
 | Chaos | "What breaks when things go wrong?" |
 | Frontend Designer | "What does the user see/experience?" |
 | Architect | "Does this fit our patterns?" |
+| Deep Dive | "What's the full picture before we change anything?" |
 | Rules Enforcer | "Do all project rules pass?" |
 
 ---

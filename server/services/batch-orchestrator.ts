@@ -153,6 +153,17 @@ export class BatchOrchestrator {
     if (batch.status !== 'dispatched' && batch.status !== 'in_progress') return;
 
     const scopes = this.sprintService.getSprintScopes(batchId);
+
+    // If batch never reached 'in_progress', the session never started —
+    // don't credit any scope regardless of their current workflow status
+    if (batch.status === 'dispatched') {
+      this.sprintService.updateStatus(batchId, 'failed');
+      for (const ss of scopes) {
+        this.sprintService.updateScopeStatus(batchId, ss.scope_id, 'failed', 'Session never started');
+      }
+      return;
+    }
+
     const allTransitioned = scopes.every((ss) => ss.dispatch_status === 'completed');
 
     if (allTransitioned) {

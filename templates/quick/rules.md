@@ -52,14 +52,14 @@ grep -rE "console\.(log|error|warn|info)" src --include="*.ts" --include="*.tsx"
 
 ### Rule 3: File Size Limit (400 lines)
 
-**Rule**: Production files must be < 400 lines, tests < 800 lines
-**Why**: Maintainability, cognitive load
+**Rule**: Production files must be < 400 lines, tests < 800 lines. Applies to `src/`, `server/`, and `bin/`.
+**Why**: The v0.3 refactor found 10 files over 500 lines. Large files mix concerns, resist review, and accumulate tech debt silently. The cleanup took a full session to unwind.
 **Verify**:
 ```bash
-find src -name "*.ts" -o -name "*.tsx" | xargs wc -l | awk '$1 > 400' | grep -v __tests__
+find src server -name "*.ts" -o -name "*.tsx" | xargs wc -l | sort -rn | awk '$1 > 400 && !/test|__fixtures__/' | head -20
 ```
-**Expected**: No output
-**Fix**: Split into focused modules
+**Expected**: No output (or only justified exceptions like types/index.ts, aggregate-routes.ts)
+**Fix**: Extract sub-components, split into focused modules, move types to companion files
 
 ---
 
@@ -199,6 +199,57 @@ it('should return user by ID', async () => {
 **Rule**: Verify code review feedback against the actual codebase before implementing suggestions.
 **Why**: Review suggestions may be based on stale context or break existing patterns.
 **Fix**: Read the relevant code, confirm the suggestion applies, then implement (or push back with reasoning)
+
+---
+
+## Duplication Prevention Rules
+
+### Rule 13: Single Source of Truth for Constants
+
+**Rule**: Color maps, config objects, icon maps, and display constants must be defined once and imported everywhere. Never define inline.
+**Why**: The v0.3 audit found ENFORCEMENT_COLORS defined 3x, CATEGORY_CONFIG 4x, and CATEGORY_HEX 2x across the codebase. Each copy drifted slightly (singular vs plural labels, different lifecycle colors).
+**Verify**:
+```bash
+grep -rn "const.*COLORS.*Record\|const.*CONFIG.*Record.*icon\|const.*HEX.*Record" src/components src/views --include="*.tsx" --include="*.ts" | grep -v "import "
+```
+**Expected**: No output — all constants come from `src/lib/workflow-constants.ts` or similar shared modules
+**Fix**: Move to `src/lib/workflow-constants.ts` and import
+
+---
+
+### Rule 14: Use Shared Hook Primitives
+
+**Rule**: Data-fetching hooks must use `useFetch()`. Socket listeners must use `useSocketListener()`. Never duplicate the fetch lifecycle or socket.on/off pattern manually.
+**Why**: The v0.3 audit found 15+ hooks with identical fetch boilerplate (useState triple, AbortController, useReconnect) and 86 manual socket.on/off calls. This was ~500 lines of pure duplication.
+**Verify**:
+```bash
+# Check no hook manually manages AbortController (should be in useFetch)
+grep -rn "new AbortController" src/hooks --include="*.ts" | grep -v useFetch | grep -v test
+```
+**Expected**: No output (only useFetch.ts should create AbortControllers)
+**Fix**: Use `useFetch(fetchFn)` for data fetching, `useSocketListener(event, handler, deps)` for socket events
+
+---
+
+### Rule 15: Use catchRoute for Express Handlers
+
+**Rule**: Route handlers that can throw must use `catchRoute()` from `server/utils/route-helpers.ts` instead of inline try-catch.
+**Why**: The v0.3 audit found identical try-catch + errMsg + status-inference blocks in 7+ route handlers. The pattern is mechanical and should be centralized.
+**Verify**:
+```bash
+grep -rn "try {" server/routes --include="*.ts" | grep -v test | grep -v node_modules
+```
+**Expected**: Minimal matches — most routes should use catchRoute
+**Fix**: Wrap handler with `catchRoute(fn)` or `catchRoute(fn, inferErrorStatus)`
+
+---
+
+### Rule 16: No Inline Utility Functions in Large Files
+
+**Rule**: Pure functions (parsers, formatters, validators) that don't close over component/hook state must live in companion `*-utils.ts` files, not inline in the consuming file.
+**Why**: The v0.3 audit found `parseJsonFields` copied verbatim between two files, and `parseDragId` + `checkActiveDispatch` buried inside a 490-line hook. Extracting them enabled testing and reuse.
+**Verify**: Manual review — if a function doesn't reference `useState`, `useCallback`, or local state, it belongs in a utils file
+**Fix**: Extract to a companion file (e.g., `useKanbanDnd.ts` → `kanban-dnd-utils.ts`)
 
 ---
 

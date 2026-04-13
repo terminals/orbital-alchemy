@@ -390,15 +390,18 @@ function TabButton({ active, onClick, icon, label, count }: {
       {icon}
       {label}
       {count !== undefined && count > 0 && (
-        <span
-          className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold leading-none"
-          style={{
-            backgroundColor: active ? '#f9731630' : '#27272a',
-            color: active ? '#f97316' : '#71717a',
-          }}
-        >
-          {count}
-        </span>
+        <>
+          {' '}
+          <span
+            className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold leading-none"
+            style={{
+              backgroundColor: active ? '#f9731630' : '#27272a',
+              color: active ? '#f97316' : '#71717a',
+            }}
+          >
+            {count}
+          </span>
+        </>
       )}
     </button>
   );

@@ -60,22 +60,35 @@
   }
 }
 
-/* Custom scrollbar for dark theme */
+/* Auto-hiding scrollbars (macOS-style) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover {
+  scrollbar-color: #2a2a3a transparent;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #12121a;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2a2a3a;
+  background: transparent;
   border-radius: 3px;
+  transition: background 0.3s;
 }
 
-::-webkit-scrollbar-thumb:hover {
+*:hover::-webkit-scrollbar-thumb {
+  background: #2a2a3a;
+}
+
+*:hover::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground));
 }
 
@@ -732,15 +745,24 @@
 }
 
 /* ─── SCROLLBAR ─── */
-[data-theme="neon-glass"] ::-webkit-scrollbar-thumb {
-  background: rgba(var(--neon-blue), 0.25);
-  border-radius: 3px;
+[data-theme="neon-glass"] * {
+  scrollbar-color: transparent transparent;
 }
-[data-theme="neon-glass"] ::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--neon-blue), 0.4);
+[data-theme="neon-glass"] *:hover {
+  scrollbar-color: rgba(var(--neon-blue), 0.25) transparent;
 }
 [data-theme="neon-glass"] ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.3);
+  background: transparent;
+}
+[data-theme="neon-glass"] ::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+[data-theme="neon-glass"] *:hover::-webkit-scrollbar-thumb {
+  background: rgba(var(--neon-blue), 0.25);
+}
+[data-theme="neon-glass"] *:hover::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--neon-blue), 0.4);
 }
 
 /* ─── SWIMLANE BOARD ─── */

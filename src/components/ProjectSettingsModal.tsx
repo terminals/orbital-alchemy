@@ -3,6 +3,7 @@ import { Eye, EyeOff, FolderPlus, Check } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -74,6 +75,9 @@ export function ProjectSettingsModal({ open, onClose, projects }: ProjectSetting
       <DialogContent className="max-w-[440px] max-h-[80vh] p-0 gap-0 flex flex-col">
         <DialogHeader className="border-b border-white/[0.08] px-4 py-3">
           <DialogTitle>Project Settings</DialogTitle>
+          <DialogDescription className="sr-only">
+            Manage registered projects, colors, names, and visibility
+          </DialogDescription>
         </DialogHeader>
 
         {/* Scrollable project list */}

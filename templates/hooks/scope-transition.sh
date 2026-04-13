@@ -92,13 +92,21 @@ else
   exit 1
 fi
 
-# ─── File lock (flock-based, no TOCTOU race) ───
-LOCK_FILE="/tmp/orbital-scope-${SCOPE_ID:-all}.flock"
-exec 200>"$LOCK_FILE"
-if ! flock -n -x 200 2>/dev/null; then
-  echo "Scope ${SCOPE_ID:-all} locked by another process" >&2; exit 0
+# ─── File lock (flock on Linux, mkdir fallback on macOS) ───
+if command -v flock >/dev/null 2>&1; then
+  LOCK_FILE="/tmp/orbital-scope-${SCOPE_ID:-all}.flock"
+  exec 200>"$LOCK_FILE"
+  if ! flock -n -x 200 2>/dev/null; then
+    echo "Scope ${SCOPE_ID:-all} locked by another process" >&2; exit 0
+  fi
+  trap 'rm -f "$LOCK_FILE" 2>/dev/null' EXIT
+else
+  LOCK_DIR="/tmp/orbital-scope-${SCOPE_ID:-all}.lock"
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    echo "Scope ${SCOPE_ID:-all} locked by another process" >&2; exit 0
+  fi
+  trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
 fi
-trap 'rm -f "$LOCK_FILE" 2>/dev/null' EXIT
 
 SOURCE_DIR="$SCOPE_PROJECT_DIR/scopes/$SOURCE_STATUS"
 TARGET_DIR="$SCOPE_PROJECT_DIR/scopes/$TARGET_STATUS"

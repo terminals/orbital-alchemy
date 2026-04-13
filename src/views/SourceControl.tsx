@@ -21,9 +21,9 @@ export function SourceControl() {
   const { activeProjectId, hasMultipleProjects } = useProjects();
   const isAllProjects = hasMultipleProjects && activeProjectId === null;
 
-  const sourceControl = useSourceControl();
+  const sourceControl = useSourceControl(!isAllProjects);
   const aggregate = useAggregateSourceControl(isAllProjects);
-  const { deployments } = usePipeline();
+  const { deployments } = usePipeline(!isAllProjects);
   const [deployExpanded, setDeployExpanded] = useState(true);
 
   const loading = isAllProjects ? aggregate.loading : sourceControl.loading;
@@ -72,7 +72,7 @@ function PerProjectView({
   deployExpanded: boolean;
   setDeployExpanded: (v: boolean) => void;
 }) {
-  const { overview, commits, branches, worktrees, github, drift, loadMoreCommits, hasMoreCommits, health, activity, refetch } = sourceControl;
+  const { overview, commits, branches, worktrees, github, githubChecking, drift, loadMoreCommits, hasMoreCommits, health, activity, refetch } = sourceControl;
 
   return (
     <>
@@ -88,7 +88,7 @@ function PerProjectView({
       </div>
 
       {/* Git Overview Bar + Health Score */}
-      {overview && <GitOverviewBar overview={overview} github={github} activity={activity} />}
+      {overview && <GitOverviewBar overview={overview} github={github} githubChecking={githubChecking} activity={activity} />}
       {health && <RepoHealthScore health={health} />}
 
       {/* PR Review Queue */}
@@ -111,7 +111,7 @@ function PerProjectView({
       </div>
 
       {/* GitHub Panel */}
-      <GitHubPanel github={github} onConnectionChange={refetch} />
+      <GitHubPanel github={github} githubChecking={githubChecking} onConnectionChange={refetch} />
 
       {/* Deploy History */}
       {deployments.length > 0 && (

@@ -57,23 +57,28 @@ Subcommands like `orbital config`, `orbital update`, `orbital doctor` remain ava
 - Socket.io pushes real-time updates for scopes, events, gates, deploys, sessions, sprints, and workflow changes.
 
 **Server structure:**
+- `server/index.ts` — Thin server factory (~275 lines). Creates Express + Socket.io, initializes ProjectManager, mounts routes, handles shutdown. Route handlers live in `server/routes/`.
+- `server/init.ts` — Project initialization (`runInit`), template scaffolding, shared filesystem helpers. Re-exports `runUpdate` and `runUninstall` for backward compatibility with CLI's `loadSharedModule()`.
+- `server/update.ts` — Template update logic (`runUpdate`). Extracted from init.ts.
+- `server/uninstall.ts` — Uninstall logic (`runUninstall`). Extracted from init.ts.
 - `server/config.ts` — Singleton config loaded from `.claude/orbital.config.json`, merged with defaults. Resolves project root via env/git/cwd.
 - `server/database.ts` — SQLite singleton with WAL mode. Schema in `schema.ts`, incremental migrations in `runMigrations()`.
 - `server/services/` — Business logic: `ScopeService`, `EventService`, `GateService`, `DeployService`, `SprintService`, `SprintOrchestrator`, `BatchOrchestrator`, `WorkflowService`.
-- `server/routes/` — Express route factories that receive services via dependency injection (object destructuring params).
+- `server/routes/` — Express route factories that receive services via dependency injection (object destructuring params). Includes `aggregate-routes.ts` for cross-project endpoints.
 - `server/adapters/` — Terminal adapters (iTerm2, subprocess) for dispatching Claude Code sessions.
 - `server/parsers/` — `scope-parser.ts` (frontmatter→ParsedScope), `event-parser.ts` (JSON→event).
 - `server/watchers/` — Chokidar watchers for scope files and event files.
+- `server/utils/` — Shared utilities: `route-helpers.ts` (errMsg, catchRoute, inferErrorStatus), `json-fields.ts` (parseJsonFields), `logger.ts`, `flag-builder.ts`, `terminal-launcher.ts`.
 
 **Frontend structure:**
 - `src/views/` — Top-level page components: `ScopeBoard`, `AgentFeed`, `QualityGates`, `EnforcementView`, `DeployPipeline`, `SessionTimeline`, `WorkflowVisualizer` (lazy-loaded).
 - `src/components/` — Reusable components. `ui/` has shadcn/ui primitives. `workflow/` has the DAG editor components.
-- `src/hooks/` — Custom React hooks for data fetching, socket subscriptions, filters, DnD, etc. Most use `useSocket` for real-time subscriptions.
+- `src/hooks/` — Custom React hooks. Data-fetching hooks use `useFetch` for lifecycle (loading, abort, reconnect). Socket listeners use `useSocketListener` for subscribe/cleanup. DnD state is in `useKanbanDnd` with types/pure functions in `kanban-dnd-utils.ts`.
 - `src/types/index.ts` — All shared TypeScript types for the frontend (Scope, Event, Sprint, Session, etc.).
 - `src/layouts/DashboardLayout.tsx` — Shell with sidebar nav, neon glass theme toggle, connection status, and event ticker.
 
 **CLI and templates:**
-- `bin/orbital.js` — CLI entry point. Bare `orbital` shows a context-aware hub menu (via `runHub()` in `server/wizard/index.ts`). Subcommands: `launch`, `init`, `config`, `doctor`, `update`, `status`, `emit`, `build`, `register`, `unregister`, `projects`, `pin`, `unpin`, `diff`, `reset`, `validate`, `uninstall`.
+- `bin/orbital.js` — CLI entry point (~210 lines). Thin router that dispatches to `bin/commands/*.js` modules. Shared helpers in `bin/lib/helpers.js`. Bare `orbital` shows a context-aware hub menu (via `runHub()` in `server/wizard/index.ts`). Subcommands: `launch`, `init`, `config`, `doctor`, `update`, `status`, `emit`, `build`, `register`, `unregister`, `projects`, `pin`, `unpin`, `diff`, `reset`, `validate`, `uninstall`.
 - `server/wizard/` — Interactive wizard phases: setup (Phase 1), project setup (Phase 2), hub menu, config editor, doctor. Uses `@clack/prompts` for UI.
 - `templates/` — Template files copied during project setup: hooks (shell scripts), skills (markdown), agents (markdown), workflow presets, settings-hooks.json.
 - `schemas/` — JSON Schema for `orbital.config.json`.
@@ -95,6 +100,12 @@ Both use `strict: true`, `noUnusedLocals`, `noUnusedParameters`, ES2022 target.
 - shadcn/ui components live in `src/components/ui/` (New York style, zinc base color, CSS variables).
 - ScopeStatus is a dynamic string (not an enum) — validated at runtime via `WorkflowEngine.isValidStatus()`.
 - Route factories in `server/routes/` follow a pattern: `export function createXRoutes(deps: { ... }): Router`.
+- Route handlers that can throw should use `catchRoute()` from `server/utils/route-helpers.ts`. Pass `inferErrorStatus` as the second arg for routes that need status code inference from error messages.
+- Data-fetching hooks should use `useFetch(fetchFn)` from `src/hooks/useFetch.ts` instead of manual loading/error state + AbortController + useReconnect boilerplate.
+- Socket event subscriptions in hooks should use `useSocketListener(event, handler, deps)` from `src/hooks/useSocketListener.ts` instead of manual useEffect + socket.on/off.
+- Shared constants (enforcement colors, category config, hook category hex) live in `src/lib/workflow-constants.ts`. Never define color/config maps inline in components.
+- Shared database row utilities (parseJsonFields) live in `server/utils/json-fields.ts`. Never define JSON parsing helpers inline in route files.
+- Pure functions and type definitions should be extracted from large hooks into companion `*-utils.ts` files (e.g., `kanban-dnd-utils.ts`).
 
 ## Self-hosting: symlinked templates
 

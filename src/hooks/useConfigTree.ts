@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { socket } from '../socket';
-import { useReconnect } from './useReconnect';
 import { useProjectUrl } from './useProjectUrl';
+import { useFetch } from './useFetch';
 import type { ConfigPrimitiveType, ConfigFileNode } from '@/types';
 
 interface UseConfigTreeResult {
@@ -12,41 +12,24 @@ interface UseConfigTreeResult {
 
 export function useConfigTree(type: ConfigPrimitiveType): UseConfigTreeResult {
   const [tree, setTree] = useState<ConfigFileNode[]>([]);
-  const [loading, setLoading] = useState(true);
   const buildUrl = useProjectUrl();
 
   const fetchTree = useCallback(async () => {
-    try {
-      const res = await fetch(buildUrl(`/config/${type}/tree`));
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      setTree(json.data ?? []);
-    } catch {
-      setTree([]);
-    } finally {
-      setLoading(false);
-    }
+    const res = await fetch(buildUrl(`/config/${type}/tree`));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    setTree(json.data ?? []);
   }, [type, buildUrl]);
 
-  // Initial fetch
-  useEffect(() => {
-    setLoading(true);
-    fetchTree();
-  }, [fetchTree]);
-
-  useReconnect(fetchTree);
+  const { loading } = useFetch(fetchTree);
 
   // Subscribe to real-time changes
   useEffect(() => {
     const event = `config:${type}:changed`;
-    const handler = () => {
-      fetchTree();
-    };
+    const handler = () => { fetchTree(); };
     const typedEvent = event as keyof import('@/types').ServerToClientEvents;
     socket.on(typedEvent, handler);
-    return () => {
-      socket.off(typedEvent, handler);
-    };
+    return () => { socket.off(typedEvent, handler); };
   }, [type, fetchTree]);
 
   return { tree, loading, refresh: fetchTree };

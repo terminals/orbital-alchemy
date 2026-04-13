@@ -9,6 +9,7 @@ import { ColumnMenu } from './ColumnMenu';
 import { useTheme } from '@/hooks/useTheme';
 import { cn } from '@/lib/utils';
 import { scopeKey } from '@/lib/scope-key';
+import { sprintKey } from '@/lib/sprint-key';
 
 interface KanbanColumnProps {
   id: ScopeStatus;
@@ -17,15 +18,15 @@ interface KanbanColumnProps {
   scopes: Scope[];
   /** Sprints to render in this column (assembling in Ready, active in Implementing) */
   sprints?: Sprint[];
-  scopeLookup?: Map<number, Scope>;
-  /** Global set of scope IDs in active groups across ALL columns (cross-column dedup) */
-  globalSprintScopeIds?: Set<number>;
+  scopeLookup?: Map<string, Scope>;
+  /** Global set of scope composite keys in active groups across ALL columns (cross-column dedup) */
+  globalSprintScopeIds?: Set<string>;
   onScopeClick?: (scope: Scope) => void;
   onDeleteSprint?: (id: number) => void;
-  onDispatchSprint?: (id: number) => void;
+
   onRenameSprint?: (id: number, name: string) => void;
-  /** ID of a sprint that was just created and should start with name editing */
-  editingSprintId?: number | null;
+  /** Composite key of a sprint that was just created and should start with name editing */
+  editingSprintId?: string | null;
   onSprintEditingDone?: () => void;
   isValidDrop?: boolean;
   isDragActive?: boolean;
@@ -40,6 +41,8 @@ interface KanbanColumnProps {
   onAddAllToSprint?: (sprintId: number, scopeIds: number[]) => void;
   /** Project lookup for rendering project badges on cards */
   projectLookup?: Map<string, Project>;
+  /** Called when user changes a sprint's project assignment */
+  onProjectChange?: (sprintId: number, newProjectId: string) => void;
 }
 
 export function KanbanColumn({
@@ -52,7 +55,7 @@ export function KanbanColumn({
   globalSprintScopeIds,
   onScopeClick,
   onDeleteSprint,
-  onDispatchSprint,
+
   onRenameSprint,
   editingSprintId,
   onSprintEditingDone,
@@ -68,6 +71,7 @@ export function KanbanColumn({
   dimmedIds,
   onAddAllToSprint,
   projectLookup,
+  onProjectChange,
 }: KanbanColumnProps) {
   const { neonGlass } = useTheme();
   const { setNodeRef, isOver } = useDroppable({ id });
@@ -81,9 +85,11 @@ export function KanbanColumn({
   }, [isDragActive, isValidDrop]);
 
   // Scopes that are in a sprint/batch should not appear as loose cards.
-  // Use the global set (cross-column dedup) if available, otherwise fall back to local.
-  const sprintScopeIds = globalSprintScopeIds ?? new Set(sprints.flatMap((s) => s.scope_ids));
-  const looseScopes = scopes.filter((s) => !sprintScopeIds.has(s.id));
+  // Uses composite keys (project_id::id) so scopes from different projects don't collide.
+  const sprintScopeIds = globalSprintScopeIds ?? new Set(sprints.flatMap(s =>
+    s.scope_ids.map(id => s.project_id ? `${s.project_id}::${id}` : String(id)),
+  ));
+  const looseScopes = scopes.filter((s) => !sprintScopeIds.has(scopeKey(s)));
   const looseScopeIds = looseScopes.filter((s) => !s.is_ghost).map((s) => s.id);
   const totalCount = scopes.length;
 
@@ -160,6 +166,29 @@ export function KanbanColumn({
           {/* Cards */}
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-2">
             <div className="space-y-1.5">
+              {sprints.map((sprint) => (
+                <SprintContainer
+                  key={`sprint-${sprint.id}`}
+                  sprint={sprint}
+                  scopeLookup={scopeLookup}
+                  onDelete={onDeleteSprint}
+
+                  onRename={onRenameSprint}
+                  onScopeClick={onScopeClick}
+                  cardDisplay={cardDisplay}
+                  dimmedIds={dimmedIds}
+                  projectLookup={projectLookup}
+                  editingName={sprintKey(sprint) === editingSprintId}
+                  onEditingDone={onSprintEditingDone}
+                  onProjectChange={onProjectChange}
+                  looseCount={sprint.status === 'assembling' ? looseScopeIds.length : 0}
+                  onAddAll={sprint.status === 'assembling' && onAddAllToSprint
+                    ? (sprintId) => onAddAllToSprint(sprintId, looseScopeIds)
+                    : undefined
+                  }
+                />
+              ))}
+
               {isDragActive && isValidDrop && (
                 <div className={cn(
                   'flex h-10 items-center justify-center rounded border-2 border-dashed text-xs transition-colors',
@@ -170,26 +199,6 @@ export function KanbanColumn({
                   Drop here
                 </div>
               )}
-              {sprints.map((sprint) => (
-                <SprintContainer
-                  key={`sprint-${sprint.id}`}
-                  sprint={sprint}
-                  scopeLookup={scopeLookup}
-                  onDelete={onDeleteSprint}
-                  onDispatch={onDispatchSprint}
-                  onRename={onRenameSprint}
-                  onScopeClick={onScopeClick}
-                  cardDisplay={cardDisplay}
-                  dimmedIds={dimmedIds}
-                  editingName={sprint.id === editingSprintId}
-                  onEditingDone={onSprintEditingDone}
-                  looseCount={sprint.status === 'assembling' ? looseScopeIds.length : 0}
-                  onAddAll={sprint.status === 'assembling' && onAddAllToSprint
-                    ? (sprintId) => onAddAllToSprint(sprintId, looseScopeIds)
-                    : undefined
-                  }
-                />
-              ))}
 
               <AnimatePresence initial={false}>
                 {looseScopes.filter((s) => !s.is_ghost).map((scope) => (

@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
-import { X, ArrowRight, CheckCircle2, Terminal, Shield, Radio, Globe, ShieldCheck, AlertTriangle, Cog, Eye } from 'lucide-react';
-import type { WorkflowEdge, WorkflowHook, HookCategory, HookEnforcement } from '../../../shared/workflow-config';
+import { X, ArrowRight, CheckCircle2, Terminal, Radio, Globe } from 'lucide-react';
+import type { WorkflowEdge, WorkflowHook, HookCategory } from '../../../shared/workflow-config';
 import { getHookEnforcement } from '../../../shared/workflow-config';
+import { CATEGORY_CONFIG, ENFORCEMENT_HEX } from '@/lib/workflow-constants';
 
 interface EdgeDetailPanelProps {
   edge: WorkflowEdge | null;
@@ -16,21 +17,7 @@ const DIRECTION_COLORS: Record<string, string> = {
   shortcut: '#6366f1',
 };
 
-const CATEGORY_CONFIG: Record<HookCategory, { icon: typeof Shield; color: string; label: string }> = {
-  guard: { icon: ShieldCheck, color: '#ef4444', label: 'Guards' },
-  gate: { icon: AlertTriangle, color: '#f59e0b', label: 'Gates' },
-  lifecycle: { icon: Cog, color: '#3b82f6', label: 'Lifecycle' },
-  observer: { icon: Eye, color: '#6b7280', label: 'Observers' },
-};
-
 const CATEGORY_ORDER: HookCategory[] = ['guard', 'gate', 'lifecycle', 'observer'];
-
-const ENFORCEMENT_COLORS: Record<HookEnforcement, string> = {
-  blocker: '#ef4444',
-  advisor: '#f59e0b',
-  operator: '#3b82f6',
-  silent: '#6b7280',
-};
 
 export function EdgeDetailPanel({ edge, hooks, onClose, onHookClick }: EdgeDetailPanelProps) {
   if (!edge) return null;
@@ -176,7 +163,7 @@ function HookDetail({ hook, onClick }: { hook: WorkflowHook; onClick?: (hook: Wo
   const typeColor = TYPE_COLORS[hook.type] ?? '#22c55e';
   const TypeIcon = TYPE_ICONS[hook.type] ?? Terminal;
   const enforcement = getHookEnforcement(hook);
-  const enforcementColor = ENFORCEMENT_COLORS[enforcement];
+  const enforcementColor = ENFORCEMENT_HEX[enforcement];
   const catConfig = CATEGORY_CONFIG[hook.category];
   const CatIcon = catConfig.icon;
 

@@ -2,82 +2,21 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import type { DragStartEvent, DragOverEvent, DragEndEvent } from '@dnd-kit/core';
 import type { Scope, Sprint } from '@/types';
 import type { WorkflowEdge, Phase } from '../../shared/workflow-config';
-import type { WorkflowEngine } from '../../shared/workflow-engine';
 import { WorkflowNormalizer } from '../../shared/workflow-normalizer';
 import { useWorkflow } from './useWorkflow';
 import { useProjectUrl } from './useProjectUrl';
 import { useProjects } from './useProjectContext';
+import {
+  checkActiveDispatch,
+  parseDragId,
+  INITIAL_STATE,
+} from './kanban-dnd-utils';
+import type { UseKanbanDndOptions, KanbanDndState } from './kanban-dnd-utils';
 import type { AddScopesResult } from '@/hooks/useSprints';
 
-export interface PendingDispatch {
-  scope: Scope;
-  transition: WorkflowEdge;
-  hasActiveSession: boolean;
-}
+export type { PendingDispatch, KanbanDndState } from './kanban-dnd-utils';
 
-export interface KanbanDndState {
-  activeScope: Scope | null;
-  activeSprint: Sprint | null;
-  overId: string | null;
-  overIsValid: boolean;
-  overSprintId: number | null;
-  pending: PendingDispatch | null;
-  showModal: boolean;
-  showPopover: boolean;
-  showIdeaForm: boolean;
-  dispatching: boolean;
-  error: string | null;
-  // Sprint-specific UI state
-  pendingSprintDispatch: Sprint | null;
-  pendingUnmetDeps: AddScopesResult['unmet_dependencies'] | null;
-  pendingDepSprintId: number | null;
-  // Phase view disambiguation
-  pendingDisambiguation: { scope: Scope; edges: WorkflowEdge[] } | null;
-}
-
-interface UseKanbanDndOptions {
-  scopes: Scope[];
-  sprints: Sprint[];
-  onAddToSprint: (sprintId: number, scopeIds: number[]) => Promise<AddScopesResult | null>;
-  onRemoveFromSprint: (sprintId: number, scopeIds: number[]) => Promise<boolean>;
-  /** True when All Projects non-unified phase view is active */
-  isPhaseView?: boolean;
-  /** Per-project engines for phase view resolution */
-  projectEngines?: Map<string, WorkflowEngine>;
-}
-
-async function checkActiveDispatch(buildUrl: (path: string) => string, scopeId: number): Promise<boolean> {
-  try {
-    const res = await fetch(buildUrl(`/dispatch/active?scope_id=${scopeId}`));
-    if (!res.ok) return false;
-    const { active } = await res.json();
-    return active != null;
-  } catch {
-    return false;
-  }
-}
-
-/** Parse a drag ID to determine its type */
-function parseDragId(id: string | number): { type: 'scope'; scopeId: number; projectId?: string } | { type: 'sprint'; sprintId: number } | { type: 'column'; status: string } | { type: 'sprint-drop'; sprintId: number } | null {
-  const s = String(id);
-  if (s.startsWith('sprint-drop-')) return { type: 'sprint-drop', sprintId: parseInt(s.slice(12)) };
-  if (s.startsWith('sprint-')) return { type: 'sprint', sprintId: parseInt(s.slice(7)) };
-  if (typeof id === 'number' || /^-?\d+$/.test(s)) return { type: 'scope', scopeId: Number(id) };
-  // Swimlane cell: swim::{laneValue}::{status} → treat as column drop target
-  if (s.startsWith('swim::')) {
-    const lastSep = s.lastIndexOf('::');
-    return { type: 'column', status: s.slice(lastSep + 2) };
-  }
-  // Project-scoped scope ID: {projectId}::{scopeId} (from scopeKey())
-  const scopeMatch = s.match(/^(.+?)::(-?\d+)$/);
-  if (scopeMatch) {
-    return { type: 'scope', scopeId: Number(scopeMatch[2]), projectId: scopeMatch[1] };
-  }
-  // Assume column status ID
-  return { type: 'column', status: s };
-}
-
-export function useKanbanDnd({ scopes, sprints, onAddToSprint, isPhaseView, projectEngines }: UseKanbanDndOptions) {
+export function useKanbanDnd({ scopes, sprints, onAddToSprint, onRemoveFromSprint, isPhaseView, projectEngines, defaultProjectId }: UseKanbanDndOptions & { defaultProjectId?: string }) {
   const { engine } = useWorkflow();
   const buildUrl = useProjectUrl();
   const { getApiBase, hasMultipleProjects } = useProjects();
@@ -93,7 +32,9 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint, isPhaseView, proj
   // Present a resolved edge to the user via modal or popover
   const presentEdge = useCallback(async (scope: Scope, edge: WorkflowEdge) => {
     const scopeUrl = (p: string) => buildScopeUrl(scope, p);
-    const hasActiveSession = edge.command != null
+    // Slug-only icebox items have synthetic negative IDs and can't have
+    // active dispatches — promotion goes through /ideas/{slug}/promote.
+    const hasActiveSession = edge.command != null && scope.id > 0
       ? await checkActiveDispatch(scopeUrl, scope.id)
       : false;
 
@@ -107,23 +48,7 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint, isPhaseView, proj
     }));
   }, [buildScopeUrl]);
 
-  const [state, setState] = useState<KanbanDndState>({
-    activeScope: null,
-    activeSprint: null,
-    overId: null,
-    overIsValid: false,
-    overSprintId: null,
-    pending: null,
-    showModal: false,
-    showPopover: false,
-    showIdeaForm: false,
-    dispatching: false,
-    error: null,
-    pendingSprintDispatch: null,
-    pendingUnmetDeps: null,
-    pendingDepSprintId: null,
-    pendingDisambiguation: null,
-  });
+  const [state, setState] = useState<KanbanDndState>(INITIAL_STATE);
 
   // Refs to avoid stale closures in async DnD callbacks
   const activeScopeRef = useRef<Scope | null>(null);
@@ -181,10 +106,14 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint, isPhaseView, proj
     const currentSprint = activeSprintRef.current;
     const currentScope = activeScopeRef.current;
 
-    // Sprint container hovering over a column
+    // Sprint/batch container hovering over a column
     if (currentSprint) {
-      if (parsed.type === 'column' && parsed.status === 'implementing') {
-        setState((prev) => ({ ...prev, overId: 'implementing', overIsValid: true, overSprintId: null }));
+      if (parsed.type === 'column') {
+        const effectiveCol = currentSprint.status !== 'assembling'
+          ? engine.getBatchTargetStatus(currentSprint.target_column) ?? currentSprint.target_column
+          : currentSprint.target_column;
+        const valid = engine.isValidTransition(effectiveCol, parsed.status);
+        setState((prev) => ({ ...prev, overId: valid ? parsed.status : null, overIsValid: valid, overSprintId: null }));
       } else {
         setState((prev) => ({ ...prev, overId: null, overIsValid: false, overSprintId: null }));
       }
@@ -193,11 +122,22 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint, isPhaseView, proj
 
     // Scope card hovering
     if (currentScope) {
-      if (parsed.type === 'sprint-drop') {
-        // Scope over a sprint/batch container — valid if scope status matches target_column (B-4)
+      // Check if this scope is inside an assembling group — if so, only allow same-column drop (remove)
+      const inGroup = sprints.some((s) =>
+        s.status === 'assembling' && s.scope_ids.includes(currentScope.id),
+      );
+
+      if (inGroup) {
+        // Scopes in groups can only be dropped on their own column to remove them
+        const valid = parsed.type === 'column' && parsed.status === currentScope.status;
+        setState((prev) => ({ ...prev, overId: valid ? parsed.status : null, overIsValid: valid, overSprintId: null }));
+      } else if (parsed.type === 'sprint-drop') {
+        // Scope over a sprint/batch container — valid if scope status matches target_column
+        // and scope belongs to the same project as the sprint (B-4)
         const targetSprint = sprints.find((s) => s.id === parsed.sprintId);
         const valid = targetSprint?.status === 'assembling'
-          && currentScope.status === targetSprint.target_column;
+          && currentScope.status === targetSprint.target_column
+          && (!currentScope.project_id || !targetSprint.project_id || currentScope.project_id === targetSprint.project_id);
         setState((prev) => ({
           ...prev,
           overId: null,
@@ -244,23 +184,28 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint, isPhaseView, proj
     const parsed = parseDragId(over);
     if (!parsed) return;
 
-    // ── Sprint dropped on Implementing column → open preflight modal ──
-    if (sprint && parsed.type === 'column' && parsed.status === 'implementing') {
-      setState((prev) => ({
-        ...prev,
-        pendingSprintDispatch: sprint,
-      }));
-      return;
+    // ── Sprint/batch dropped on valid target column → open preflight modal ──
+    if (sprint && parsed.type === 'column') {
+      const effectiveCol = sprint.status !== 'assembling'
+        ? engine.getBatchTargetStatus(sprint.target_column) ?? sprint.target_column
+        : sprint.target_column;
+      if (engine.isValidTransition(effectiveCol, parsed.status)) {
+        setState((prev) => ({ ...prev, pendingSprintDispatch: sprint }));
+        return;
+      }
     }
 
     // ── Scope dropped on sprint/batch container → add to group ──
     if (scope && parsed.type === 'sprint-drop') {
       const targetGroup = sprints.find((s) => s.id === parsed.sprintId);
-      // W-14: Reject drop with error toast if scope status doesn't match target_column
-      if (targetGroup && scope.status !== targetGroup.target_column) {
+      // Reject drop if scope status doesn't match target_column or project doesn't match
+      if (targetGroup && (scope.status !== targetGroup.target_column
+        || (scope.project_id && targetGroup.project_id && scope.project_id !== targetGroup.project_id))) {
         setState((prev) => ({
           ...prev,
-          error: `Cannot add ${scope.status} scope to ${targetGroup.target_column} ${targetGroup.group_type} — scope status must match ${targetGroup.group_type} column`,
+          error: scope.project_id !== targetGroup?.project_id
+            ? `Cannot add scope from a different project to this ${targetGroup.group_type}`
+            : `Cannot add ${scope.status} scope to ${targetGroup.target_column} ${targetGroup.group_type} — scope status must match ${targetGroup.group_type} column`,
         }));
         return;
       }
@@ -277,7 +222,16 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint, isPhaseView, proj
 
     // ── Scope dropped on column → existing transition logic ──
     if (scope && parsed.type === 'column') {
-      if (scope.status === parsed.status) return;
+      // Same column: if scope is in an assembling sprint/batch, remove it
+      if (scope.status === parsed.status) {
+        const group = sprints.find((s) =>
+          s.status === 'assembling' && s.scope_ids.includes(scope.id),
+        );
+        if (group) {
+          await onRemoveFromSprint(group.id, [scope.id]);
+        }
+        return;
+      }
 
       let edge: WorkflowEdge | undefined;
 
@@ -304,7 +258,7 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint, isPhaseView, proj
 
       await presentEdge(scope, edge);
     }
-  }, [onAddToSprint, engine, sprints, presentEdge, isPhaseView, projectEngines]);
+  }, [onAddToSprint, onRemoveFromSprint, engine, sprints, presentEdge, isPhaseView, projectEngines]);
 
   const confirmTransition = useCallback(async () => {
     const { pending } = state;
@@ -429,7 +383,11 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint, isPhaseView, proj
   const submitIdea = useCallback(async (title: string, description: string) => {
     setState((prev) => ({ ...prev, dispatching: true, error: null }));
     try {
-      const res = await fetch(buildUrl('/ideas'), {
+      // In All Projects mode, route idea creation to the default project
+      const url = defaultProjectId
+        ? `${getApiBase(defaultProjectId)}/ideas`
+        : buildUrl('/ideas');
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, description }),
@@ -446,7 +404,7 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint, isPhaseView, proj
         error: err instanceof Error ? err.message : 'Failed to create idea',
       }));
     }
-  }, [buildUrl]);
+  }, [buildUrl, defaultProjectId, getApiBase]);
 
   const dismissSprintDispatch = useCallback(() => {
     setState((prev) => ({ ...prev, pendingSprintDispatch: null }));

@@ -9,6 +9,7 @@ import type {
   StageData,
   EdgeData,
   PipelineData,
+  ActiveSkillEntry,
 } from '@/types';
 import { AGENT_EMOJI, AGENT_COLOR } from '@/types';
 import type { WorkflowConfig, WorkflowHook, WorkflowEdge, HookCategory } from '../../shared/workflow-config';
@@ -189,13 +190,6 @@ export function usePipelineData(overrideConfig?: WorkflowConfig): PipelineData {
       return p ? agentModeByPath.get(p) : undefined;
     }
 
-    // Build orchestratesMap keyed by command name (for external consumers)
-    const orchestratesMap = new Map<string, string[]>();
-    for (const [key, path] of skillPathMap) {
-      const orch = orchestratesByPath.get(path);
-      if (orch) orchestratesMap.set(key, orch);
-    }
-
     // ─── Build agent resolver ──────────────────────────
     function resolveAgent(agentId: string, node?: ConfigFileNode): ResolvedAgent {
       const filePath = node ? node.path : (agentPathMap.get(agentId.toLowerCase()) ?? null);
@@ -326,13 +320,113 @@ export function usePipelineData(overrideConfig?: WorkflowConfig): PipelineData {
       };
     });
 
+    // ─── Active primitives (skills + agents + hooks) ──
+    // Single source of truth for which files show in the "Active" section
+    // of the Primitives page. Skills include transitive sub-skills reached
+    // via the `orchestrates` frontmatter field.
+
+    // Hooks: global + stage + edge hooks, keyed by file path.
+    const activeHookPaths = new Set<string>();
+    const hookCategoryMap = new Map<string, HookCategory>();
+    const allResolvedHooks = [
+      ...globalHooks,
+      ...stages.flatMap(s => s.stageHooks),
+      ...stages.flatMap(s => s.forwardEdges.flatMap(e => e.edgeHooks)),
+    ];
+    for (const hook of allResolvedHooks) {
+      if (hook.filePath) {
+        activeHookPaths.add(hook.filePath);
+        hookCategoryMap.set(hook.filePath, hook.category);
+      }
+    }
+    // Category map for inactive hooks too, so the tree can still color them.
+    for (const hook of allHooks) {
+      const filePath = hookPathMap.get(hook.id);
+      if (filePath && !hookCategoryMap.has(filePath)) {
+        hookCategoryMap.set(filePath, hook.category);
+      }
+    }
+
+    // Agents: always-on + review teams.
+    const activeAgentPaths = new Set<string>();
+    for (const stage of stages) {
+      for (const agent of stage.alwaysOnAgents) {
+        if (agent.filePath) activeAgentPaths.add(agent.filePath);
+      }
+      for (const team of stage.reviewTeams) {
+        for (const agent of team.agents) {
+          if (agent.filePath) activeAgentPaths.add(agent.filePath);
+        }
+      }
+    }
+
+    // Skills: directly on edges + transitively reached via `orchestrates`.
+    // Resolve orchestrates sub-names → sub-paths once, keyed by parent path.
+    // This avoids the name-keyed reverse-map indirection that was
+    // order-dependent and silently dropped entries when the "skill" filename
+    // key collided across files.
+    const orchSubPathsByParentPath = new Map<string, string[]>();
+    for (const [parentPath, subNames] of orchestratesByPath) {
+      const subPaths: string[] = [];
+      for (const sub of subNames) {
+        const p = skillPathMap.get(sub.toLowerCase());
+        if (p) subPaths.push(p);
+      }
+      if (subPaths.length > 0) orchSubPathsByParentPath.set(parentPath, subPaths);
+    }
+
+    // Seed BFS from paths of edge commands that resolve to a skill file.
+    const edgeSkillPaths: string[] = [];
+    const seenEdgeSkillPaths = new Set<string>();
+    for (const stage of stages) {
+      for (const edge of stage.forwardEdges) {
+        if (edge.skillPath && !seenEdgeSkillPaths.has(edge.skillPath)) {
+          seenEdgeSkillPaths.add(edge.skillPath);
+          edgeSkillPaths.push(edge.skillPath);
+        }
+      }
+    }
+
+    // Name lookup: given a skill path, find its canonical (folder) name.
+    // Folder keys are inserted before the "skill" filename key in
+    // buildPathMap, so the folder name is the first hit in iteration order.
+    const canonicalNameByPath = new Map<string, string>();
+    for (const [name, path] of skillPathMap) {
+      if (name === 'skill') continue;
+      if (!canonicalNameByPath.has(path)) canonicalNameByPath.set(path, name);
+    }
+
+    // Depth-first traversal: emit parents before children so the render
+    // loop can stream the list directly into [parent, child, child, ...].
+    const activeSkills: ActiveSkillEntry[] = [];
+    const activeSkillPaths = new Set<string>();
+    function visitSkill(path: string, parentPath: string | null, depth: number) {
+      if (activeSkillPaths.has(path)) return;
+      activeSkillPaths.add(path);
+      activeSkills.push({
+        path,
+        name: canonicalNameByPath.get(path) ?? path,
+        parentPath,
+        depth,
+      });
+      const subs = orchSubPathsByParentPath.get(path);
+      if (subs) {
+        for (const subPath of subs) visitSkill(subPath, path, depth + 1);
+      }
+    }
+    for (const path of edgeSkillPaths) visitSkill(path, null, 0);
+
     return {
       globalHooks,
       stages,
       skillPathMap,
       hookPathMap,
       agentPathMap,
-      orchestratesMap,
+      activeSkills,
+      activeSkillPaths,
+      activeAgentPaths,
+      activeHookPaths,
+      hookCategoryMap,
     };
   }, [overrideConfig, contextEngine, skillsTree, hooksTree, agentsTree]);
 }

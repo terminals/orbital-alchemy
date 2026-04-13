@@ -196,7 +196,7 @@ export class SprintOrchestrator {
     const sprint = this.sprintService.getById(sprintId);
     if (!sprint) return null;
 
-    const layers = sprint.layers ?? [];
+    const layers = sprint.layers ?? this.buildExecutionLayers(sprint.scope_ids).layers;
     const sprintSet = new Set(sprint.scope_ids);
     const edges: Array<{ from: number; to: number }> = [];
 

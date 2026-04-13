@@ -15,24 +15,11 @@ import { launchInTerminal } from '../utils/terminal-launcher.js';
 import type { OrbitalConfig } from '../config.js';
 import { buildClaudeFlags } from '../utils/flag-builder.js';
 import { createLogger } from '../utils/logger.js';
+import { parseJsonFields, type Row } from '../utils/json-fields.js';
 
 const log = createLogger('server');
 
 const execFileAsync = promisify(execFile);
-
-const JSON_FIELDS = ['tags', 'blocked_by', 'blocks', 'data', 'discoveries', 'next_steps', 'details'];
-
-type Row = Record<string, unknown>;
-
-function parseJsonFields(row: Row): Row {
-  const parsed = { ...row };
-  for (const field of JSON_FIELDS) {
-    if (typeof parsed[field] === 'string') {
-      try { parsed[field] = JSON.parse(parsed[field] as string); } catch { /* keep string */ }
-    }
-  }
-  return parsed;
-}
 
 // ─── Route Factory ──────────────────────────────────────────
 

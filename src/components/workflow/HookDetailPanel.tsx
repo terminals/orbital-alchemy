@@ -1,12 +1,13 @@
 import { useMemo } from 'react';
 import {
   X, ArrowRight, Shield, Terminal, Radio, Globe, Bot,
-  ShieldCheck, AlertTriangle, Cog, Eye, FileCode2, ExternalLink,
+  FileCode2, ExternalLink,
 } from 'lucide-react';
 import type {
-  WorkflowEdge, HookCategory, HookEnforcement, UnifiedHook, CcTrigger,
+  WorkflowEdge, UnifiedHook, CcTrigger,
 } from '../../../shared/workflow-config';
 import { getHookEnforcement } from '../../../shared/workflow-config';
+import { CATEGORY_CONFIG, ENFORCEMENT_HEX, ENFORCEMENT_DESCRIPTIONS } from '@/lib/workflow-constants';
 
 // ─── Types ──────────────────────────────────────────
 
@@ -17,22 +18,6 @@ interface HookDetailPanelProps {
   onViewSource: (hook: UnifiedHook) => void;
   onNavigateToEdge?: (from: string, to: string) => void;
 }
-
-// ─── Constants ──────────────────────────────────────────
-
-const CATEGORY_CONFIG: Record<HookCategory, { icon: typeof Shield; color: string; label: string }> = {
-  guard: { icon: ShieldCheck, color: '#ef4444', label: 'Guard' },
-  gate: { icon: AlertTriangle, color: '#f59e0b', label: 'Gate' },
-  lifecycle: { icon: Cog, color: '#3b82f6', label: 'Lifecycle' },
-  observer: { icon: Eye, color: '#6b7280', label: 'Observer' },
-};
-
-const ENFORCEMENT_CONFIG: Record<HookEnforcement, { color: string; description: string }> = {
-  blocker: { color: '#ef4444', description: 'Blocks transition on failure' },
-  advisor: { color: '#f59e0b', description: 'Warns but allows transition' },
-  operator: { color: '#3b82f6', description: 'Side-effects during lifecycle' },
-  silent: { color: '#6b7280', description: 'Observes without affecting outcome' },
-};
 
 const TIMING_COLORS: Record<string, string> = { before: '#eab308', after: '#3b82f6' };
 const TYPE_ICONS: Record<string, typeof Terminal> = { shell: Terminal, event: Radio, webhook: Globe };
@@ -71,7 +56,8 @@ export function HookDetailPanel({ hook, edges, onClose, onViewSource, onNavigate
   const enforcement = hasWorkflow
     ? getHookEnforcement({ category: hook.workflow!.category } as Parameters<typeof getHookEnforcement>[0])
     : null;
-  const enforcementConfig = enforcement ? ENFORCEMENT_CONFIG[enforcement] : null;
+  const enforcementColor = enforcement ? ENFORCEMENT_HEX[enforcement] : null;
+  const enforcementDesc = enforcement ? ENFORCEMENT_DESCRIPTIONS[enforcement] : null;
   const TypeIcon = hasWorkflow ? (TYPE_ICONS[hook.workflow!.type] ?? Terminal) : Bot;
 
   return (
@@ -97,10 +83,10 @@ export function HookDetailPanel({ hook, edges, onClose, onViewSource, onNavigate
           >
             {srcConfig.label}
           </span>
-          {hasWorkflow && enforcement && enforcementConfig && (
+          {hasWorkflow && enforcement && enforcementColor && (
             <span
               className="rounded px-2 py-0.5 text-[10px] font-bold uppercase"
-              style={{ backgroundColor: `${enforcementConfig.color}20`, color: enforcementConfig.color }}
+              style={{ backgroundColor: `${enforcementColor}20`, color: enforcementColor }}
             >
               {enforcement}
             </span>
@@ -124,12 +110,12 @@ export function HookDetailPanel({ hook, edges, onClose, onViewSource, onNavigate
         )}
 
         {/* Enforcement derivation */}
-        {hasWorkflow && enforcement && enforcementConfig && (
+        {hasWorkflow && enforcement && enforcementColor && (
           <Section title="Enforcement">
-            <p className="text-zinc-500">{enforcementConfig.description}</p>
+            <p className="text-zinc-500">{enforcementDesc}</p>
             <p className="mt-1 text-[10px] text-zinc-600">
               {hook.workflow!.category} <span className="text-zinc-700">&rarr;</span>{' '}
-              <span style={{ color: enforcementConfig.color }}>{enforcement}</span>
+              <span style={{ color: enforcementColor }}>{enforcement}</span>
             </p>
           </Section>
         )}

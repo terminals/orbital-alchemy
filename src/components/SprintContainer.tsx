@@ -1,19 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
-import { useDraggable, useDroppable } from '@dnd-kit/core';
-import { CSS } from '@dnd-kit/utilities';
-import { X, Layers, Package, Play } from 'lucide-react';
-import type { Sprint, Scope, CardDisplayConfig } from '@/types';
-import { scopeKey } from '@/lib/scope-key';
+import { useDraggable, useDroppable, useDndContext } from '@dnd-kit/core';
+import { X, Layers, Package, Clock, Check } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import type { Sprint, Scope, CardDisplayConfig, Project } from '@/types';
+import { scopeKey, parseScopeKey } from '@/lib/scope-key';
 import { ScopeCard } from './ScopeCard';
+import { ProjectSelectorPill } from './ProjectSelectorPill';
 import { cn, formatScopeId } from '@/lib/utils';
 import { useWorkflow } from '@/hooks/useWorkflow';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 interface SprintContainerProps {
   sprint: Sprint;
-  /** Full scope objects for scopes in the sprint (for rendering cards) */
-  scopeLookup: Map<number, Scope>;
+  /** Full scope objects keyed by composite scopeKey (project_id::id) */
+  scopeLookup: Map<string, Scope>;
   onDelete?: (id: number) => void;
-  onDispatch?: (id: number) => void;
+
   onRename?: (id: number, name: string) => void;
   onScopeClick?: (scope: Scope) => void;
   cardDisplay?: CardDisplayConfig;
@@ -22,44 +24,35 @@ interface SprintContainerProps {
   looseCount?: number;
   /** Bulk-add all loose column scopes into this batch */
   onAddAll?: (sprintId: number) => void;
+  /** Project lookup for rendering project color indicators */
+  projectLookup?: Map<string, Project>;
   /** Whether this sprint was just created and should start with name editing */
   editingName?: boolean;
   /** Called when name editing finishes (committed or cancelled) */
   onEditingDone?: () => void;
+  /** Called when user changes the project assignment (empty assembling sprints only) */
+  onProjectChange?: (sprintId: number, newProjectId: string) => void;
 }
 
 const STATUS_STYLE: Record<string, string> = {
   assembling: 'border-dashed border-cyan-500/40',
   dispatched: 'border-solid border-amber-500/50 batch-group-dispatched',
   in_progress: 'border-solid border-amber-500/40 batch-group-dispatched',
-  completed: 'border-solid border-green-500/40 opacity-60',
+  completed: 'border-solid border-green-500/40',
   failed: 'border-solid border-red-500/40',
   cancelled: 'border-solid border-muted-foreground/30 opacity-50',
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  assembling: 'Assembling',
-  dispatched: 'Dispatched',
-  in_progress: 'Running',
-  completed: 'Complete',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
+const STATUS_PILL: Record<string, { icon: LucideIcon; label: string; bg: string; text: string }> = {
+  assembling:  { icon: Layers, label: 'Assembling',  bg: 'bg-cyan-500/15',  text: 'text-cyan-400' },
+  dispatched:  { icon: Clock,  label: 'In Progress', bg: 'bg-amber-500/15', text: 'text-amber-400' },
+  in_progress: { icon: Clock,  label: 'In Progress', bg: 'bg-amber-500/15', text: 'text-amber-400' },
+  completed:   { icon: Check,  label: 'Completed',   bg: 'bg-green-500/15', text: 'text-green-400' },
+  failed:      { icon: X,      label: 'Failed',      bg: 'bg-red-500/15',   text: 'text-red-400' },
+  cancelled:   { icon: X,      label: 'Cancelled',   bg: 'bg-muted',        text: 'text-muted-foreground' },
 };
 
-function totalEffortHours(sprint: Sprint): string {
-  let total = 0;
-  for (const ss of sprint.scopes) {
-    if (!ss.effort_estimate) continue;
-    const match = ss.effort_estimate.toLowerCase().match(/(\d+(?:\.\d+)?)\s*hour/);
-    if (match) total += parseFloat(match[1]);
-    const minMatch = ss.effort_estimate.toLowerCase().match(/(\d+)\s*min/);
-    if (minMatch) total += parseInt(minMatch[1]) / 60;
-  }
-  if (total === 0) return 'TBD';
-  return total < 1 ? `${Math.round(total * 60)}M` : `~${total.toFixed(0)}H`;
-}
-
-export function SprintContainer({ sprint, scopeLookup, onDelete, onDispatch, onRename, onScopeClick, cardDisplay, dimmedIds, looseCount, onAddAll, editingName, onEditingDone }: SprintContainerProps) {
+export function SprintContainer({ sprint, scopeLookup, onDelete, onRename, onScopeClick, cardDisplay, dimmedIds, looseCount, onAddAll, projectLookup, editingName, onEditingDone, onProjectChange }: SprintContainerProps) {
   const { engine } = useWorkflow();
   const isAssembling = sprint.status === 'assembling';
   const [isEditing, setIsEditing] = useState(editingName ?? false);
@@ -87,39 +80,39 @@ export function SprintContainer({ sprint, scopeLookup, onDelete, onDispatch, onR
     onEditingDone?.();
   };
   const isBatch = sprint.group_type === 'batch';
-  const batchActionLabel = isBatch
-    ? (() => {
-        const target = engine.getBatchTargetStatus(sprint.target_column);
-        return target ? engine.findEdge(sprint.target_column, target)?.label ?? 'Dispatch' : 'Dispatch';
-      })()
-    : undefined;
 
-  // Only sprints are draggable (batches dispatch via header button)
+
+  const isExecuting = sprint.status === 'dispatched' || sprint.status === 'in_progress';
   const {
     attributes: dragAttrs,
     listeners: dragListeners,
     setNodeRef: setDragRef,
-    transform,
     isDragging,
   } = useDraggable({
     id: `sprint-${sprint.id}`,
-    disabled: isBatch || !isAssembling || sprint.scope_ids.length === 0,
+    disabled: isExecuting || sprint.scope_ids.length === 0,
   });
 
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: `sprint-drop-${sprint.id}`,
     disabled: !isAssembling,
   });
-
-  const dragStyle = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
+  const { active: dndActive } = useDndContext();
+  const activeDragId = dndActive ? String(dndActive.id) : null;
+  const dragProjectId = activeDragId && !activeDragId.startsWith('sprint-') ? parseScopeKey(activeDragId).projectId : undefined;
+  const isDragActive = isAssembling && activeDragId != null && !activeDragId.startsWith('sprint-')
+    && (!sprint.project_id || !dragProjectId || sprint.project_id === dragProjectId);
 
   const totalScopes = sprint.scope_ids.length;
   const { progress } = sprint;
-  const canDispatch = isBatch && isAssembling && totalScopes > 0 && onDispatch;
+
 
   // Icon and border vary by group_type
   const Icon = isBatch ? Package : Layers;
-  const iconColor = isBatch ? 'text-amber-400' : 'text-cyan-400';
+  const project = sprint.project_id && projectLookup?.get(sprint.project_id);
+  const projectHsl = project ? `hsl(${project.color})` : undefined;
+  const projectHeaderBg = project ? `hsl(${project.color} / 0.1)` : undefined;
+  const iconColor = projectHsl ? '' : 'text-muted-foreground';
   const borderStyle = isBatch && isAssembling
     ? 'border-muted-foreground/30'
     : STATUS_STYLE[sprint.status] ?? 'border-muted-foreground/30';
@@ -128,21 +121,27 @@ export function SprintContainer({ sprint, scopeLookup, onDelete, onDispatch, onR
     <div
       ref={setDragRef}
       style={{
-        ...dragStyle,
-        ...(isBatch && isAssembling ? { borderColor: (engine.getList(sprint.target_column)?.hex ?? '') + '80' } : undefined),
+        ...(projectHsl
+          ? { borderColor: projectHsl }
+          : isBatch && isAssembling
+            ? { borderColor: (engine.getList(sprint.target_column)?.hex ?? '') + '80' }
+            : undefined),
       }}
       className={cn(
         'rounded-lg border bg-card/30 transition-all duration-200',
-        borderStyle,
-        isDragging && 'opacity-30',
-        !isBatch && isAssembling && 'cursor-grab active:cursor-grabbing',
+        !projectHsl && borderStyle,
+        isDragging && 'opacity-0',
+        !isExecuting && sprint.scope_ids.length > 0 && 'cursor-grab active:cursor-grabbing',
       )}
-      {...(isBatch ? {} : dragAttrs)}
-      {...(isBatch ? {} : dragListeners)}
+      {...dragAttrs}
+      {...dragListeners}
     >
       {/* Header */}
-      <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-inherit">
-        <Icon className={cn('h-3 w-3 shrink-0', iconColor)} />
+      <div
+        className="flex items-center gap-2 px-2.5 py-1.5 border-b border-inherit rounded-t-lg transition-colors duration-200"
+        style={projectHeaderBg ? { backgroundColor: projectHeaderBg } : undefined}
+      >
+        <Icon className={cn('h-3 w-3 shrink-0 transition-colors duration-200', iconColor)} style={projectHsl ? { color: projectHsl } : undefined} />
         {isEditing ? (
           <input
             ref={inputRef}
@@ -159,24 +158,13 @@ export function SprintContainer({ sprint, scopeLookup, onDelete, onDispatch, onR
           />
         ) : (
           <span
-            className={cn('text-xs font-medium text-foreground truncate flex-1', isAssembling && 'cursor-text')}
+            className={cn('text-xs font-medium text-foreground truncate', isAssembling && 'cursor-text')}
             onDoubleClick={() => { if (isAssembling) { setIsEditing(true); setDraftName(sprint.name); } }}
           >
             {sprint.name}
           </span>
         )}
-        <span className={cn(
-          'rounded px-1 py-0.5 text-[10px] uppercase',
-          sprint.status === 'dispatched' || sprint.status === 'in_progress'
-            ? 'bg-amber-500/20 text-amber-400'
-            : sprint.status === 'completed'
-            ? 'bg-green-500/20 text-green-400'
-            : sprint.status === 'failed'
-            ? 'bg-red-500/20 text-red-400'
-            : 'text-muted-foreground',
-        )}>
-          {STATUS_LABEL[sprint.status]}
-        </span>
+        <div className="flex-1" />
         {isAssembling && (looseCount ?? 0) > 0 && onAddAll && (
           <button
             onClick={(e) => { e.stopPropagation(); onAddAll(sprint.id); }}
@@ -186,20 +174,17 @@ export function SprintContainer({ sprint, scopeLookup, onDelete, onDispatch, onR
             + All ({looseCount})
           </button>
         )}
-        {canDispatch && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onDispatch(sprint.id); }}
-            className="shrink-0 flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] bg-cyan-600/80 text-black hover:bg-cyan-500/80 transition-colors"
-            title={batchActionLabel ?? 'Dispatch'}
-          >
-            <Play className="h-2.5 w-2.5" />
-            {batchActionLabel ?? 'Dispatch'}
-          </button>
-        )}
-        {isAssembling && onDelete && (
+
+        {onDelete && (
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(sprint.id); }}
-            className="shrink-0 text-muted-foreground hover:text-red-400 transition-colors"
+            disabled={sprint.status === 'dispatched' || sprint.status === 'in_progress'}
+            className={cn(
+              'shrink-0 transition-colors',
+              sprint.status === 'dispatched' || sprint.status === 'in_progress'
+                ? 'text-muted-foreground/30 cursor-not-allowed'
+                : 'text-muted-foreground hover:text-[#FFFFFF]',
+            )}
           >
             <X className="h-3 w-3" />
           </button>
@@ -215,9 +200,9 @@ export function SprintContainer({ sprint, scopeLookup, onDelete, onDispatch, onR
         )}
       >
         {sprint.scope_ids.map((scopeId) => {
-          const scope = scopeLookup.get(scopeId);
+          const lookupKey = sprint.project_id ? `${sprint.project_id}::${scopeId}` : String(scopeId);
+          const scope = scopeLookup.get(lookupKey);
           if (!scope) {
-            // Fallback: show minimal info from sprint scope data
             const ss = sprint.scopes.find((s) => s.scope_id === scopeId);
             return (
               <div key={scopeId} className="rounded border border-muted-foreground/20 bg-card/50 px-2 py-1 text-xs text-muted-foreground">
@@ -226,41 +211,65 @@ export function SprintContainer({ sprint, scopeLookup, onDelete, onDispatch, onR
               </div>
             );
           }
+          // Hide the card being dragged out — collapse its space in the container
+          if (activeDragId && scopeKey(scope) === activeDragId) return null;
           return (
-            <ScopeCard key={scopeKey(scope)} scope={scope} onClick={onScopeClick} cardDisplay={cardDisplay} dimmed={dimmedIds?.has(scopeKey(scope))} />
+            <ScopeCard key={scopeKey(scope)} scope={scope} onClick={onScopeClick} cardDisplay={cardDisplay} dimmed={dimmedIds?.has(scopeKey(scope))} project={scope.project_id && projectLookup ? projectLookup.get(scope.project_id) : undefined} />
           );
         })}
-        {totalScopes === 0 && isAssembling && isOver && (
-          <p className="py-3 text-center text-[10px] text-muted-foreground/50">
+        {isDragActive && (
+          <div className={cn(
+            'flex h-8 items-center justify-center rounded border border-dashed text-[10px] transition-colors',
+            isOver
+              ? 'border-cyan-500/60 bg-cyan-500/10 text-cyan-400'
+              : 'border-white/20 bg-white/[0.03] text-white/30',
+          )}>
             Drop to add
-          </p>
-        )}
-      </div>
-
-      {/* Footer: effort + scope count + progress + dispatch result */}
-      <div className="flex items-center justify-between border-t border-inherit px-2.5 py-1">
-        <span className="text-[10px] text-muted-foreground">
-          {isBatch ? batchActionLabel ?? 'Batch' : `Effort: ${totalEffortHours(sprint)}`}
-        </span>
-        <span className="text-[10px] text-muted-foreground">
-          {totalScopes} scope{totalScopes !== 1 ? 's' : ''}
-        </span>
-        {sprint.status !== 'assembling' && totalScopes > 0 && (
-          <div className="flex items-center gap-1">
-            {progress.completed > 0 && (
-              <span className="text-[10px] text-green-400">{progress.completed} done</span>
-            )}
-            {progress.failed > 0 && (
-              <span className="text-[10px] text-red-400">{progress.failed} fail</span>
-            )}
-            {progress.in_progress > 0 && (
-              <span className="text-[10px] text-amber-400">{progress.in_progress} active</span>
-            )}
           </div>
         )}
       </div>
+
+      {/* Footer: project pill + scope count + status pill */}
+      <div className="flex items-center justify-between border-t border-inherit px-2.5 py-1">
+        <div className="inline-flex items-stretch rounded-full border border-muted-foreground/30 bg-muted/40 pl-0 pr-2 text-[10px] leading-[16px] text-muted-foreground">
+          <ProjectSelectorPill
+            projectId={sprint.project_id}
+            disabled={totalScopes > 0 || !isAssembling}
+            onProjectChange={onProjectChange ? (newId) => onProjectChange(sprint.id, newId) : undefined}
+            className="-ml-px -my-px"
+          />
+          <span className="ml-1.5 flex items-center">{totalScopes} scope{totalScopes !== 1 ? 's' : ''}</span>
+        </div>
+        {(() => {
+          const pill = STATUS_PILL[sprint.status];
+          if (!pill) return null;
+          const PillIcon = pill.icon;
+          const hasProgress = !isAssembling && totalScopes > 0
+            && (progress.completed > 0 || progress.failed > 0 || progress.in_progress > 0);
+          const pillEl = (
+            <span className={cn(
+              'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] leading-[16px]',
+              pill.bg, pill.text,
+            )}>
+              <PillIcon className="h-2.5 w-2.5" />
+              {pill.label}
+            </span>
+          );
+          if (!hasProgress) return pillEl;
+          const lines: string[] = [];
+          if (progress.completed > 0) lines.push(`${progress.completed} done`);
+          if (progress.in_progress > 0) lines.push(`${progress.in_progress} active`);
+          if (progress.failed > 0) lines.push(`${progress.failed} failed`);
+          return (
+            <Tooltip>
+              <TooltipTrigger asChild>{pillEl}</TooltipTrigger>
+              <TooltipContent side="top">{lines.join(' \u00b7 ')}</TooltipContent>
+            </Tooltip>
+          );
+        })()}
+      </div>
       {/* Dispatch result (batch only — commit SHA / PR link) */}
-      {isBatch && sprint.dispatch_result && (
+      {isBatch && sprint.dispatch_result && (sprint.dispatch_result.commit_sha || sprint.dispatch_result.pr_url) && (
         <div className="border-t border-inherit px-2.5 py-1 text-[10px] text-muted-foreground space-y-0.5">
           {sprint.dispatch_result.commit_sha && (
             <span className="font-mono">{sprint.dispatch_result.commit_sha.slice(0, 7)}</span>
@@ -281,23 +290,66 @@ export function SprintContainer({ sprint, scopeLookup, onDelete, onDispatch, onR
   );
 }
 
-/** Compact sprint preview for drag overlay */
-export function SprintDragPreview({ sprint }: { sprint: Sprint }) {
+/** Drag overlay that mirrors the actual SprintContainer appearance */
+export function SprintDragPreview({ sprint, scopeLookup, projectLookup }: {
+  sprint: Sprint;
+  scopeLookup?: Map<string, Scope>;
+  projectLookup?: Map<string, Project>;
+}) {
+  const isBatch = sprint.group_type === 'batch';
+  const Icon = isBatch ? Package : Layers;
+  const project = sprint.project_id && projectLookup?.get(sprint.project_id);
+  const projectHsl = project ? `hsl(${project.color})` : undefined;
+  const projectHeaderBg = project ? `hsl(${project.color} / 0.1)` : undefined;
+  const iconColor = projectHsl ? '' : 'text-muted-foreground';
+  const borderStyle = STATUS_STYLE[sprint.status] ?? 'border-muted-foreground/30';
+  const pill = STATUS_PILL[sprint.status];
+  const totalScopes = sprint.scope_ids.length;
+
   return (
-    <div className="w-72 rotate-1 opacity-90 shadow-xl shadow-black/40 rounded-lg border border-cyan-500/40 bg-card/80 p-2">
-      <div className="flex items-center gap-2 mb-1">
-        <Layers className="h-3 w-3 text-cyan-400" />
-        <span className="text-xs font-medium">{sprint.name}</span>
+    <div
+      className={cn('w-72 rotate-1 opacity-90 shadow-xl shadow-black/40 rounded-lg border bg-card/80 overflow-hidden', !projectHsl && borderStyle)}
+      style={projectHsl ? { borderColor: projectHsl } : undefined}
+    >
+      {/* Header */}
+      <div
+        className="flex items-center gap-2 px-2.5 py-1.5 border-b border-inherit rounded-t-lg"
+        style={projectHeaderBg ? { backgroundColor: projectHeaderBg } : undefined}
+      >
+        <Icon className={cn('h-3 w-3 shrink-0', iconColor)} style={projectHsl ? { color: projectHsl } : undefined} />
+        <span className="text-xs font-medium text-foreground truncate">{sprint.name}</span>
       </div>
-      <div className="space-y-0.5">
-        {sprint.scopes.slice(0, 3).map((ss) => (
-          <div key={ss.scope_id} className="rounded bg-muted/30 px-1.5 py-0.5 text-[10px] text-muted-foreground truncate">
-            {formatScopeId(ss.scope_id)} {ss.title}
-          </div>
-        ))}
-        {sprint.scopes.length > 3 && (
-          <p className="text-[10px] text-muted-foreground text-center">+{sprint.scopes.length - 3} more</p>
-        )}
+      {/* Scope cards */}
+      <div className="p-1.5 space-y-1">
+        {sprint.scope_ids.map((scopeId) => {
+          const lookupKey = sprint.project_id ? `${sprint.project_id}::${scopeId}` : String(scopeId);
+          const scope = scopeLookup?.get(lookupKey);
+          if (scope) {
+            return <ScopeCard key={scopeKey(scope)} scope={scope} project={scope.project_id && projectLookup ? projectLookup.get(scope.project_id) : undefined} />;
+          }
+          const ss = sprint.scopes.find((s) => s.scope_id === scopeId);
+          return (
+            <div key={scopeId} className="rounded border border-muted-foreground/20 bg-card/50 px-2 py-1 text-xs text-muted-foreground">
+              <span className="font-mono">{formatScopeId(scopeId)}</span>
+              {ss && <span className="ml-2">{ss.title}</span>}
+            </div>
+          );
+        })}
+      </div>
+      {/* Footer */}
+      <div className="flex items-center justify-between border-t border-inherit px-2.5 py-1">
+        <span className="text-[10px] text-muted-foreground">
+          {totalScopes} scope{totalScopes !== 1 ? 's' : ''}
+        </span>
+        {pill && (() => {
+          const PillIcon = pill.icon;
+          return (
+            <span className={cn('inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px]', pill.bg, pill.text)}>
+              <PillIcon className="h-2.5 w-2.5" />
+              {pill.label}
+            </span>
+          );
+        })()}
       </div>
     </div>
   );

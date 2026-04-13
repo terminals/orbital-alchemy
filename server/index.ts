@@ -149,8 +149,8 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
 
   const __selfDir = path.dirname(fileURLToPath(import.meta.url));
   const distDir = path.resolve(__selfDir, '../dist');
-  const devMode = clientPort !== port;
-  const hasBuiltFrontend = !devMode && fs.existsSync(path.join(distDir, 'index.html'));
+  const hasBuiltFrontend = fs.existsSync(path.join(distDir, 'index.html'));
+  const devMode = !hasBuiltFrontend;
   if (hasBuiltFrontend) {
     app.use(express.static(distDir));
     app.get('*', (req, res, next) => {

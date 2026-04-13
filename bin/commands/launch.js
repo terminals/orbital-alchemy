@@ -10,7 +10,7 @@ import {
 } from '../lib/helpers.js';
 
 export function cmdLaunchOrDev(forceViteFlag) {
-  const shouldOpen = process.argv.includes('--open');
+  const shouldOpen = !process.argv.includes('--no-open');
   const forceVite = forceViteFlag || process.argv.includes('--vite');
   const projectRoot = detectProjectRoot();
   const config = loadConfig(projectRoot);

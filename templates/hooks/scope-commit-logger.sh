@@ -25,8 +25,8 @@ SCOPE_ID=$(echo "$(basename "$SCOPE")" | grep -oE '[0-9]+' | head -1)
 HOOK_DIR="$(dirname "$0")"
 COMMIT_DATA=$(jq -n --arg hash "$COMMIT_HASH" --arg message "$COMMIT_MSG" '{hash: $hash, message: $message}')
 AGENT_DATA=$(jq -n --arg outcome "committed" --arg commit_hash "$COMMIT_HASH" '{outcome: $outcome, commit_hash: $commit_hash}')
-"$HOOK_DIR/orbital-emit.sh" COMMIT "$COMMIT_DATA" --scope "$SCOPE_ID"
-"$HOOK_DIR/orbital-emit.sh" AGENT_COMPLETED "$AGENT_DATA" --scope "$SCOPE_ID" &
+"$HOOK_DIR/orbital-emit.sh" COMMIT "$COMMIT_DATA" --scope "$SCOPE_ID" 2>/dev/null &
+"$HOOK_DIR/orbital-emit.sh" AGENT_COMPLETED "$AGENT_DATA" --scope "$SCOPE_ID" 2>/dev/null &
 
 echo ""
 echo "📝 Consider updating Implementation Log in $(basename "$SCOPE"):"

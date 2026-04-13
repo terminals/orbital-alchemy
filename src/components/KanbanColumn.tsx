@@ -143,7 +143,7 @@ export function KanbanColumn({
       ) : (
         <>
           {/* Column header — click to collapse */}
-          <div className="flex items-center gap-2 border-b px-2.5 py-1.5 cursor-pointer" onClick={onToggleCollapse}>
+          <div className="column-header flex items-center gap-2 border-b px-2.5 py-1.5 cursor-pointer" onClick={onToggleCollapse}>
             <div className={cn('h-2.5 w-2.5 rounded-full', neonGlass && 'animate-glow-pulse')} style={{ backgroundColor: `hsl(${color})` }} />
             <h2 className="text-xxs uppercase tracking-wider font-normal text-muted-foreground">{label}</h2>
             <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">

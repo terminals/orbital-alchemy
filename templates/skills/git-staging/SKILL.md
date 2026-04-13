@@ -60,14 +60,17 @@ gh pr create --base staging --head dev \
 
 ### Step 4: Signal Completion (REQUIRED)
 
-**Always emit after a successful PR creation** — this is not optional:
+**Always emit when finished** — this is not optional. Emit success or failure so the dispatch resolves immediately:
 
 ```bash
-# With a scope:
+# On success — with a scope:
 bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"pr_staging"}' --scope "{NNN}"
 
-# Without a scope:
+# On success — without a scope:
 bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"pr_staging"}'
+
+# On failure (PR creation failed, push rejected, etc.):
+bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"failure","action":"pr_staging"}' --scope "{NNN}"
 ```
 
 ### Step 5: Monitor CI

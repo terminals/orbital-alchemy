@@ -385,7 +385,7 @@ export class WorkflowEngine {
       if (!targetList) continue;
       // Generate aliases for deployment-group targets (dev, staging, production)
       const group = targetList.group;
-      if (group === 'deployment') {
+      if (group?.startsWith('deploy')) {
         const sessionKey = targetList.sessionKey ?? '';
         lines.push(`  "to-${edge.to}:${edge.from}:${edge.to}:${sessionKey}"`);
       }

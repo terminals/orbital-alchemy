@@ -242,7 +242,8 @@ function generateManifest(config: Record<string, unknown>): string {
   lines.push('');
 
   lines.push('# ─── Entry point status ───');
-  lines.push(`WORKFLOW_ENTRY_STATUS="${(config.entryPoint as string) || (lists[0]?.id as string) || 'todo'}"`);
+  const entryPointId = (lists.find((l) => l.isEntryPoint)?.id as string) || (lists[0]?.id as string) || 'todo';
+  lines.push(`WORKFLOW_ENTRY_STATUS="${entryPointId}"`);
   lines.push('');
 
   const listMap = new Map(lists.map((l) => [l.id, l]));
@@ -264,6 +265,25 @@ function generateManifest(config: Record<string, unknown>): string {
     if (targetList?.gitBranch) {
       const sessionKey = (targetList.sessionKey as string) ?? '';
       lines.push(`  "${targetList.gitBranch}:${edge.from}:${edge.to}:${sessionKey}"`);
+    }
+  }
+  lines.push(')');
+  lines.push('');
+
+  lines.push('# ─── Commit session branch patterns (regex) ───');
+  lines.push(`WORKFLOW_COMMIT_BRANCHES="${(config.commitBranchPatterns as string) ?? ''}"`);
+  lines.push('');
+
+  lines.push('# ─── Backward-compat direction aliases (alias:from:to:sessionKey) ───');
+  lines.push('WORKFLOW_DIRECTION_ALIASES=(');
+  for (const edge of (config.edges as Array<Record<string, unknown>>) || []) {
+    if (edge.direction !== 'forward' || !edge.dispatchOnly) continue;
+    const targetList = listMap.get(edge.to as string);
+    if (!targetList) continue;
+    const group = targetList.group as string | undefined;
+    if (group?.startsWith('deploy')) {
+      const sessionKey = (targetList.sessionKey as string) ?? '';
+      lines.push(`  "to-${edge.to as string}:${edge.from as string}:${edge.to as string}:${sessionKey}"`);
     }
   }
   lines.push(')');

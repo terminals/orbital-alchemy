@@ -52,13 +52,22 @@ if echo "$COMMAND" | grep -qE '^git commit'; then
       if [ -n "$ACTIVE_SCOPE" ] && [ -f "$ACTIVE_SCOPE" ]; then
         append_session_uuid "$ACTIVE_SCOPE" "commit" "$SESSION_UUID"
       fi
-      # Also record on all review scopes (for review→completed transitions)
+      # Also record on review scopes (for review→completed transitions)
+      # If BATCH_SCOPE_IDS is set, only record on those specific scopes
       REVIEW_DIR="$PROJECT_DIR/scopes/review"
       if [ -d "$REVIEW_DIR" ]; then
-        for f in "$REVIEW_DIR"/*.md; do
-          [ -f "$f" ] || continue
-          append_session_uuid "$f" "commit" "$SESSION_UUID"
-        done
+        if [ -n "${BATCH_SCOPE_IDS:-}" ]; then
+          IFS=',' read -ra BATCH_IDS <<< "$BATCH_SCOPE_IDS"
+          for bid in "${BATCH_IDS[@]}"; do
+            SCOPE_FILE=$(find_scope_by_id "$bid")
+            [ -n "$SCOPE_FILE" ] && [ -f "$SCOPE_FILE" ] && append_session_uuid "$SCOPE_FILE" "commit" "$SESSION_UUID"
+          done
+        else
+          for f in "$REVIEW_DIR"/*.md; do
+            [ -f "$f" ] || continue
+            append_session_uuid "$f" "commit" "$SESSION_UUID"
+          done
+        fi
       fi
     fi
 

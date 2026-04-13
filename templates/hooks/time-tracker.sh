@@ -13,12 +13,9 @@ NEW_STRING=$(echo "$INPUT" | jq -r '.tool_input.new_string // empty')
 source "$(dirname "$0")/scope-helpers.sh"
 is_scope_file "$FILE_PATH" || exit 0
 
-# Detect status transitions
+# Detect status transitions — match any status value, not a hardcoded list
 STATUS=""
-echo "$NEW_STRING" | grep -qiE "status:.*planning" && STATUS="planning"
-echo "$NEW_STRING" | grep -qiE "status:.*backlog" && STATUS="backlog"
-echo "$NEW_STRING" | grep -qiE "status:.*implementing" && STATUS="implementing"
-echo "$NEW_STRING" | grep -qiE "status:.*complete" && STATUS="complete"
+STATUS=$(echo "$NEW_STRING" | grep -oE '^status:[[:space:]]*[a-z][-a-z]*' | sed 's/^status:[[:space:]]*//' | head -1)
 echo "$NEW_STRING" | grep -qiE "🔄.*In Progress" && STATUS="phase_started"
 echo "$NEW_STRING" | grep -qiE "✅.*Done" && STATUS="phase_done"
 [ -z "$STATUS" ] && exit 0

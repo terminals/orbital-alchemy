@@ -2,9 +2,11 @@ import type Database from 'better-sqlite3';
 import type { Emitter } from '../project-emitter.js';
 import { SprintService } from './sprint-service.js';
 import { ScopeService } from './scope-service.js';
-import { launchInCategorizedTerminal, escapeForAnsiC, buildSessionName, snapshotSessionPids, discoverNewSession, renameSession } from '../utils/terminal-launcher.js';
+import { launchInCategorizedTerminal, escapeForAnsiC, shellQuote, buildSessionName, snapshotSessionPids, discoverNewSession, renameSession } from '../utils/terminal-launcher.js';
 import { resolveDispatchEvent, linkPidToDispatch } from '../utils/dispatch-utils.js';
+import { buildClaudeFlags, buildEnvVarPrefix } from '../utils/flag-builder.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
+import type { OrbitalConfig } from '../config.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('sprint');
@@ -24,6 +26,7 @@ export class SprintOrchestrator {
     private scopeService: ScopeService,
     private engine: WorkflowEngine,
     private projectRoot: string,
+    private config: OrbitalConfig,
   ) {}
 
   /** Build execution layers using Kahn's topological sort */
@@ -225,9 +228,15 @@ export class SprintOrchestrator {
       const currentScope = this.scopeService.getById(scopeId);
       const previousStatus = currentScope?.status ?? 'implementing';
 
+      // Resolve command and target status from workflow engine
+      const sprint = this.sprintService.getById(sprintId);
+      const targetColumn = sprint?.target_column ?? 'backlog';
+      const edgeCommand = this.engine.getBatchCommand(targetColumn);
+      const targetStatus = this.engine.getBatchTargetStatus(targetColumn);
+
       // Record DISPATCH event
       const eventId = crypto.randomUUID();
-      const command = `/scope implement ${scopeId}`;
+      const command = edgeCommand ?? `/scope-implement ${scopeId}`;
       this.db.prepare(
         `INSERT INTO events (id, type, scope_id, session_id, agent, data, timestamp)
          VALUES (?, 'DISPATCH', ?, NULL, 'sprint-orchestrator', ?, ?)`,
@@ -241,7 +250,9 @@ export class SprintOrchestrator {
       });
 
       // Update scope + sprint_scope status
-      this.scopeService.updateStatus(scopeId, 'implementing', 'dispatch');
+      if (targetStatus) {
+        this.scopeService.updateStatus(scopeId, targetStatus, 'dispatch');
+      }
       this.sprintService.updateScopeStatus(sprintId, scopeId, 'dispatched');
 
       // Build scope-aware session name and snapshot PIDs
@@ -249,9 +260,11 @@ export class SprintOrchestrator {
       const sessionName = buildSessionName({ scopeId, title: scopeRow?.title, command });
       const beforePids = snapshotSessionPids(this.projectRoot);
 
-      // Launch in iTerm — interactive TUI mode (no -p) for full visibility
+      // Launch in iTerm — interactive TUI mode for full visibility
       const escaped = escapeForAnsiC(command);
-      const fullCmd = `cd '${this.projectRoot}' && claude --dangerously-skip-permissions $'${escaped}'`;
+      const flagsStr = buildClaudeFlags(this.config.claude.dispatchFlags);
+      const envPrefix = buildEnvVarPrefix(this.config.dispatch.envVars);
+      const fullCmd = `cd '${shellQuote(this.projectRoot)}' && ${envPrefix}ORBITAL_DISPATCH_ID='${shellQuote(eventId)}' claude ${flagsStr} $'${escaped}'`;
       try {
         await launchInCategorizedTerminal(command, fullCmd, sessionName);
 

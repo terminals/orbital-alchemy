@@ -89,4 +89,5 @@ CREATE INDEX IF NOT EXISTS idx_sessions_scope ON sessions(scope_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_claude_id ON sessions(claude_session_id);
 CREATE INDEX IF NOT EXISTS idx_sprints_status ON sprints(status);
 CREATE INDEX IF NOT EXISTS idx_sprint_scopes_sprint ON sprint_scopes(sprint_id);
+CREATE INDEX IF NOT EXISTS idx_events_dispatch_unresolved ON events(type, scope_id) WHERE type = 'DISPATCH' AND JSON_EXTRACT(data, '$.resolved') IS NULL;
 `;

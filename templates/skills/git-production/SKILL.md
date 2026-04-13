@@ -98,14 +98,17 @@ gh pr merge --merge
 
 ### Step 6: Signal Completion (REQUIRED)
 
-**Always emit after a successful merge** — this is not optional:
+**Always emit when finished** — this is not optional. Emit success or failure so the dispatch resolves immediately:
 
 ```bash
-# With a scope:
+# On success — with a scope:
 bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"pr_production"}' --scope "{NNN}"
 
-# Without a scope:
+# On success — without a scope:
 bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"pr_production"}'
+
+# On failure (PR failed, merge conflicts, health check failed, etc.):
+bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"failure","action":"pr_production"}' --scope "{NNN}"
 ```
 
 ### Step 7: Verify Production

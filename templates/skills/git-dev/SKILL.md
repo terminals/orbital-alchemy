@@ -19,7 +19,8 @@ Direct merge from feature branch into dev. The review gate already provides the 
 ### Step 0: Record Session ID
 
 1. Run: `bash .claude/hooks/get-session-id.sh`
-2. For each scope in `scopes/completed/`:
+2. For each scope in `scopes/completed/`
+   (if BATCH_SCOPE_IDS is set, only record on those specific scopes):
    - Append session UUID to `sessions.prDev` in frontmatter
 
 ### Step 1: Verify Ready State
@@ -69,14 +70,17 @@ If merge conflicts occur, resolve them before continuing.
 
 ### Step 4: Signal Completion (REQUIRED)
 
-**Always emit after a successful merge** — this is not optional:
+**Always emit when finished** — this is not optional. Emit success or failure so the dispatch resolves immediately:
 
 ```bash
-# With a scope:
+# On success — with a scope:
 bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"pr_dev"}' --scope "{NNN}"
 
-# Without a scope:
+# On success — without a scope:
 bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"pr_dev"}'
+
+# On failure (merge conflicts, push rejected, etc.):
+bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"failure","action":"pr_dev"}' --scope "{NNN}"
 ```
 
 ## Output

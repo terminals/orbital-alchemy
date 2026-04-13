@@ -120,7 +120,7 @@ export class ScopeService {
     const id = this.cache.removeByFilePath(filePath);
     if (id !== undefined) {
       if (previous) this.recentlyRemoved.set(id, previous.status);
-      this.io.emit('scope:deleted', id);
+      this.io.emit('scope:deleted', { id });
       // Clean up stash after a short window (if add never fires, this was a real delete)
       setTimeout(() => this.recentlyRemoved.delete(id), 5000);
     }
@@ -379,7 +379,7 @@ export class ScopeService {
 
   /** Promote an icebox idea to planning — assigns a proper sequential scope ID,
    *  moves the file, and syncs cache. Returns the new scope ID. */
-  promoteIdea(slug: string): { id: number; filePath: string; title: string; description: string } | null {
+  promoteIdea(slug: string, targetStatus = 'planning'): { id: number; filePath: string; title: string; description: string } | null {
     const iceboxDir = path.join(this.scopesDir, 'icebox');
     const oldPath = this.findIdeaFile(iceboxDir, slug);
     if (!oldPath) return null;
@@ -397,15 +397,15 @@ export class ScopeService {
 
     // Build new path
     const titleSlug = this.slugify(title);
-    const planningDir = path.join(this.scopesDir, 'planning');
-    if (!fs.existsSync(planningDir)) fs.mkdirSync(planningDir, { recursive: true });
+    const targetDir = path.join(this.scopesDir, targetStatus);
+    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
     const newFileName = `${paddedId}-${titleSlug}.md`;
-    const newPath = path.join(planningDir, newFileName);
+    const newPath = path.join(targetDir, newFileName);
     const now = new Date().toISOString().split('T')[0];
 
     // Update frontmatter in-place: assign ID and change status (preserve other fields)
     parsed.data.id = newId;
-    parsed.data.status = 'planning';
+    parsed.data.status = targetStatus;
     parsed.data.updated = now;
     parsed.data.created = created;
     delete parsed.data.ghost;

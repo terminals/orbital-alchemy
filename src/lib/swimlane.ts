@@ -1,4 +1,4 @@
-import type { Scope, ScopeStatus } from '@/types';
+import type { Scope, ScopeStatus, Project } from '@/types';
 import type { SwimGroupField } from '@/types';
 import {
   PRIORITY_OPTIONS,
@@ -17,6 +17,8 @@ export interface SwimLane {
   value: string;
   label: string;
   color: string;
+  /** Optional inline HSL color (for dynamic project colors that can't be Tailwind classes) */
+  colorHsl?: string;
   count: number;
   cells: Record<ScopeStatus, Scope[]>;
 }
@@ -87,6 +89,7 @@ export function computeSwimLanes(
   sortField: SortField,
   sortDirection: SortDirection,
   resolveColumnId?: (scope: Scope) => string,
+  projectLookup?: Map<string, Project>,
 ): SwimLane[] {
   // Collect all values and map scopes to lanes
   const laneMap = new Map<string, Record<ScopeStatus, Scope[]>>();
@@ -139,11 +142,15 @@ export function computeSwimLanes(
   // "Unset" always last
   if (laneMap.has('Unset')) orderedValues.push('Unset');
 
-  return orderedValues.map((value) => ({
-    value,
-    label: value === 'Unset' ? 'Unset' : laneLabel(groupField, value),
-    color: value === 'Unset' ? 'bg-muted-foreground/20' : laneColor(groupField, value),
-    count: laneScopeCounts.get(value) ?? 0,
-    cells: laneMap.get(value)!,
-  }));
+  return orderedValues.map((value) => {
+    const project = groupField === 'project' && value !== 'Unset' ? projectLookup?.get(value) : undefined;
+    return {
+      value,
+      label: value === 'Unset' ? 'Unset' : project ? project.name : laneLabel(groupField, value),
+      color: value === 'Unset' ? 'bg-muted-foreground/20' : project ? '' : laneColor(groupField, value),
+      colorHsl: project?.color,
+      count: laneScopeCounts.get(value) ?? 0,
+      cells: laneMap.get(value)!,
+    };
+  });
 }

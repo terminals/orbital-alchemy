@@ -86,7 +86,10 @@ Ensure the project has a test suite before running quality gates. This runs in a
      ║  tests. Fix manually and re-run: /scope-post-review NNN     ║
      ╚═══════════════════════════════════════════════════════════════╝
      ```
-     **STOP** — do not proceed to Phase 1 with broken tests.
+     Emit failure and **STOP** — do not proceed to Phase 1 with broken tests:
+     ```bash
+     bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"failure","action":"post_review","phase":0}' --scope "{NNN}"
+     ```
    - **If tests pass** → continue to Phase 1.
 
 ### Phase 1: Quality Gates (`/test-checks`)
@@ -102,7 +105,10 @@ Run the 13 quality gates. This is the cheapest and fastest check.
    ║  Fix the failing gates and re-run: /scope-post-review NNN    ║
    ╚═══════════════════════════════════════════════════════════════╝
    ```
-   **STOP** — do not proceed to Phase 2.
+   Emit failure and **STOP** — do not proceed to Phase 2:
+   ```bash
+   bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"failure","action":"post_review","phase":1}' --scope "{NNN}"
+   ```
 3. If all gates PASS → continue to Phase 2.
 
 ### Phase 2: Formal Verification (`/scope-verify NNN`)
@@ -118,7 +124,10 @@ Run the scope-specific formal review gate.
    ║  Fix the issues and re-run: /scope-post-review NNN           ║
    ╚═══════════════════════════════════════════════════════════════╝
    ```
-   **STOP** — do not proceed to Phase 3.
+   Emit failure and **STOP** — do not proceed to Phase 3:
+   ```bash
+   bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"failure","action":"post_review","phase":2}' --scope "{NNN}"
+   ```
 3. If verdict is PASS → continue to Phase 3.
 
 ### Phase 3: AI Code Review (`/test-code-review`)
@@ -150,7 +159,10 @@ Execute all Phase 3 findings using a coordinated agent team. **This phase requir
      ```
      Skill(skill: "test-checks")
      ```
-     If any gate fails, report which gates regressed and **STOP**.
+     If any gate fails, report which gates regressed, emit failure and **STOP**:
+     ```bash
+     bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"failure","action":"post_review","phase":4}' --scope "{NNN}"
+     ```
 3. If **not enabled**:
    - Read `~/.claude/settings.json`
    - Merge `"env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" }` into the existing JSON (preserve all other settings)

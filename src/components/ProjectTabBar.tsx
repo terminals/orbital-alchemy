@@ -19,7 +19,7 @@ export function ProjectTabBar({ countOverrides }: ProjectTabBarProps = {}) {
   const isAllActive = activeProjectId === null;
 
   return (
-    <div className="card-glass -mt-8 mb-3 flex items-center gap-0.5 overflow-x-auto rounded border border-white/[0.08] px-1 py-1">
+    <div className="project-tab-bar -mt-8 mb-3 flex items-center gap-0.5 overflow-x-auto rounded border border-white/[0.08] px-1 py-1">
       {/* All Projects tab */}
       <button
         type="button"

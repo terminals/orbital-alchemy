@@ -15,7 +15,7 @@ export function DragOverlay({ activeScope, activeSprint, cardDisplay, projectLoo
   return (
     <DndDragOverlay dropAnimation={null}>
       {activeScope && (
-        <div className="w-72 rotate-2 opacity-90 shadow-xl shadow-black/40">
+        <div className="w-72 rotate-2 shadow-xl shadow-black/40">
           <ScopeCard scope={activeScope} cardDisplay={cardDisplay} project={activeScope.project_id && projectLookup ? projectLookup.get(activeScope.project_id) : undefined} />
         </div>
       )}

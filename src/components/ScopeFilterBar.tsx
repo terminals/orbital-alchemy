@@ -83,7 +83,7 @@ export function ScopeFilterBar({
             variant="outline"
             size="sm"
             className={cn(
-              'gap-1.5 backdrop-blur-sm bg-white/[0.03] border-white/10',
+              'card-glass gap-1.5 bg-white/[0.03] border-white/10',
               hasActiveFilters && 'border-white/20 text-foreground',
             )}
             aria-label="Filter scopes"

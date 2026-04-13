@@ -46,7 +46,10 @@ export function parseEventFile(filePath: string): RawEvent | null {
       timestamp: String(parsed.timestamp),
     };
   } catch (err) {
-    log.warn('Failed to parse event file', { file: filePath, error: (err as Error).message });
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') {
+      log.warn('Failed to parse event file', { file: filePath, error: (err as Error).message });
+    }
     return null;
   }
 }

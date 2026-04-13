@@ -20,7 +20,8 @@ BRANCHING_MODE=$(grep '^WORKFLOW_BRANCHING_MODE=' .claude/config/workflow-manife
 ### Step 0b: Record Session ID
 
 1. Run: `bash .claude/hooks/get-session-id.sh`
-2. For each scope in `scopes/review/` with a passing verdict:
+2. For each scope in `scopes/review/` with a passing verdict
+   (if BATCH_SCOPE_IDS is set, only record on those specific scopes):
    - Append session UUID to `sessions.commit` in frontmatter
 
 ### Step 1: Check Branch
@@ -52,25 +53,36 @@ If BATCH_SCOPE_IDS is set, only process those specific scopes (skip any not in t
 
 ### Step 3: Commit
 
+**Determine which files to stage** — scope-aware, not a blanket `git add .`:
+
+1. For each scope being committed (from Step 2), read its **Files Summary** table from the scope document (`scopes/review/{NNN}*.md` or `scopes/completed/{NNN}*.md`)
+2. Also check `.claude/review-findings/{NNN}.json` — each finding has a `file` field listing reviewed files
+3. Cross-reference against `git status` — only stage files that appear in the scope's Files Summary or review findings
+4. If files exist in `git status` that don't belong to any scope being committed, leave them unstaged
+
 ```bash
-git add <specific code files — scopes are gitignored>
+git add <files from scope Files Summary + review findings>
 git commit -m "type(scope): description"
 ```
 
-- Stage only code files (scopes/ is gitignored, no need to worry about them)
+- Stage only scope-owned code files (scopes/ is gitignored, no need to worry about them)
+- If multiple scopes are being committed (batch), include files from ALL scopes in the batch
 - Follow conventional commit format
 - Do NOT push or create PRs — those are separate skills
 
 ### Step 4: Signal Completion (REQUIRED)
 
-**Always emit after a successful commit** — this is not optional:
+**Always emit when finished** — this is not optional. Emit success or failure so the dispatch resolves immediately:
 
 ```bash
-# With a scope:
+# On success — with a scope:
 bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"save"}' --scope "{NNN}"
 
-# Without a scope (general commit):
+# On success — without a scope (general commit):
 bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"save"}'
+
+# On failure (commit failed, no files to stage, etc.):
+bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"failure","action":"save"}' --scope "{NNN}"
 ```
 
 The `--scope` flag is optional. Omit it when committing work that isn't tied to a specific scope.

@@ -145,12 +145,16 @@ Agent(
 ╚═══════════════════════════════════════════════════════════════╝
 ```
 
-### Step 8: Emit Completion Event
+### Step 8: Signal Completion (REQUIRED)
+
+**Always emit when finished** — this is not optional. Emit success or failure so the dispatch resolves immediately:
 
 ```bash
-bash .claude/hooks/orbital-emit.sh REVIEW_FIXES_COMPLETED \
-  '{"scope_id":"NNN","findings_total":YY,"findings_fixed":XX,"agents_used":N}' \
-  --scope "NNN"
+# On success:
+bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"fix_review","findings_total":YY,"findings_fixed":XX}' --scope "{NNN}"
+
+# On failure (agents couldn't resolve, verification failed, etc.):
+bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"failure","action":"fix_review","findings_total":YY,"findings_fixed":XX}' --scope "{NNN}"
 ```
 
 ## Important Rules

@@ -156,12 +156,12 @@ export function IdeaDetailModal({ scope, open, onClose, onDelete, onApprove, onR
         {/* Description */}
         <div className="flex-1 min-h-0 px-4 pb-4">
           {isGhost ? (
-            <div className="w-full min-h-[200px] rounded bg-muted/20 px-3 py-2.5 text-xs text-foreground/80 border border-border/50 whitespace-pre-wrap">
+            <div className="w-full min-h-[200px] rounded bg-transparent px-3 py-2.5 text-xs text-foreground/80 border border-border/50 whitespace-pre-wrap">
               {description || <span className="text-muted-foreground italic">No description</span>}
             </div>
           ) : (
             <textarea
-              className="w-full h-full min-h-[200px] rounded bg-muted/30 px-3 py-2.5 text-xs text-foreground border border-border focus:outline-none focus:ring-1 focus:ring-primary/50 resize-none placeholder:text-muted-foreground"
+              className="w-full h-full min-h-[200px] rounded bg-transparent px-3 py-2.5 text-xs text-foreground border border-border focus:outline-none focus:ring-1 focus:ring-primary/50 resize-none placeholder:text-muted-foreground"
               placeholder="Describe the idea... What problem does it solve? Any notes on approach?"
               value={description}
               onChange={(e) => setDescription(e.target.value)}

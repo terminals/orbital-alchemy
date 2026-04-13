@@ -22,6 +22,7 @@ const GROUP_FIELDS: { value: SwimGroupField; label: string }[] = [
   { value: 'tags', label: 'Tags' },
   { value: 'effort', label: 'Effort' },
   { value: 'dependencies', label: 'Dependencies' },
+  { value: 'project', label: 'Project' },
 ];
 
 export function ViewModeSelector({

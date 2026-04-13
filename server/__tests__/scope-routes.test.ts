@@ -69,6 +69,7 @@ describe('scope-routes', () => {
       projectRoot: '/tmp/test-project',
       projectName: 'Test',
       engine,
+      config: { claude: { dispatchFlags: { permissionMode: 'bypass', verbose: false, noMarkdown: false, printMode: false, outputFormat: null, allowedTools: [], disallowedTools: [], appendSystemPrompt: '' } }, dispatch: { envVars: {}, maxConcurrent: 5, maxBatchSize: 20, staleTimeoutMinutes: 10 } } as any,
     });
 
     app = express();

@@ -5,7 +5,7 @@ interface IdeaActionsState {
   surpriseLoading: boolean;
   handleSurprise: () => Promise<void>;
   handleApproveGhost: (slug: string) => Promise<void>;
-  handleRejectGhost: (slug: string) => Promise<void>;
+  handleRejectGhost: (slug: string) => void;
 }
 
 export function useIdeaActions(
@@ -41,14 +41,9 @@ export function useIdeaActions(
     }
   }, [setSelectedIdea, buildUrl]);
 
-  const handleRejectGhost = useCallback(async (slug: string) => {
-    try {
-      const res = await fetch(buildUrl(`/ideas/${slug}`), { method: 'DELETE' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setSelectedIdea(null);
-    } catch (err) {
-      console.error('[Orbital] Failed to reject idea:', err);
-    }
+  const handleRejectGhost = useCallback((slug: string) => {
+    setSelectedIdea(null);
+    fetch(buildUrl(`/ideas/${slug}`), { method: 'DELETE' }).catch(() => {});
   }, [setSelectedIdea, buildUrl]);
 
   return { surpriseLoading, handleSurprise, handleApproveGhost, handleRejectGhost };

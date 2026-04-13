@@ -36,7 +36,7 @@ interface EditableFields {
   blocks: number[];
 }
 
-const SELECT_CLS = 'h-7 w-full rounded border border-border bg-muted/30 px-2 text-xxs text-foreground/80 focus:outline-none focus:ring-1 focus:ring-primary/50';
+const SELECT_CLS = 'h-7 w-full rounded border border-border bg-transparent px-2 text-xxs text-foreground/80 focus:outline-none focus:ring-1 focus:ring-primary/50';
 const LABEL_CLS = 'text-xxs font-medium uppercase tracking-wide text-muted-foreground/70 mb-1';
 
 function fieldsFromScope(scope: Scope): EditableFields {
@@ -67,7 +67,7 @@ function DepEditor({ label, ids, onRemove, onAdd }: {
       <p className={LABEL_CLS}>{label}</p>
       <div className="flex flex-wrap items-center gap-1">
         {ids.map((id) => (
-          <span key={id} className="group inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-xxs text-foreground/70">
+          <span key={id} className="group inline-flex items-center gap-0.5 rounded border border-border px-1.5 py-0.5 text-xxs text-foreground/70">
             {formatScopeId(id)}
             <button onClick={() => onRemove(id)} className="opacity-0 group-hover:opacity-100 transition-opacity">
               <XIcon className="h-2.5 w-2.5" />
@@ -75,7 +75,7 @@ function DepEditor({ label, ids, onRemove, onAdd }: {
           </span>
         ))}
         {editing ? (
-          <input autoFocus className="h-5 w-12 rounded bg-muted/50 px-1 text-xxs border border-primary/30 focus:outline-none"
+          <input autoFocus className="h-5 w-12 rounded bg-transparent px-1 text-xxs border border-primary/30 focus:outline-none"
             placeholder="ID" value={val}
             onChange={(e) => setVal(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { onAdd(val); setEditing(false); setVal(''); } if (e.key === 'Escape') setEditing(false); }}
@@ -266,7 +266,7 @@ export function ScopeDetailModal({ scope, open, onClose }: ScopeDetailModalProps
                   <p className={LABEL_CLS}>Tags</p>
                   <div className="flex flex-wrap items-center gap-1">
                     {fields.tags.map((tag) => (
-                      <span key={tag} className="group inline-flex items-center gap-0.5 glass-pill rounded bg-muted px-1.5 py-0.5 text-xxs text-muted-foreground">
+                      <span key={tag} className="group inline-flex items-center gap-0.5 glass-pill rounded border border-border px-1.5 py-0.5 text-xxs text-muted-foreground">
                         {tag}
                         <button onClick={() => update({ tags: fields.tags.filter((t) => t !== tag) })} className="opacity-0 group-hover:opacity-100 transition-opacity">
                           <XIcon className="h-2.5 w-2.5" />
@@ -301,7 +301,7 @@ export function ScopeDetailModal({ scope, open, onClose }: ScopeDetailModalProps
 
         {/* ── Unsaved changes bar ── */}
         {isDirty && (
-          <div className="mx-4 mb-2 flex items-center gap-2 rounded border border-border bg-card px-3 py-2">
+          <div className="mx-4 mb-2 flex items-center gap-2 rounded border border-border px-3 py-2">
             <Badge variant="outline">Unsaved changes</Badge>
             <div className="flex-1" />
             <Button variant="ghost" size="sm" onClick={() => { setFields(saved); setError(null); }}>Discard</Button>

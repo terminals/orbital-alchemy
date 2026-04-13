@@ -51,7 +51,7 @@ import type { Scope, Project } from '@/types';
 
 export function ScopeBoard() {
   const buildUrl = useProjectUrl();
-  const { scopes, loading, refetch } = useScopes();
+  const { scopes, loading } = useScopes();
   const { engine } = useWorkflow();
   const { activeProjectId, projects, projectEngines, hasMultipleProjects } = useProjects();
   const { sortField, sortDirection, setSort, collapsed, toggleCollapse } = useBoardSettings();
@@ -258,8 +258,8 @@ export function ScopeBoard() {
       };
     }
 
-    return computeSwimLanes(search.displayScopes, groupField, sortField, sortDirection, resolveColumnId);
-  }, [viewMode, search.displayScopes, groupField, sortField, sortDirection, isAllProjects, allProjectsBoard, projectEngines]);
+    return computeSwimLanes(search.displayScopes, groupField, sortField, sortDirection, resolveColumnId, projectLookup);
+  }, [viewMode, search.displayScopes, groupField, sortField, sortDirection, isAllProjects, allProjectsBoard, projectEngines, projectLookup]);
 
   // Compute valid drop targets for the currently dragged item
   const validTargets = useMemo(() => {
@@ -410,6 +410,7 @@ export function ScopeBoard() {
             isDragActive={!!(dndState.activeScope || dndState.activeSprint)}
             validTargets={validTargets}
             sprints={sprints}
+            projectLookup={projectLookup}
           />
         ) : (
           <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden" data-tour="kanban-board">
@@ -512,15 +513,9 @@ export function ScopeBoard() {
           scope={selectedIdea}
           open={!!selectedIdea}
           onClose={() => setSelectedIdea(null)}
-          onDelete={async (slug) => {
-            try {
-              const res = await fetch(buildUrl(`/ideas/${slug}`), { method: 'DELETE' });
-              if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            } catch {
-              // keep going — modal closes either way
-            }
+          onDelete={(slug) => {
             setSelectedIdea(null);
-            refetch();
+            fetch(buildUrl(`/ideas/${slug}`), { method: 'DELETE' }).catch(() => {});
           }}
           onApprove={handleApproveGhost}
           onReject={handleRejectGhost}

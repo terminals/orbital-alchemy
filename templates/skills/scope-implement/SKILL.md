@@ -26,10 +26,14 @@ user-invocable: true
 
 ### 2. Implement
 
-**Before starting Phase 1**: Transition the scope and update the DASHBOARD to `🔄 **Status**: Implementing`:
+**Before starting Phase 1**: Read the scope's frontmatter `status` field. If the scope is not already in `implementing`, transition it and update the DASHBOARD to `🔄 **Status**: Implementing`:
+
 ```bash
-bash .claude/hooks/scope-transition.sh --from backlog --to implementing --scope {NNN}
+# Use the scope's CURRENT status as the source (backlog, planning, review, completed, etc.)
+bash .claude/hooks/scope-transition.sh --from <current-status> --to implementing --scope {NNN}
 ```
+
+If the scope is already `status: implementing` (resuming), skip the transition.
 
 For each phase:
 
@@ -92,12 +96,16 @@ After Step 3, the scope remains in `scopes/implementing/` with `status: implemen
 
 **Do NOT proceed to review in this session.** The review gate enforces session separation to ensure the implementing agent doesn't approve its own work.
 
-### 4. Signal Completion
+### 4. Signal Completion (REQUIRED)
 
-Emit the agent completion event so the Orbital Command dashboard turns off the progress indicator:
+**Always emit when finished** — this is not optional. Emit success or failure so the dispatch resolves immediately:
 
 ```bash
-bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success"}' --scope "{NNN}"
+# On success:
+bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"implement"}' --scope "{NNN}"
+
+# On failure (build errors, blocked, etc.):
+bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"failure","action":"implement"}' --scope "{NNN}"
 ```
 
 ## Resuming After Compaction

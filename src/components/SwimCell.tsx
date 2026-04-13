@@ -1,6 +1,6 @@
 import { useDroppable } from '@dnd-kit/core';
 import { AnimatePresence, motion } from 'framer-motion';
-import type { Scope, ScopeStatus, CardDisplayConfig } from '@/types';
+import type { Scope, ScopeStatus, CardDisplayConfig, Project } from '@/types';
 import { ScopeCard } from './ScopeCard';
 import { cn } from '@/lib/utils';
 import { scopeKey } from '@/lib/scope-key';
@@ -15,6 +15,7 @@ interface SwimCellProps {
   isDragActive: boolean;
   isValidDrop: boolean;
   isCollapsed: boolean;
+  projectLookup?: Map<string, Project>;
 }
 
 export function SwimCell({
@@ -27,6 +28,7 @@ export function SwimCell({
   isDragActive,
   isValidDrop,
   isCollapsed,
+  projectLookup,
 }: SwimCellProps) {
   const droppableId = `swim::${laneValue}::${status}`;
   const { setNodeRef, isOver } = useDroppable({ id: droppableId });
@@ -63,6 +65,7 @@ export function SwimCell({
                 onClick={onScopeClick}
                 cardDisplay={cardDisplay}
                 dimmed={dimmedIds?.has(scopeKey(scope))}
+                project={scope.project_id && projectLookup ? projectLookup.get(scope.project_id) : undefined}
               />
             </motion.div>
           ))}
@@ -75,6 +78,7 @@ export function SwimCell({
                 onClick={onScopeClick}
                 cardDisplay={cardDisplay}
                 dimmed={dimmedIds?.has(scopeKey(scope))}
+                project={scope.project_id && projectLookup ? projectLookup.get(scope.project_id) : undefined}
               />
             </motion.div>
           ))}

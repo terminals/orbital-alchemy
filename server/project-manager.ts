@@ -333,7 +333,7 @@ export class ProjectManager {
     router.use(createScopeRoutes({
       db, io: emitter, scopeService, readinessService,
       projectRoot: config.projectRoot, projectName: config.projectName,
-      engine: workflowEngine,
+      engine: workflowEngine, config,
     }));
     router.use(createDataRoutes({
       db, io: emitter, eventService, gateService, deployService, gitService,

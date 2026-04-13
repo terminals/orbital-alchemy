@@ -123,6 +123,7 @@
       "label": "Team Review",
       "description": "Runs full agent team review, locks spec, moves to backlog.",
       "dispatchOnly": true,
+      "autoRevert": true,
       "hooks": ["session-enforcer", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
     },
     {
@@ -151,6 +152,7 @@
       "label": "Start Implementing",
       "description": "Opens a Claude session running /scope-implement.",
       "dispatchOnly": true,
+      "autoRevert": true,
       "hooks": ["session-enforcer", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
     },
     {
@@ -162,6 +164,7 @@
       "label": "Run Review Gate",
       "description": "Launches formal review gate. Moves to review only if all criteria pass.",
       "dispatchOnly": true,
+      "autoRevert": true,
       "hooks": ["session-enforcer", "review-gate-check", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
     },
     {
@@ -190,6 +193,7 @@
       "label": "Commit",
       "description": "Commits scope work to feature branch.",
       "dispatchOnly": true,
+      "autoRevert": true,
       "hooks": ["session-enforcer", "completion-checklist", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update", "scope-commit-logger"]
     },
     {
@@ -201,6 +205,7 @@
       "label": "Merge to Dev",
       "description": "Merges feature branch into dev. Batches multiple completed scopes.",
       "dispatchOnly": true,
+      "autoRevert": true,
       "hooks": ["session-enforcer", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update"]
     },
     {
@@ -212,6 +217,7 @@
       "label": "PR to Staging",
       "description": "Creates a GitHub PR from dev to staging.",
       "dispatchOnly": true,
+      "autoRevert": true,
       "hooks": ["session-enforcer", "lifecycle-gate", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update", "scope-commit-logger"]
     },
     {
@@ -228,6 +234,7 @@
       "label": "PR to Production",
       "description": "Creates a release PR from staging to main for production.",
       "dispatchOnly": true,
+      "autoRevert": true,
       "hooks": ["session-enforcer", "lifecycle-gate", "blocker-check", "dependency-check", "scope-transition", "orbital-scope-update", "scope-commit-logger"]
     },
     {

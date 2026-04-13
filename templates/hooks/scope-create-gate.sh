@@ -15,7 +15,7 @@ MARKER="$PROJECT_DIR/.claude/metrics/.scope-create-session"
 # Fast exit: no marker = no gate
 [ -f "$MARKER" ] || exit 0
 
-# Optional: auto-expire stale markers (older than 2 hours)
+# Optional: auto-expire stale markers (older than 15 minutes)
 if [ "$(uname)" = "Darwin" ]; then
   MARKER_AGE=$(( $(date +%s) - $(stat -f %m "$MARKER") ))
 else
@@ -70,9 +70,7 @@ echo ""
 echo "  File: $FILE_PATH"
 echo ""
 echo "  You must write the scope document first:"
-echo "    1. Find next scope number (highest NNN in scopes/**/*.md + 1, zero-padded to 3 digits)"
-echo "    2. Copy template from scopes/_template.md"
-echo "    3. Write to scopes/$ENTRY/NNN-short-description.md"
+echo "    bash .claude/hooks/scope-prepare.sh --new --title \"Title\" --desc \"Description\" --category \"Category\""
 echo ""
 echo "  After the scope document is written, the gate lifts automatically."
 echo "  To abandon: delete .claude/metrics/.scope-create-session"

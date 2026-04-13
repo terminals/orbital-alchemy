@@ -196,12 +196,16 @@ After applying spec fixes and writing the AGENT REVIEW:
 - Update DASHBOARD Quick Status: `🟢 **Status**: Backlog | **Spec Locked**: Yes`
 - Add to Recent Activity: `Review completed — N blockers, M warnings. X items applied to spec, K clarifications resolved.`
 
-### Step 9: Signal Completion
+### Step 9: Signal Completion (REQUIRED)
 
-Emit the agent completion event so the Orbital Command dashboard turns off the progress indicator:
+**Always emit when finished** — this is not optional. Emit success or failure so the dispatch resolves immediately:
 
 ```bash
+# On success:
 bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"team_review"}' --scope "{NNN}"
+
+# On failure (agent launch failed, unrecoverable error, etc.):
+bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"failure","action":"team_review"}' --scope "{NNN}"
 ```
 
 ## Modes

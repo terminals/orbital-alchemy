@@ -20,7 +20,8 @@ BRANCHING_MODE=$(grep '^WORKFLOW_BRANCHING_MODE=' .claude/config/workflow-manife
 ### Step 1: Record Session ID
 
 1. Run: `bash .claude/hooks/get-session-id.sh` — capture the UUID output
-2. For each scope in `scopes/completed/`:
+2. For each scope in `scopes/completed/`
+   (if BATCH_SCOPE_IDS is set, only record on those specific scopes):
    - Append session UUID to `sessions.pushToMain` in frontmatter
 
 ### Step 2: Check Current Branch
@@ -65,14 +66,17 @@ bash .claude/hooks/scope-transition.sh --from completed --to main --scope NNN
 
 ### Step 5: Signal Completion (REQUIRED)
 
-**Always emit after a successful push/PR** — this is not optional:
+**Always emit when finished** — this is not optional. Emit success or failure so the dispatch resolves immediately:
 
 ```bash
-# With a scope:
+# On success — with a scope:
 bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"pr_main"}' --scope "{NNN}"
 
-# Without a scope:
+# On success — without a scope:
 bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"success","action":"pr_main"}'
+
+# On failure (push rejected, PR failed, merge conflicts, etc.):
+bash .claude/hooks/orbital-emit.sh AGENT_COMPLETED '{"outcome":"failure","action":"pr_main"}' --scope "{NNN}"
 ```
 
 ## Batch Support

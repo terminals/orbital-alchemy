@@ -10,10 +10,10 @@
     { "id": "dev", "label": "Dev", "order": 4, "group": "deploy", "color": "197 100% 63%", "hex": "#42c3ff", "hasDirectory": true, "gitBranch": "dev" }
   ],
   "edges": [
-    { "from": "backlog", "to": "implementing", "direction": "forward", "command": "/scope-implement {id}", "confirmLevel": "quick", "label": "Start Implementing", "description": "Opens a Claude session running /scope-implement.", "dispatchOnly": true },
-    { "from": "implementing", "to": "review", "direction": "forward", "command": "/scope-post-review {id}", "confirmLevel": "full", "label": "Run Review Gate", "description": "Launches formal review gate.", "dispatchOnly": true },
-    { "from": "review", "to": "completed", "direction": "forward", "command": "/git-commit", "confirmLevel": "full", "label": "Commit", "description": "Commits scope work to feature branch.", "dispatchOnly": true },
-    { "from": "completed", "to": "dev", "direction": "forward", "command": "/git-dev", "confirmLevel": "full", "label": "Merge to Dev", "description": "Merges feature branch into dev.", "dispatchOnly": true },
+    { "from": "backlog", "to": "implementing", "direction": "forward", "command": "/scope-implement {id}", "confirmLevel": "quick", "label": "Start Implementing", "description": "Opens a Claude session running /scope-implement.", "dispatchOnly": true, "autoRevert": true },
+    { "from": "implementing", "to": "review", "direction": "forward", "command": "/scope-post-review {id}", "confirmLevel": "full", "label": "Run Review Gate", "description": "Launches formal review gate.", "dispatchOnly": true, "autoRevert": true },
+    { "from": "review", "to": "completed", "direction": "forward", "command": "/git-commit", "confirmLevel": "full", "label": "Commit", "description": "Commits scope work to feature branch.", "dispatchOnly": true, "autoRevert": true },
+    { "from": "completed", "to": "dev", "direction": "forward", "command": "/git-dev", "confirmLevel": "full", "label": "Merge to Dev", "description": "Merges feature branch into dev.", "dispatchOnly": true, "autoRevert": true },
     { "from": "review", "to": "implementing", "direction": "backward", "command": null, "confirmLevel": "quick", "label": "Back to Implementing", "description": "Re-opens implementation to address review findings.", "dispatchOnly": false },
     { "from": "completed", "to": "implementing", "direction": "backward", "command": null, "confirmLevel": "quick", "label": "Back to Implementing", "description": "Re-opens implementation to fix issues.", "dispatchOnly": false },
     { "from": "implementing", "to": "backlog", "direction": "backward", "command": null, "confirmLevel": "quick", "label": "Back to Backlog", "description": "Returns scope to backlog.", "dispatchOnly": false, "humanOnly": true }

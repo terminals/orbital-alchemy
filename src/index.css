@@ -197,13 +197,28 @@
     0 8px 8px -4px rgba(var(--neon-cyan), 0.12),
     0 12px 50px -8px rgba(var(--neon-pink), 0.12);
 }
-[data-theme="neon-glass"] .card-glass:not(.scope-card):hover {
-  border-color: rgba(var(--neon-cyan), 0.3) !important;
+[data-theme="neon-glass"] .card-glass:not(.scope-card):not(.settings-panel):hover {
+  border-color: rgba(var(--neon-cyan), 0.2) !important;
+  box-shadow:
+    0 0 4px rgba(var(--neon-cyan), 0.2),
+    0 0 8px rgba(var(--neon-cyan), 0.1);
 }
 [data-theme="neon-glass"] .card-glass.scope-card:hover {
   border-top-color: rgba(var(--neon-cyan), 0.3);
   border-right-color: rgba(var(--neon-cyan), 0.3);
   border-bottom-color: rgba(var(--neon-cyan), 0.3);
+}
+/* Heavy glass — dialogs, modals, floating panels */
+[data-theme="neon-glass"] .card-glass-heavy {
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  background: transparent !important;
+  border: 1px solid rgba(var(--neon-cyan), 0.3) !important;
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 8px 8px -4px rgba(var(--neon-cyan), 0.12),
+    0 12px 50px -8px rgba(var(--neon-pink), 0.12);
 }
 
 /* ─── SETTINGS PANELS ─── */
@@ -249,6 +264,17 @@
     transparent 100%
   );
   box-shadow: 0 0 12px rgba(var(--neon-cyan), 0.4), 0 0 4px rgba(var(--neon-pink), 0.2);
+}
+
+/* Columns/lists: no blur at rest */
+[data-theme="neon-glass"] .card-glass.neon-border-blue {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+/* Column headers: heavy blur to anchor the top of each list */
+[data-theme="neon-glass"] .column-header {
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
 }
 
 /* ─── GRADIENT NEON BORDERS (the "neon line" effect) ─── */
@@ -368,15 +394,10 @@
 [data-theme="neon-glass"] .scope-card:hover {
   transform: translateY(-1px);
 }
-/* Scope cards skip per-card blur — column glass provides the backdrop.
-   64+ nested blur layers overwhelm the compositor and cause scroll lag. */
+/* Scope cards get their own light blur — columns have none at rest. */
 [data-theme="neon-glass"] .scope-card.card-glass {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-[data-theme="neon-glass"] .scope-card.card-glass:hover {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  backdrop-filter: blur(4px) saturate(1.2);
+  -webkit-backdrop-filter: blur(4px) saturate(1.2);
 }
 
 /* Inner panels inside dialogs skip their own blur — the dialog's card-glass
@@ -553,36 +574,69 @@
 
 /* ─── FILTER POPOVER (both themes) ─── */
 .filter-popover-glass {
-  backdrop-filter: blur(18px) saturate(1.4);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  background: rgba(12, 12, 26, 0.62) !important;
-  border: 1px solid rgba(255, 255, 255, 0.10) !important;
-  box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
-    0 8px 32px rgba(0, 0, 0, 0.5);
-}
-[data-theme="neon-glass"] .filter-popover-glass {
-  backdrop-filter: blur(22px) saturate(1.5);
-  -webkit-backdrop-filter: blur(22px) saturate(1.5);
-  background: rgba(8, 8, 24, 0.58) !important;
-  border: 1px solid rgba(var(--neon-cyan), 0.18) !important;
+  backdrop-filter: blur(4px) saturate(1.2);
+  -webkit-backdrop-filter: blur(4px) saturate(1.2);
+  background: transparent !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
   box-shadow:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
-    0 8px 32px rgba(0, 0, 0, 0.4),
-    0 0 24px rgba(var(--neon-cyan), 0.10);
+    0 8px 32px rgba(0, 0, 0, 0.1);
+}
+[data-theme="neon-glass"] .filter-popover-glass {
+  backdrop-filter: blur(4px) saturate(1.2);
+  -webkit-backdrop-filter: blur(4px) saturate(1.2);
+  background: transparent !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+    0 8px 32px rgba(0, 0, 0, 0.1);
 }
 
 /* ─── DIALOG ─── */
 [data-theme="neon-glass"] [role="dialog"] {
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
   box-shadow:
-    0 0 60px rgba(var(--neon-cyan), 0.2),
-    0 0 120px rgba(var(--neon-pink), 0.1),
-    0 25px 60px rgba(0, 0, 0, 0.6);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 8px 8px -4px rgba(var(--neon-cyan), 0.12),
+    0 12px 50px -8px rgba(var(--neon-pink), 0.12);
+}
+[data-theme="neon-glass"] [role="dialog"]:hover {
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 8px 8px -4px rgba(var(--neon-cyan), 0.12),
+    0 12px 50px -8px rgba(var(--neon-pink), 0.12);
 }
 [data-theme="neon-glass"] .dialog-overlay-glass {
-  backdrop-filter: blur(12px) saturate(0.7);
-  -webkit-backdrop-filter: blur(12px) saturate(0.7);
-  background: rgba(5, 5, 16, 0.7) !important;
+  backdrop-filter: blur(4px) saturate(1.2);
+  -webkit-backdrop-filter: blur(4px) saturate(1.2);
+  background: rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ─── PROJECT TAB BAR ─── */
+[data-theme="neon-glass"] .project-tab-bar {
+  backdrop-filter: blur(4px) saturate(1.2);
+  -webkit-backdrop-filter: blur(4px) saturate(1.2);
+  background: transparent !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, backdrop-filter 0.3s ease;
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+    0 8px 32px rgba(0, 0, 0, 0.1);
+}
+[data-theme="neon-glass"] .project-tab-bar:hover {
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border-color: rgba(var(--neon-cyan), 0.3) !important;
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 8px 8px -4px rgba(var(--neon-cyan), 0.12),
+    0 12px 50px -8px rgba(var(--neon-pink), 0.12);
 }
 
 /* ─── TABS ─── */

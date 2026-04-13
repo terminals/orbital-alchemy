@@ -348,7 +348,7 @@ export interface DispatchResolvedPayload {
 export interface ServerToClientEvents {
   'scope:updated': (scope: Scope) => void;
   'scope:created': (scope: Scope) => void;
-  'scope:deleted': (scopeId: number) => void;
+  'scope:deleted': (payload: { id: number; project_id?: string }) => void;
   'event:new': (event: OrbitalEvent) => void;
   'dispatch:resolved': (payload: DispatchResolvedPayload) => void;
   'gate:updated': (gate: QualityGate) => void;

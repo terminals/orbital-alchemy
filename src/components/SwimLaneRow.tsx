@@ -1,6 +1,6 @@
 import { ChevronRight } from 'lucide-react';
 import type { SwimLane } from '@/lib/swimlane';
-import type { Scope, ScopeStatus, CardDisplayConfig, BoardColumn } from '@/types';
+import type { Scope, ScopeStatus, CardDisplayConfig, BoardColumn, Project } from '@/types';
 import { SwimCell } from './SwimCell';
 import { cn } from '@/lib/utils';
 
@@ -15,6 +15,7 @@ interface SwimLaneRowProps {
   dimmedIds?: Set<string>;
   isDragActive: boolean;
   validTargets: Set<ScopeStatus>;
+  projectLookup?: Map<string, Project>;
 }
 
 export function SwimLaneRow({
@@ -28,6 +29,7 @@ export function SwimLaneRow({
   dimmedIds,
   isDragActive,
   validTargets,
+  projectLookup,
 }: SwimLaneRowProps) {
   if (isLaneCollapsed) {
     return (
@@ -35,9 +37,9 @@ export function SwimLaneRow({
         {/* Lane label cell — collapsed */}
         <button
           onClick={onToggleLane}
-          className="swim-lane-header flex items-center gap-2 rounded-l px-3 py-1.5 text-left hover:bg-white/[0.04] transition-colors cursor-pointer sticky left-0 z-10 bg-background"
+          className="swim-lane-header flex items-center gap-2 rounded-l px-3 py-1.5 text-left hover:bg-white/[0.04] transition-colors cursor-pointer sticky left-0 z-10 bg-background/60 backdrop-blur-sm"
         >
-          <div className={cn('h-full w-0.5 rounded-full shrink-0 self-stretch', lane.color)} />
+          <div className={cn('h-full w-0.5 rounded-full shrink-0 self-stretch', !lane.colorHsl && lane.color)} style={lane.colorHsl ? { backgroundColor: `hsl(${lane.colorHsl})` } : undefined} />
           <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
           <span className="text-xxs font-medium text-muted-foreground truncate capitalize">
             {lane.label}
@@ -59,9 +61,9 @@ export function SwimLaneRow({
       {/* Lane label cell */}
       <button
         onClick={onToggleLane}
-        className="swim-lane-header flex items-start gap-2 rounded-l px-3 py-2 text-left hover:bg-white/[0.04] transition-colors cursor-pointer sticky left-0 z-10 bg-background"
+        className="swim-lane-header flex items-start gap-2 rounded-l px-3 py-2 text-left hover:bg-white/[0.04] transition-colors cursor-pointer sticky left-0 z-10 bg-background/60 backdrop-blur-sm"
       >
-        <div className={cn('w-0.5 rounded-full shrink-0 min-h-[32px] self-stretch', lane.color)} />
+        <div className={cn('w-0.5 rounded-full shrink-0 min-h-[32px] self-stretch', !lane.colorHsl && lane.color)} style={lane.colorHsl ? { backgroundColor: `hsl(${lane.colorHsl})` } : undefined} />
         <div className="flex flex-col gap-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0 rotate-90 transition-transform" />
@@ -87,6 +89,7 @@ export function SwimLaneRow({
           isDragActive={isDragActive}
           isValidDrop={validTargets.has(col.id)}
           isCollapsed={collapsedColumns.has(col.id)}
+          projectLookup={projectLookup}
         />
       ))}
     </>

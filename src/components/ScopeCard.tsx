@@ -182,7 +182,7 @@ export function ScopeCard({ scope, onClick, isDragOverlay, cardDisplay, dimmed, 
           : '',
         isDispatched && 'scope-card-dispatched',
         isAbandoned && 'scope-card-abandoned',
-        isDragging && 'opacity-30',
+        isDragging && 'opacity-0 pointer-events-none',
         dimmed && !isDragging && 'opacity-30 cursor-default',
       )}
       onClick={() => {

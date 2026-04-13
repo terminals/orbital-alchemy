@@ -60,12 +60,13 @@ export function useScopes() {
       setScopes((prev) => [...prev, scope].sort((a, b) => a.id - b.id));
     }
 
-    function onScopeDeleted(scopeId: number) {
+    function onScopeDeleted(payload: { id: number; project_id?: string }) {
       if (!activeProjectId) {
         coalescedFetchScopes();
         return;
       }
-      setScopes((prev) => prev.filter((s) => s.id !== scopeId));
+      if (payload.project_id && payload.project_id !== activeProjectId) return;
+      setScopes((prev) => prev.filter((s) => s.id !== payload.id));
     }
 
     function onProjectUpdated(payload: { id: string; enabled?: boolean }) {

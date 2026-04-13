@@ -16,7 +16,7 @@ const viewModeStorage = {
 const groupFieldStorage = {
   serialize: (v: SwimGroupField) => v,
   deserialize: (raw: string): SwimGroupField | undefined =>
-    raw === 'priority' || raw === 'category' || raw === 'tags' || raw === 'effort' || raw === 'dependencies'
+    raw === 'priority' || raw === 'category' || raw === 'tags' || raw === 'effort' || raw === 'dependencies' || raw === 'project'
       ? raw : undefined,
 };
 

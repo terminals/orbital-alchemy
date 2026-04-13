@@ -5,8 +5,10 @@ import type { Emitter } from '../project-emitter.js';
 import type { ScopeService } from '../services/scope-service.js';
 import type { ReadinessService } from '../services/readiness-service.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
-import { launchInTerminal, escapeForAnsiC, buildSessionName, snapshotSessionPids, discoverNewSession, renameSession } from '../utils/terminal-launcher.js';
+import { launchInTerminal, escapeForAnsiC, shellQuote, buildSessionName, snapshotSessionPids, discoverNewSession, renameSession } from '../utils/terminal-launcher.js';
 import { resolveDispatchEvent, linkPidToDispatch } from '../utils/dispatch-utils.js';
+import { buildClaudeFlags, buildEnvVarPrefix } from '../utils/flag-builder.js';
+import type { OrbitalConfig } from '../config.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('dispatch');
@@ -19,13 +21,14 @@ interface ScopeRouteDeps {
   projectRoot: string;
   projectName: string;
   engine: WorkflowEngine;
+  config: OrbitalConfig;
 }
 
 function isValidSlug(slug: string): boolean {
   return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(slug) && slug.length <= 80;
 }
 
-export function createScopeRoutes({ db, io, scopeService, readinessService, projectRoot, projectName, engine }: ScopeRouteDeps): Router {
+export function createScopeRoutes({ db, io, scopeService, readinessService, projectRoot, projectName, engine, config }: ScopeRouteDeps): Router {
   const router = Router();
 
   // ─── Scope CRUD ──────────────────────────────────────────
@@ -123,7 +126,10 @@ export function createScopeRoutes({ db, io, scopeService, readinessService, proj
   router.post('/ideas/:slug/promote', async (req, res) => {
     const { slug } = req.params;
     if (!isValidSlug(slug)) { res.status(400).json({ error: 'Invalid slug' }); return; }
-    const result = scopeService.promoteIdea(slug);
+    const entryPoint = engine.getEntryPoint();
+    const targets = engine.getValidTargets(entryPoint.id);
+    const promoteTarget = targets[0] ?? 'planning';
+    const result = scopeService.promoteIdea(slug, promoteTarget);
     if (!result) {
       res.status(404).json({ error: 'Idea not found' });
       return;
@@ -132,9 +138,6 @@ export function createScopeRoutes({ db, io, scopeService, readinessService, proj
     const scopeId = result.id;
 
     // Read command from workflow edge config (user-overridable)
-    const entryPoint = engine.getEntryPoint();
-    const targets = engine.getValidTargets(entryPoint.id);
-    const promoteTarget = targets[0] ?? 'planning';
     const edge = engine.findEdge(entryPoint.id, promoteTarget);
     const edgeCommand = edge ? engine.buildCommand(edge, scopeId) : null;
     const command = edgeCommand ?? `/scope-create ${String(scopeId).padStart(3, '0')}`;
@@ -158,7 +161,9 @@ export function createScopeRoutes({ db, io, scopeService, readinessService, proj
     });
 
     const escaped = escapeForAnsiC(command);
-    const fullCmd = `cd '${projectRoot}' && claude --dangerously-skip-permissions $'${escaped}'`;
+    const flagsStr = buildClaudeFlags(config.claude.dispatchFlags);
+    const envPrefix = buildEnvVarPrefix(config.dispatch.envVars);
+    const fullCmd = `cd '${shellQuote(projectRoot)}' && ${envPrefix}ORBITAL_DISPATCH_ID='${shellQuote(eventId)}' claude ${flagsStr} $'${escaped}'`;
 
     const promoteSessionName = buildSessionName({ scopeId, title: result.title, command });
     const promoteBeforePids = snapshotSessionPids(projectRoot);

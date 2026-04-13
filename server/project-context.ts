@@ -122,7 +122,7 @@ export async function createProjectContext(
   const gateService = new GateService(db, emitter);
   const deployService = new DeployService(db, emitter);
   const sprintService = new SprintService(db, emitter, scopeService);
-  const sprintOrchestrator = new SprintOrchestrator(db, emitter, sprintService, scopeService, workflowEngine, config.projectRoot);
+  const sprintOrchestrator = new SprintOrchestrator(db, emitter, sprintService, scopeService, workflowEngine, config.projectRoot, config);
   const batchOrchestrator = new BatchOrchestrator(db, emitter, sprintService, scopeService, workflowEngine, config.projectRoot, config);
   const readinessService = new ReadinessService(scopeService, gateService, workflowEngine, config.projectRoot);
   const workflowService = new WorkflowService(config.configDir, workflowEngine, config.scopesDir, getDefaultConfigPath());
@@ -190,7 +190,7 @@ export async function createProjectContext(
 
   // Wire status change callbacks
   scopeService.onStatusChange((scopeId, newStatus) => {
-    if (newStatus === 'dev') sprintOrchestrator.onScopeReachedDev(scopeId);
+    if (workflowEngine.isTerminalStatus(newStatus)) sprintOrchestrator.onScopeReachedDev(scopeId);
     batchOrchestrator.onScopeStatusChanged(scopeId, newStatus);
   });
   scopeService.onStatusChange((scopeId, newStatus) => {

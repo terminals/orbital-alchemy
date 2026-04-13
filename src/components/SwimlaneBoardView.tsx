@@ -1,6 +1,6 @@
 import { Info } from 'lucide-react';
 import type { SwimLane } from '@/lib/swimlane';
-import type { Scope, ScopeStatus, CardDisplayConfig, BoardColumn, Sprint } from '@/types';
+import type { Scope, ScopeStatus, CardDisplayConfig, BoardColumn, Sprint, Project } from '@/types';
 import { SwimLaneRow } from './SwimLaneRow';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/hooks/useTheme';
@@ -18,6 +18,7 @@ interface SwimlaneBoardViewProps {
   isDragActive: boolean;
   validTargets: Set<ScopeStatus>;
   sprints: Sprint[];
+  projectLookup?: Map<string, Project>;
 }
 
 export function SwimlaneBoardView({
@@ -33,12 +34,13 @@ export function SwimlaneBoardView({
   isDragActive,
   validTargets,
   sprints,
+  projectLookup,
 }: SwimlaneBoardViewProps) {
   const { neonGlass } = useTheme();
 
   // Filter out collapsed columns for grid sizing
   const visibleColumns = columns.filter((c) => !collapsedColumns.has(c.id));
-  const gridTemplateColumns = `140px ${visibleColumns.map(() => '200px').join(' ')}`;
+  const gridTemplateColumns = `140px ${visibleColumns.map(() => '288px').join(' ')}`;
 
   const hasActiveSprints = sprints.some((s) =>
     s.group_type === 'sprint' || (s.group_type === 'batch' && s.status !== 'completed')
@@ -90,6 +92,7 @@ export function SwimlaneBoardView({
             dimmedIds={dimmedIds}
             isDragActive={isDragActive}
             validTargets={validTargets}
+            projectLookup={projectLookup}
           />
         ))}
 

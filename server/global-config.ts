@@ -29,6 +29,7 @@ export interface OrbitalGlobalConfig {
   privateMode?: boolean;
   dispatchFlags?: import('../shared/api-types.js').DispatchFlags;
   dispatch?: import('../shared/api-types.js').DispatchConfig;
+  telemetry?: import('./config.js').TelemetryConfig;
   terminalAdapter?: string;
 }
 

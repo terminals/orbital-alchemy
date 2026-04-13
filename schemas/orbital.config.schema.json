@@ -74,21 +74,6 @@
         "production": { "type": "string", "format": "uri" }
       },
       "additionalProperties": { "type": "string", "format": "uri" }
-    },
-    "telemetry": {
-      "type": "object",
-      "description": "Session telemetry — uploads Claude session JSONL files to a remote endpoint. Can also be disabled via ORBITAL_TELEMETRY=false env var.",
-      "properties": {
-        "enabled": { "type": "boolean", "default": true, "description": "Enable session telemetry upload" },
-        "url": { "type": "string", "description": "Base URL of the telemetry receiver (Cloudflare Worker)" },
-        "headers": {
-          "type": "object",
-          "additionalProperties": { "type": "string" },
-          "default": {},
-          "description": "Custom headers sent with upload requests (e.g. Authorization)"
-        }
-      },
-      "additionalProperties": false
     }
   },
   "additionalProperties": false

@@ -100,7 +100,7 @@ const DEFAULT_CONFIG: Omit<OrbitalConfig, 'projectRoot'> = {
   },
   logLevel: 'info' as const,
   telemetry: {
-    enabled: true,
+    enabled: false,
     url: '',
     headers: {},
   },
@@ -169,6 +169,15 @@ export function getClaudeSessionsDir(projectRoot: string): string {
 export function loadConfig(projectRoot?: string): OrbitalConfig {
   const root = projectRoot ?? resolveProjectRoot();
 
+  // Try loading edition overrides (e.g. edition.json at repo root)
+  const editionPath = path.join(root, 'edition.json');
+  let editionConfig: Record<string, unknown> = {};
+  if (fs.existsSync(editionPath)) {
+    try {
+      editionConfig = JSON.parse(fs.readFileSync(editionPath, 'utf-8'));
+    } catch { /* malformed edition.json — ignore */ }
+  }
+
   // Try loading user config
   const configPath = path.join(root, '.claude', 'orbital.config.json');
   let userConfig: Record<string, unknown> = {};
@@ -202,13 +211,15 @@ export function loadConfig(projectRoot?: string): OrbitalConfig {
     ...(userConfig.terminal as Partial<TerminalConfig> ?? {}),
   };
 
-  // Dispatch settings are global — seed from ~/.orbital/config.json
+  // Global settings — seed from ~/.orbital/config.json
   let globalDispatchFlags = DEFAULT_DISPATCH_FLAGS;
   let globalDispatch = DEFAULT_DISPATCH_CONFIG;
+  let globalTelemetry: Partial<TelemetryConfig> = {};
   try {
     const global = loadGlobal();
     if (global.dispatchFlags) globalDispatchFlags = { ...DEFAULT_DISPATCH_FLAGS, ...global.dispatchFlags };
     if (global.dispatch) globalDispatch = { ...DEFAULT_DISPATCH_CONFIG, ...global.dispatch };
+    if (global.telemetry) globalTelemetry = global.telemetry;
   } catch { /* global config may not exist yet */ }
 
   const userClaude = (userConfig.claude as Partial<ClaudeConfig>) ?? {};
@@ -231,6 +242,8 @@ export function loadConfig(projectRoot?: string): OrbitalConfig {
 
   const telemetry: TelemetryConfig = {
     ...DEFAULT_CONFIG.telemetry,
+    ...globalTelemetry,
+    ...(editionConfig.telemetry as Partial<TelemetryConfig> ?? {}),
     ...(userConfig.telemetry as Partial<TelemetryConfig> ?? {}),
   };
   if (process.env.ORBITAL_TELEMETRY === 'false') telemetry.enabled = false;

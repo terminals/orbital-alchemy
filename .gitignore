@@ -5,6 +5,8 @@ dist/
 # Orbital Command runtime (symlinks, config, runtime data)
 .claude/
 scopes/
+edition.json
+server/services/telemetry-service.ts
 
 .worktrees/
 backup/

@@ -20,7 +20,6 @@ import { createWorkflowRoutes } from './routes/workflow-routes.js';
 import { createConfigRoutes } from './routes/config-routes.js';
 import { createGitRoutes } from './routes/git-routes.js';
 import { createManifestRoutes } from './routes/manifest-routes.js';
-import { createTelemetryRoutes } from './services/telemetry-service.js';
 import { TEMPLATES_DIR } from './init.js';
 import { getPackageVersion } from './utils/package-info.js';
 import { resolveActiveDispatchesForScope } from './utils/dispatch-utils.js';
@@ -295,7 +294,7 @@ export class ProjectManager {
     const { db, emitter, config, scopeService, eventService, gateService, deployService,
             sprintService, sprintOrchestrator, batchOrchestrator,
             readinessService, workflowService, workflowEngine,
-            gitService, githubService, telemetryService } = ctx;
+            gitService, githubService } = ctx;
 
     // Scope status inference function (same logic as index.ts)
     function inferScopeStatus(
@@ -362,7 +361,7 @@ export class ProjectManager {
       packageVersion: getPackageVersion(),
       io: emitter,
     }));
-    router.use(createTelemetryRoutes({ telemetryService }));
+    if (ctx.telemetryRouter) router.use(ctx.telemetryRouter);
 
     return router;
   }

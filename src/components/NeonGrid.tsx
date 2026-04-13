@@ -26,7 +26,7 @@ const LINE_MAX_DIST2 = LINE_MAX_DIST * LINE_MAX_DIST;
 
 // ── Gravity well config ──
 const GRAVITY_MIN_RADIUS = 80;
-const GRAVITY_MAX_PULL = 24;
+
 const GRAVITY_FULL_SCREEN_TIME = 10000; // ms to reach full screen
 const GRAVITY_SNAP_DURATION = 800; // longer for rubber band + shockwave
 
@@ -35,8 +35,7 @@ const SHOCK_SPEED = 500; // px per second
 const SHOCK_WIDTH = 50; // thin ring
 const SHOCK_PUSH = 22; // hard displacement
 const SHOCK_DURATION = 4000; // total effect time
-const SHOCK_VACUUM_DELAY = 150; // ms before pull-back
-const SHOCK_VACUUM_STRENGTH = 8;
+
 
 // ── Vortex config ──
 const VORTEX_MIN_RADIUS = 100;
@@ -149,7 +148,6 @@ export function NeonGrid() {
         }
       }
       const gravRadius = GRAVITY_MIN_RADIUS + gravStrength * (screenDiag - GRAVITY_MIN_RADIUS);
-      const gravR2 = gravRadius * gravRadius;
       const isReleased = grav?.releaseTime !== 0;
 
       // Vortex state (reuses gravityRef)
@@ -464,7 +462,10 @@ export function NeonGrid() {
 
     function onMouseDown(e: MouseEvent) {
       const target = e.target as HTMLElement;
-      if (target.closest('button, a, input, select, textarea, [role="button"], [data-clickable]')) return;
+      // Skip interactive elements — anything clickable or selectable
+      const isInteractive = target.closest('button, a, input, select, textarea, [role="button"], [role="option"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="radio"], [role="switch"], [role="link"], [role="search"], [data-clickable], [onclick], label');
+      const hasCursorPointer = window.getComputedStyle(target).cursor === 'pointer';
+      if (isInteractive || hasCursorPointer) return;
 
       const now = performance.now();
       pendingClickRef.current = { x: e.clientX, y: e.clientY, time: now };

@@ -26,7 +26,6 @@ import { startScopeWatcher } from './watchers/scope-watcher.js';
 import { startEventWatcher } from './watchers/event-watcher.js';
 import { resolveStaleDispatches, resolveActiveDispatchesForScope, resolveDispatchesByPid, resolveDispatchesByDispatchId, linkPidToDispatch, tryAutoRevertAndClear } from './utils/dispatch-utils.js';
 import { syncClaudeSessionsToDB } from './services/claude-session-service.js';
-import { TelemetryService } from './services/telemetry-service.js';
 import { ensureDynamicProfiles } from './utils/terminal-launcher.js';
 import { createLogger } from './utils/logger.js';
 
@@ -35,6 +34,11 @@ const log = createLogger('project-context');
 // ─── Types ──────────────────────────────────────────────────
 
 export type ProjectStatus = 'active' | 'error' | 'offline';
+
+interface TelemetryEnabled {
+  enabled: boolean;
+  uploadChangedSessions(): Promise<unknown>;
+}
 
 export interface ProjectContext {
   /** Project slug ID (derived from directory name) */
@@ -61,7 +65,8 @@ export interface ProjectContext {
   workflowService: WorkflowService;
   gitService: GitService;
   githubService: GitHubService;
-  telemetryService: TelemetryService;
+  telemetryService: TelemetryEnabled | null;
+  telemetryRouter: import('express').Router | null;
 
   // Watchers
   scopeWatcher: FSWatcher;
@@ -132,7 +137,17 @@ export async function createProjectContext(
   workflowEngine.reload(workflowService.getActive());
   const gitService = new GitService(config.projectRoot, scopeCache);
   const githubService = new GitHubService(config.projectRoot);
-  const telemetryService = new TelemetryService(db, config.telemetry, config.projectName, config.projectRoot);
+
+  let telemetryService: TelemetryEnabled | null = null;
+  let telemetryRouter: import('express').Router | null = null;
+  const telemetryMod = './services/telemetry-service.js';
+  try {
+    const mod = await import(telemetryMod);
+    telemetryService = new mod.TelemetryService(db, config.telemetry, config.projectName, config.projectRoot);
+    if (telemetryService?.enabled) {
+      telemetryRouter = mod.createTelemetryRoutes({ telemetryService });
+    }
+  } catch { /* telemetry service not installed */ }
 
   // Wire active-group guard
   scopeService.setActiveGroupCheck((scopeId) => sprintService.getActiveGroupForScope(scopeId));
@@ -227,7 +242,7 @@ export async function createProjectContext(
     if (count > 0) log.info('Synced sessions', { id: projectId, count });
     const purged = db.prepare("DELETE FROM sessions WHERE action IS NULL AND id LIKE 'claude-%'").run();
     if (purged.changes > 0) log.info('Purged legacy session rows', { count: purged.changes });
-    if (telemetryService.enabled) {
+    if (telemetryService?.enabled) {
       telemetryService.uploadChangedSessions().catch(() => {});
     }
   }).catch(err => log.error('Session sync failed', { error: err.message }));
@@ -251,7 +266,7 @@ export async function createProjectContext(
   intervals.push(setInterval(async () => {
     const count = await syncClaudeSessionsToDB(db, scopeService, config.projectRoot);
     if (count > 0) emitter.emit('session:updated', { type: 'resync', count });
-    if (telemetryService.enabled) {
+    if (telemetryService?.enabled) {
       telemetryService.uploadChangedSessions().catch(() => {});
     }
   }, 5 * 60_000));
@@ -289,6 +304,7 @@ export async function createProjectContext(
     gitService,
     githubService,
     telemetryService,
+    telemetryRouter,
     scopeWatcher,
     eventWatcher,
     intervals,

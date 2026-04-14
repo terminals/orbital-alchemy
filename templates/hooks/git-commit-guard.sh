@@ -18,15 +18,16 @@ PUSH_FLAG="$PROJECT_DIR/.claude/.block-push-active"
 IMPL_FLAG="$PROJECT_DIR/.claude/.implementing-session"
 
 # /git-commit → block pushes during commit skill
+# Store parent PID so block-push.sh can detect stale flags from dead sessions
 if [ "$SKILL" = "git-commit" ]; then
-  touch "$PUSH_FLAG"
+  echo "$PPID" > "$PUSH_FLAG"
 else
   rm -f "$PUSH_FLAG"
 fi
 
 # /scope-implement → block commits during implementing
 if [ "$SKILL" = "scope-implement" ]; then
-  touch "$IMPL_FLAG"
+  echo "$PPID" > "$IMPL_FLAG"
 else
   rm -f "$IMPL_FLAG"
 fi

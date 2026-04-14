@@ -37,8 +37,22 @@ _pipeline_after() {
   echo "$result"
 }
 
+# Check if a flag file's session is still alive; remove stale flags
+_flag_alive() {
+  local flag="$1"
+  [ -f "$flag" ] || return 1
+  local pid
+  pid=$(cat "$flag" 2>/dev/null)
+  # Empty flag (legacy touch-style) or dead process → stale
+  if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+    rm -f "$flag"
+    return 1
+  fi
+  return 0
+}
+
 # Block git push during /git-commit
-if [ -f "$PUSH_FLAG" ]; then
+if _flag_alive "$PUSH_FLAG"; then
   if echo "$COMMAND" | grep -qE '(^|[;&|]\s*)git\s+push'; then
     "$HOOK_DIR/orbital-emit.sh" VIOLATION '{"rule":"block-push","outcome":"blocked"}' 2>/dev/null || true
     REMAINING=$(_pipeline_after "completed")
@@ -51,7 +65,7 @@ if [ -f "$PUSH_FLAG" ]; then
 fi
 
 # Block git commit/add during /scope-implement
-if [ -f "$IMPL_FLAG" ]; then
+if _flag_alive "$IMPL_FLAG"; then
   if echo "$COMMAND" | grep -qE '(^|[;&|]\s*)git\s+(commit|add)'; then
     "$HOOK_DIR/orbital-emit.sh" VIOLATION '{"rule":"block-commit-implementing","outcome":"blocked"}' 2>/dev/null || true
     REMAINING=$(_pipeline_after "implementing")

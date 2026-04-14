@@ -199,7 +199,7 @@ export function Landing() {
                 <ArrowRight size={16} className="ml-1 transition-transform group-hover:translate-x-1" />
               </a>
               <div className="landing-install">
-                <code>npm install orbital-command</code>
+                <code>npm install -g orbital-command</code>
               </div>
             </div>
           </FadeUp>

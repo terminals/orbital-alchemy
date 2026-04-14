@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import type { WorkflowEngine } from '../../shared/workflow-engine';
 import { useProjects } from './useProjectContext';
+import { AddProjectModal } from '@/components/AddProjectModal';
 
 // ─── Context ──────────────────────────────────────────────
 
@@ -55,16 +56,11 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
     // Still loading projects — render nothing to avoid error/spinner flash
     if (loading) return null;
 
-    // Loading complete with no projects — show error
+    // Loading complete with no projects — show blocking Add Project modal
     if (projects.length === 0) {
       return (
         <div className="flex h-screen items-center justify-center bg-background">
-          <div className="flex flex-col items-center gap-3 max-w-sm text-center">
-            <span className="text-sm text-destructive">No Projects</span>
-            <span className="text-xs text-muted-foreground">
-              No projects registered. Run <code>orbital register</code> to add a project.
-            </span>
-          </div>
+          <AddProjectModal open={true} onClose={() => {}} blocking={true} />
         </div>
       );
     }

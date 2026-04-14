@@ -47,10 +47,10 @@ async function runHubFlow() {
   const hubRegistry = loadRegistry();
   const projectNames = (hubRegistry.projects || []).map(p => p.name);
 
-  // Not initialized and no registered projects — just run setup wizard
+  // No registered projects — launch dashboard directly.
+  // The frontend Add Project modal handles project setup.
   if (!isInitialized && projectNames.length === 0) {
-    await wiz.runProjectSetup(hubRoot, hubVersion, []);
-    stampTemplateVersion(hubRoot);
+    cmdLaunchOrDev(false);
     return;
   }
 

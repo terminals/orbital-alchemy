@@ -34,7 +34,7 @@ Orbital Command is a real-time project management dashboard for Claude Code proj
 ## Installation
 
 ```bash
-npm install orbital-command
+npm install -g orbital-command
 cd my-project
 orbital
 ```

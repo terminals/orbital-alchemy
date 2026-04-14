@@ -1,7 +1,13 @@
 import { Router } from 'express';
+import fs from 'fs';
+import path from 'path';
+import { execFile } from 'child_process';
 import type { SyncService } from '../services/sync-service.js';
 import type { ProjectManager } from '../project-manager.js';
 import { isValidRelativePath } from '../utils/route-helpers.js';
+import { runInit } from '../init.js';
+import { loadGlobalConfig } from '../global-config.js';
+import { getPackageVersion } from '../utils/package-info.js';
 
 interface SyncRouteDeps {
   syncService: SyncService;
@@ -171,5 +177,204 @@ export function createSyncRoutes({ syncService, projectManager }: SyncRouteDeps)
     res.json(updated);
   });
 
+  // ─── Project Creation (Frontend Setup) ───────────────────
+
+  /** POST /projects/browse — open native folder picker (macOS) */
+  router.post('/projects/browse', (_req, res) => {
+    if (process.platform !== 'darwin') {
+      return res.json({ error: 'not_supported' });
+    }
+
+    execFile(
+      'osascript',
+      ['-e', 'POSIX path of (choose folder with prompt "Select your project folder")'],
+      { timeout: 60_000 },
+      (err, stdout) => {
+        if (err) {
+          // User pressed Cancel — osascript exits with code 1
+          if (err.code === 1) {
+            return res.json({ cancelled: true });
+          }
+          return res.json({ error: err.message });
+        }
+        const selectedPath = stdout.trim();
+        if (!selectedPath) return res.json({ cancelled: true });
+        res.json({ path: selectedPath });
+      },
+    );
+  });
+
+  /** POST /projects/check-path — validate a path and detect git status */
+  router.post('/projects/check-path', (req, res) => {
+    const { path: rawPath } = req.body as { path: string };
+    if (!rawPath || !rawPath.trim()) {
+      return res.json({ valid: false, error: 'Path is required' });
+    }
+
+    const absPath = path.resolve(rawPath.trim());
+
+    if (!fs.existsSync(absPath)) {
+      return res.json({ valid: false, absPath, error: 'Directory does not exist' });
+    }
+
+    try {
+      const stat = fs.statSync(absPath);
+      if (!stat.isDirectory()) {
+        return res.json({ valid: false, absPath, error: 'Path must be a directory' });
+      }
+    } catch {
+      return res.json({ valid: false, absPath, error: 'Cannot access path' });
+    }
+
+    const hasGit = fs.existsSync(path.join(absPath, '.git'));
+    const suggestedName = path.basename(absPath)
+      .replace(/[-_]/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+
+    // Check if already registered
+    const config = loadGlobalConfig();
+    const alreadyRegistered = config.projects.some(p => p.path === absPath);
+
+    res.json({
+      valid: true,
+      absPath,
+      hasGit,
+      suggestedName,
+      alreadyRegistered,
+    });
+  });
+
+  /** POST /projects/create — full project initialization (init + register + seed) */
+  router.post('/projects/create', async (req, res) => {
+    const { path: rawPath, name, color, preset, initGit } = req.body as {
+      path: string;
+      name: string;
+      color: string;
+      preset?: string;
+      initGit?: boolean;
+    };
+
+    if (!rawPath || !name || !color) {
+      return res.status(400).json({ error: 'path, name, and color are required' });
+    }
+
+    const absPath = path.resolve(rawPath.trim());
+
+    // Validate directory exists
+    if (!fs.existsSync(absPath) || !fs.statSync(absPath).isDirectory()) {
+      return res.status(400).json({ error: 'Path must be an existing directory' });
+    }
+
+    // Check if already registered
+    const config = loadGlobalConfig();
+    if (config.projects.some(p => p.path === absPath)) {
+      return res.status(409).json({ error: 'A project is already registered at this path' });
+    }
+
+    try {
+      // 1. Optional git init
+      if (initGit && !fs.existsSync(path.join(absPath, '.git'))) {
+        await new Promise<void>((resolve, reject) => {
+          execFile('git', ['init'], { cwd: absPath, timeout: 10_000 }, (err) => {
+            if (err) reject(new Error(`git init failed: ${err.message}`));
+            else resolve();
+          });
+        });
+      }
+
+      // 2. Run full project init (templates, hooks, skills, agents, config, etc.)
+      const selectedPreset = preset || 'default';
+      runInit(absPath, {
+        quiet: true,
+        preset: selectedPreset,
+        projectName: name,
+      });
+
+      // 3. Stamp template version
+      const pkgVersion = getPackageVersion();
+      const configPath = path.join(absPath, '.claude', 'orbital.config.json');
+      if (fs.existsSync(configPath)) {
+        try {
+          const projConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+          projConfig.templateVersion = pkgVersion;
+          const tmp = configPath + `.tmp.${process.pid}`;
+          fs.writeFileSync(tmp, JSON.stringify(projConfig, null, 2) + '\n', 'utf8');
+          fs.renameSync(tmp, configPath);
+        } catch { /* ignore malformed config */ }
+      }
+
+      // 4. Register + initialize context + emit socket event
+      const summary = await projectManager.addProject(absPath, { name, color });
+
+      // 5. Seed welcome scope card
+      seedWelcomeCard(absPath, selectedPreset);
+
+      res.status(201).json(summary);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   return router;
+}
+
+// ─── Helpers ──────────────────────────────────────────────
+
+function seedWelcomeCard(projectRoot: string, preset: string): void {
+  // Determine the planning directory from the preset
+  const presetsDir = path.join(path.dirname(path.dirname(new URL(import.meta.url).pathname)), 'templates', 'presets');
+  let planningDir = 'planning'; // default fallback
+
+  try {
+    const presetPath = path.join(presetsDir, `${preset}.json`);
+    if (fs.existsSync(presetPath)) {
+      const workflow = JSON.parse(fs.readFileSync(presetPath, 'utf8'));
+      // Find the first list that has a directory and isn't an entry point
+      const entryId = workflow.entryPoint;
+      const entryList = workflow.lists?.find((l: { id: string }) => l.id === entryId);
+      // Use the first forward target of the entry point, or the second list
+      if (entryList?.forwardTargets?.[0]) {
+        planningDir = entryList.forwardTargets[0];
+      } else if (workflow.lists?.[1]?.hasDirectory) {
+        planningDir = workflow.lists[1].id;
+      }
+    }
+  } catch { /* use default */ }
+
+  const scopesDir = path.join(projectRoot, 'scopes', planningDir);
+  if (!fs.existsSync(scopesDir)) {
+    fs.mkdirSync(scopesDir, { recursive: true });
+  }
+
+  const cardPath = path.join(scopesDir, '001-welcome.md');
+  if (fs.existsSync(cardPath)) return; // don't overwrite
+
+  const content = `---
+title: Welcome to Orbital Command
+status: ${planningDir}
+priority: low
+tags: [onboarding]
+---
+
+# Welcome to Orbital Command
+
+Your project is set up and ready to go. Here are some things to try:
+
+## Getting Started
+
+1. **Create a scope** — Scopes are units of work. Use \`/scope-create\` in Claude Code or create a markdown file in the \`scopes/\` directory.
+2. **Explore the dashboard** — Use the sidebar to navigate between views: Kanban, Primitives, Guards, Repo, Sessions, and Workflow.
+3. **Launch a session** — Start a Claude Code session from the Sessions view to begin working on this scope.
+
+## Key Concepts
+
+- **Scopes** are markdown files with YAML frontmatter that track units of work
+- **Workflow** defines the columns and transitions on your Kanban board
+- **Guards** enforce quality gates before status transitions
+- **Primitives** are the hooks, skills, and agents that power your setup
+
+You can archive this card once you're comfortable with the basics.
+`;
+
+  fs.writeFileSync(cardPath, content, 'utf8');
 }

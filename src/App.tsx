@@ -44,8 +44,8 @@ class OnboardingErrorBoundary extends Component<{ children: ReactNode }, { hasEr
     // inactive default when the context is missing, so SpotlightOverlay
     // renders nothing and the rest of the app works normally.
     return this.state.hasError
-      ? <TooltipProvider>{this.props.children}</TooltipProvider>
-      : <OnboardingProvider><TooltipProvider>{this.props.children}</TooltipProvider></OnboardingProvider>;
+      ? this.props.children
+      : <OnboardingProvider>{this.props.children}</OnboardingProvider>;
   }
 }
 
@@ -77,11 +77,13 @@ function AppInner() {
 export default function App() {
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <TooltipProvider>
       <ProjectProvider>
       <WorkflowProvider>
         <AppInner />
       </WorkflowProvider>
       </ProjectProvider>
+      </TooltipProvider>
     </BrowserRouter>
   );
 }

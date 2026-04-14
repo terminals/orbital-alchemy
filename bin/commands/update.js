@@ -1,6 +1,8 @@
+import fs from 'fs';
+import path from 'path';
 import {
   detectProjectRoot,
-  stampTemplateVersion,
+  getPackageVersion,
   loadSharedModule,
 } from '../lib/helpers.js';
 
@@ -11,7 +13,21 @@ export async function cmdUpdate(args) {
   const { runUpdate } = await loadSharedModule();
   runUpdate(projectRoot, { dryRun });
 
-  if (!dryRun) stampTemplateVersion(projectRoot);
+  if (!dryRun) {
+    const configPath = path.join(projectRoot, '.claude', 'orbital.config.json');
+    if (fs.existsSync(configPath)) {
+      try {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        const version = getPackageVersion();
+        if (config.templateVersion !== version) {
+          config.templateVersion = version;
+          const tmp = configPath + `.tmp.${process.pid}`;
+          fs.writeFileSync(tmp, JSON.stringify(config, null, 2) + '\n', 'utf8');
+          fs.renameSync(tmp, configPath);
+        }
+      } catch { /* ignore malformed config */ }
+    }
+  }
 }
 
 export async function cmdUninstall(args) {

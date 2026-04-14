@@ -38,7 +38,6 @@ export function cmdLaunchOrDev(forceViteFlag) {
   const env = {
     ...process.env,
     ORBITAL_LAUNCH_MODE: 'central',
-    ORBITAL_AUTO_REGISTER: projectRoot,
     ORBITAL_SERVER_PORT: String(serverPort),
   };
 

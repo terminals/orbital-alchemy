@@ -5,7 +5,7 @@ import { execFile } from 'child_process';
 import type { SyncService } from '../services/sync-service.js';
 import type { ProjectManager } from '../project-manager.js';
 import { isValidRelativePath } from '../utils/route-helpers.js';
-import { runInit } from '../init.js';
+import { runInit, TEMPLATES_DIR } from '../init.js';
 import { loadGlobalConfig } from '../global-config.js';
 import { getPackageVersion } from '../utils/package-info.js';
 
@@ -322,7 +322,7 @@ export function createSyncRoutes({ syncService, projectManager }: SyncRouteDeps)
 
 function seedWelcomeCard(projectRoot: string, preset: string): void {
   // Determine the planning directory from the preset
-  const presetsDir = path.join(path.dirname(path.dirname(new URL(import.meta.url).pathname)), 'templates', 'presets');
+  const presetsDir = path.join(TEMPLATES_DIR, 'presets');
   let planningDir = 'planning'; // default fallback
 
   try {

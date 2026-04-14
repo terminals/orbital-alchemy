@@ -2,8 +2,8 @@
  * Interactive CLI wizard — main orchestrator.
  *
  * Entry points:
- *   runSetupWizard()   — Phase 1: first-time Orbital setup (~/.orbital/)
- *   runProjectSetup()  — Phase 2: per-project scaffolding (.claude/)
+ *   runSetupWizard()   — First-time Orbital setup (~/.orbital/)
+ *   runHub()           — Context-aware hub menu (orbital)
  *   runConfigEditor()  — interactive config editor (orbital config)
  *   runDoctor()        — health diagnostics (orbital doctor)
  */
@@ -13,16 +13,11 @@ import path from 'path';
 import { spawn, execFileSync } from 'child_process';
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
-import { buildSetupState, buildProjectState } from './detect.js';
+import { buildSetupState } from './detect.js';
 import { phaseSetupWizard } from './phases/setup-wizard.js';
-import { phaseWelcome } from './phases/welcome.js';
-import { phaseProjectSetup } from './phases/project-setup.js';
-import { phaseWorkflowSetup } from './phases/workflow-setup.js';
-import { phaseConfirm, showPostInstall } from './phases/confirm.js';
 import { runConfigEditor } from './config-editor.js';
 import { runDoctor } from './doctor.js';
 import { isITerm2Available } from '../adapters/iterm2-adapter.js';
-import { registerProject } from '../global-config.js';
 
 export { runConfigEditor, runDoctor };
 
@@ -39,69 +34,7 @@ export async function runSetupWizard(packageVersion: string): Promise<void> {
 
   await phaseSetupWizard(state);
 
-  p.outro(`Run ${pc.cyan('orbital')} to launch the dashboard and add your first project.`);
-}
-
-// ─── Phase 2: Project Setup ────────────────────────────────────
-
-/**
- * Per-project setup. Walks through name, commands, workflow, then
- * calls runInit() to scaffold files into .claude/.
- */
-export async function runProjectSetup(projectRoot: string, packageVersion: string, args: string[]): Promise<void> {
-  const state = buildProjectState(projectRoot, packageVersion);
-  const force = args.includes('--force');
-
-  p.intro(`${pc.bgCyan(pc.black(' Orbital Command '))} ${pc.dim(`v${packageVersion}`)}`);
-
-  // Welcome gate: detect re-init / reconfigure
-  const forceFromWelcome = await phaseWelcome(state);
-  const useForce = force || forceFromWelcome;
-
-  await runProjectPhases(state, useForce);
-
-  p.outro(`Run ${pc.cyan('orbital')} to launch the dashboard.`);
-}
-
-// ─── Shared project phases (used by both flows) ────────────────
-
-/**
- * Run the project setup phases and install. Used by both
- * standalone runProjectSetup() and inline from runSetupWizard().
- */
-async function runProjectPhases(state: ReturnType<typeof buildProjectState>, useForce: boolean): Promise<void> {
-  await phaseProjectSetup(state);
-  await phaseWorkflowSetup(state);
-  await phaseConfirm(state);
-
-  // Install
-  const s = p.spinner();
-  s.start('Installing into project...');
-
-  try {
-    const { runInit } = await import('../init.js');
-
-    runInit(state.projectRoot, {
-      force: useForce,
-      quiet: true,
-      preset: state.workflowPreset,
-      projectName: state.projectName,
-      serverPort: state.serverPort,
-      clientPort: state.clientPort,
-      commands: state.selectedCommands,
-    });
-
-    registerProject(state.projectRoot, { name: state.projectName });
-    stampTemplateVersion(state.projectRoot, state.packageVersion);
-
-    s.stop('Project ready.');
-  } catch (err) {
-    s.stop('Installation failed.');
-    p.log.error(err instanceof Error ? err.message : String(err));
-    process.exit(1);
-  }
-
-  showPostInstall(state);
+  p.outro('Launching dashboard...');
 }
 
 // ─── Update Check ─────────────────────────────────────────────
@@ -158,7 +91,7 @@ async function checkForUpdate(
 
 // ─── Hub Menu ─────────────────────────────────────────────────
 
-export type HubAction = 'launch' | 'init' | 'config' | 'doctor' | 'update' | 'status' | 'reset';
+export type HubAction = 'launch' | 'config' | 'doctor' | 'update' | 'status' | 'reset';
 
 export interface HubResult {
   action: HubAction;
@@ -172,7 +105,6 @@ export interface HubResult {
  */
 export async function runHub(opts: {
   packageVersion: string;
-  isProjectInitialized: boolean;
   projectNames: string[];
   itermPromptShown: boolean;
   isMac: boolean;
@@ -343,28 +275,28 @@ export async function runHub(opts: {
     }
   }
 
-  // ── Build menu options based on project state ──
-  const projectHint = opts.projectNames.length > 0
-    ? pc.dim(` (${opts.projectNames.join(', ')})`)
+  // ── Show menu and pick action ──
+  result.action = await promptHubAction(opts.projectNames);
+  return result;
+}
+
+/**
+ * Show the hub menu and return the chosen action.
+ * Exported separately so the CLI can loop back after executing an action.
+ */
+export async function promptHubAction(projectNames: string[]): Promise<HubAction> {
+  const projectHint = projectNames.length > 0
+    ? pc.dim(` (${projectNames.join(', ')})`)
     : '';
 
-  const options: Array<{ value: HubAction; label: string; hint?: string }> = [];
-
-  if (opts.isProjectInitialized) {
-    options.push(
-      { value: 'launch', label: `Launch dashboard${projectHint}` },
-      { value: 'config', label: 'Config', hint: 'modify project settings' },
-      { value: 'doctor', label: 'Doctor', hint: 'health check & diagnostics' },
-      { value: 'update', label: 'Update templates', hint: 'sync to latest' },
-      { value: 'status', label: 'Status', hint: 'template sync status' },
-      { value: 'reset', label: 'Reset to defaults', hint: 'force-reset all templates' },
-    );
-  } else {
-    options.push(
-      { value: 'init', label: 'Initialize this project' },
-      { value: 'launch', label: `Launch dashboard${projectHint}` },
-    );
-  }
+  const options: Array<{ value: HubAction; label: string; hint?: string }> = [
+    { value: 'launch', label: `Launch dashboard${projectHint}` },
+    { value: 'config', label: 'Config', hint: 'modify project settings' },
+    { value: 'doctor', label: 'Doctor', hint: 'health check & diagnostics' },
+    { value: 'update', label: 'Update templates', hint: 'sync to latest' },
+    { value: 'status', label: 'Status', hint: 'template sync status' },
+    { value: 'reset', label: 'Reset to defaults', hint: 'force-reset all templates' },
+  ];
 
   const action = await p.select({
     message: 'What would you like to do?',
@@ -376,7 +308,7 @@ export async function runHub(opts: {
     process.exit(0);
   }
 
-  // ── Double-confirm for destructive reset ──
+  // Double-confirm for destructive reset
   if (action === 'reset') {
     p.note(
       'This will overwrite ALL hooks, skills, agents, and workflow config\n' +
@@ -389,36 +321,17 @@ export async function runHub(opts: {
       initialValue: false,
     });
     if (p.isCancel(confirmReset) || !confirmReset) {
-      p.cancel('Reset cancelled.');
-      process.exit(0);
+      return promptHubAction(projectNames);
     }
     const doubleConfirm = await p.confirm({
       message: 'This cannot be undone. Continue?',
       initialValue: false,
     });
     if (p.isCancel(doubleConfirm) || !doubleConfirm) {
-      p.cancel('Reset cancelled.');
-      process.exit(0);
+      return promptHubAction(projectNames);
     }
   }
 
-  result.action = action;
-  return result;
+  return action;
 }
 
-// ─── Template Version Stamping ─────────────────────────────────
-
-function stampTemplateVersion(projectRoot: string, packageVersion: string): void {
-  const configPath = path.join(projectRoot, '.claude', 'orbital.config.json');
-  if (!fs.existsSync(configPath)) return;
-
-  try {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    if (config.templateVersion !== packageVersion) {
-      config.templateVersion = packageVersion;
-      const tmp = configPath + `.tmp.${process.pid}`;
-      fs.writeFileSync(tmp, JSON.stringify(config, null, 2) + '\n', 'utf8');
-      fs.renameSync(tmp, configPath);
-    }
-  } catch { /* ignore malformed config */ }
-}

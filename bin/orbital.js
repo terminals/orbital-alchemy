@@ -10,7 +10,6 @@ import {
   loadSharedModule,
   loadWizardModule,
   orbitalSetupDone,
-  stampTemplateVersion,
   printHelp,
 } from './lib/helpers.js';
 
@@ -34,9 +33,10 @@ async function runHubFlow() {
   const wiz = await loadWizardModule();
   const hubVersion = getPackageVersion();
 
-  // First-time global setup — no menu, just run the wizard
+  // First-time global setup — run wizard then launch dashboard
   if (!orbitalSetupDone()) {
     await wiz.runSetupWizard(hubVersion);
+    cmdLaunchOrDev(false);
     return;
   }
 
@@ -45,23 +45,22 @@ async function runHubFlow() {
     path.join(hubRoot, '.claude', 'orbital.config.json')
   );
   const hubRegistry = loadRegistry();
-  const projectNames = (hubRegistry.projects || []).map(p => p.name);
 
-  // No registered projects — launch dashboard directly.
+  // Not an initialized project — launch dashboard directly.
   // The frontend Add Project modal handles project setup.
-  if (!isInitialized && projectNames.length === 0) {
+  if (!isInitialized) {
     cmdLaunchOrDev(false);
     return;
   }
 
-  // Show hub menu (initialized OR has registered projects)
+  // Show hub menu for initialized projects
+  const projectNames = (hubRegistry.projects || []).map(p => p.name);
   const projects = (hubRegistry.projects || [])
     .filter(p => p.enabled !== false)
     .map(p => ({ name: p.name, path: p.path }));
 
   const hubResult = await wiz.runHub({
     packageVersion: hubVersion,
-    isProjectInitialized: isInitialized,
     projectNames,
     itermPromptShown: hubRegistry.itermPromptShown === true,
     isMac: process.platform === 'darwin',
@@ -85,26 +84,29 @@ async function runHubFlow() {
     writeRegistryAtomic(hubRegistry);
   }
 
-  // Route the chosen action
-  switch (hubResult.action) {
-    case 'launch': cmdLaunchOrDev(false); break;
-    case 'init':
-      await wiz.runProjectSetup(hubRoot, hubVersion, []);
-      stampTemplateVersion(hubRoot);
-      break;
-    case 'config': await cmdConfig([]); break;
-    case 'doctor': await cmdDoctor(); break;
-    case 'update': await cmdUpdate([]); break;
-    case 'status': await cmdStatus(); break;
-    case 'reset': {
-      const { runInit } = await loadSharedModule();
-      runInit(hubRoot, { force: true });
-      stampTemplateVersion(hubRoot);
-      break;
+  // Route the chosen action, then loop back to menu
+  let action = hubResult.action;
+
+  while (true) {
+    switch (action) {
+      case 'launch': cmdLaunchOrDev(false); return;
+      case 'config': await cmdConfig([]); break;
+      case 'doctor': await cmdDoctor(); break;
+      case 'update': await cmdUpdate([]); break;
+      case 'status': await cmdStatus(); break;
+      case 'reset': {
+        const { runInit } = await loadSharedModule();
+        runInit(hubRoot, { force: true });
+        break;
+      }
+      default:
+        console.error(`Unknown action: ${action}`);
+        process.exit(1);
     }
-    default:
-      console.error(`Unknown action: ${hubResult.action}`);
-      process.exit(1);
+
+    // Show menu again after completing an action
+    console.log('');
+    action = await wiz.promptHubAction(projectNames);
   }
 }
 
@@ -116,12 +118,12 @@ const [command, ...args] = process.argv.slice(2);
 
 async function main() {
   switch (command) {
-    // Deprecated commands — silently redirect to hub
-    case 'init':
-    case 'setup':
-    case 'launch':
     case undefined:
       await runHubFlow();
+      break;
+
+    case 'launch':
+      cmdLaunchOrDev(false);
       break;
 
     // Active commands

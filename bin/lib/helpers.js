@@ -39,27 +39,11 @@ export function resolveBin(name) {
   return null;
 }
 
-export function isGitRepo() {
-  try {
-    execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: 'pipe' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export function detectProjectRoot() {
   try {
     return execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: 'pipe' }).trim();
   } catch {
     return process.cwd();
-  }
-}
-
-export function requireGitRepo() {
-  if (!isGitRepo()) {
-    console.error('Not a git repository. Run `orbital` from inside a project directory.');
-    process.exit(1);
   }
 }
 
@@ -82,21 +66,6 @@ export function getPackageVersion() {
   } catch {
     return '0.0.0';
   }
-}
-
-export function stampTemplateVersion(projectRoot) {
-  const configPath = path.join(projectRoot, '.claude', 'orbital.config.json');
-  if (!fs.existsSync(configPath)) return;
-
-  try {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    const version = getPackageVersion();
-    if (config.templateVersion !== version) {
-      config.templateVersion = version;
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
-      console.log(`  Stamped  templateVersion: ${version}`);
-    }
-  } catch { /* ignore malformed config */ }
 }
 
 export function openBrowser(url) {
@@ -188,6 +157,7 @@ Usage:
   orbital <command>      Run a specific command directly
 
 Commands:
+  launch            Launch the dashboard directly
   config            Modify project settings interactively
   doctor            Health check and version diagnostics
   update            Sync templates and apply migrations

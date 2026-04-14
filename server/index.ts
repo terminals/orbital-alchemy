@@ -20,8 +20,6 @@ import { createSyncRoutes } from './routes/sync-routes.js';
 import { seedGlobalPrimitives } from './init.js';
 import {
   ensureOrbitalHome,
-  loadGlobalConfig,
-  registerProject as registerProjectGlobal,
   GLOBAL_PRIMITIVES_DIR,
   ORBITAL_HOME,
 } from './global-config.js';
@@ -29,8 +27,6 @@ import {
 export interface CentralServerOverrides {
   port?: number;
   clientPort?: number;
-  /** If set, auto-register this project on first launch */
-  autoRegisterPath?: string;
 }
 
 export interface CentralServerInstance {
@@ -52,13 +48,6 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
   const log = createLogger('central');
   const port = overrides?.port ?? (Number(process.env.ORBITAL_SERVER_PORT) || 4444);
   const clientPort = overrides?.clientPort ?? (Number(process.env.ORBITAL_CLIENT_PORT) || 4445);
-
-  // Auto-register current project if registry is empty
-  const globalConfig = loadGlobalConfig();
-  if (globalConfig.projects.length === 0 && overrides?.autoRegisterPath) {
-    registerProjectGlobal(overrides.autoRegisterPath);
-    log.info('Auto-registered current project', { path: overrides.autoRegisterPath });
-  }
 
   const app = express();
   const httpServer = createServer(app);
@@ -261,10 +250,8 @@ const isDirectRun = process.argv[1] && (
 );
 
 if (isDirectRun) {
-  const projectRoot = process.env.ORBITAL_PROJECT_ROOT || process.cwd();
   startCentralServer({
     port: Number(process.env.ORBITAL_SERVER_PORT) || 4444,
-    autoRegisterPath: projectRoot,
   }).then(({ shutdown }) => {
     process.on('SIGINT', async () => {
       await shutdown();

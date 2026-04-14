@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Eye, EyeOff, FolderPlus, Check } from 'lucide-react';
+import { Eye, EyeOff, Check } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -7,9 +7,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { PROJECT_COLORS } from '../../shared/project-colors';
+import { ColorPicker } from '@/components/ui/color-picker';
 import type { Project } from '@/types';
 
 interface ProjectSettingsModalProps {
@@ -19,11 +18,7 @@ interface ProjectSettingsModalProps {
 }
 
 export function ProjectSettingsModal({ open, onClose, projects }: ProjectSettingsModalProps) {
-  const [adding, setAdding] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
-
   const [updateError, setUpdateError] = useState<string | null>(null);
 
   async function handleUpdate(id: string, updates: { color?: string; enabled?: boolean; name?: string }) {
@@ -43,30 +38,6 @@ export function ProjectSettingsModal({ open, onClose, projects }: ProjectSetting
       setUpdateError('Failed to update project');
     } finally {
       setUpdatingId(null);
-    }
-  }
-
-  async function handleFolderSelected(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    const firstPath = files[0].webkitRelativePath;
-    const folderName = firstPath.split('/')[0];
-    setAddError(null);
-    setAdding(true);
-    try {
-      const res = await fetch('/api/orbital/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: folderName }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? `HTTP ${res.status}`);
-      }
-    } catch (err) {
-      setAddError(err instanceof Error ? err.message : 'Failed to add project');
-    } finally {
-      setAdding(false);
-      if (folderInputRef.current) folderInputRef.current.value = '';
     }
   }
 
@@ -91,29 +62,8 @@ export function ProjectSettingsModal({ open, onClose, projects }: ProjectSetting
             />
           ))}
 
-          {/* Add project — ghost row */}
-          <div
-            onClick={() => !adding && folderInputRef.current?.click()}
-            className={cn(
-              'flex items-center gap-3 rounded border border-dashed border-white/[0.08] px-3 py-2',
-              'text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-white/[0.03]',
-              'transition-colors cursor-pointer',
-              adding && 'opacity-50 pointer-events-none',
-            )}
-          >
-            <FolderPlus className="h-3.5 w-3.5 shrink-0" />
-            <span className="text-xs">Add Project</span>
-          </div>
-          <input
-            ref={folderInputRef}
-            type="file"
-            // @ts-expect-error webkitdirectory is non-standard but widely supported
-            webkitdirectory=""
-            className="hidden"
-            onChange={(e) => handleFolderSelected(e.target.files)}
-          />
-          {(addError || updateError) && (
-            <p className="px-3 text-[11px] text-destructive">{addError || updateError}</p>
+          {updateError && (
+            <p className="px-3 text-[11px] text-destructive">{updateError}</p>
           )}
         </div>
       </DialogContent>
@@ -224,44 +174,3 @@ function ProjectRow({
   );
 }
 
-// ─── Color Picker (Popover) ─────────────────────────────────
-
-function ColorPicker({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: string;
-  onChange: (color: string) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          disabled={disabled}
-          className="h-5 w-5 rounded-full border border-white/20 shrink-0 transition-shadow hover:shadow-[0_0_8px_currentColor] disabled:opacity-50"
-          style={{ backgroundColor: `hsl(${value})` }}
-          title="Change color"
-        />
-      </PopoverTrigger>
-      <PopoverContent side="bottom" align="start" className="w-auto p-2">
-        <div className="grid grid-cols-5 gap-2">
-          {PROJECT_COLORS.map((color) => (
-            <button
-              key={color}
-              onClick={() => onChange(color)}
-              className={cn(
-                'h-6 w-6 rounded-full border-2 transition-transform hover:scale-110',
-                color === value
-                  ? 'border-white shadow-[0_0_8px_hsl(var(--primary))]'
-                  : 'border-transparent hover:border-white/40',
-              )}
-              style={{ backgroundColor: `hsl(${color})` }}
-            />
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}

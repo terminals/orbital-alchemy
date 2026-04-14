@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { useProjects } from '@/hooks/useProjectContext';
 import { TOUR_STEPS, type TourStep } from './tour-steps';
 
 // ─── Types ──────────────────────────────────────────────
@@ -242,10 +243,16 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   }, [state, isActive, cleanupWatcher]);
 
   // ─── Auto-trigger on first visit ────────────────────────
+  // Wait until at least one project is registered so the Add Project
+  // modal has closed and the dashboard has rendered with content.
+
+  const { projects, loading: projectsLoading } = useProjects();
 
   const hasAutoTriggered = useRef(false);
   useEffect(() => {
     if (hasAutoTriggered.current) return;
+    if (projectsLoading) return;
+    if (projects.length === 0) return;
     if (state === 'pending' && !isActive) {
       // Small delay to let the page render before starting the tour
       const timer = setTimeout(() => {
@@ -256,7 +263,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [state, isActive, resolveStep]);
+  }, [state, isActive, resolveStep, projects.length, projectsLoading]);
 
   // ─── Cleanup on unmount ───────────────────────────────
 

@@ -148,7 +148,13 @@ export async function startCentralServer(overrides?: CentralServerOverrides): Pr
   // ─── Static File Serving ─────────────────────────────────
 
   const __selfDir = path.dirname(fileURLToPath(import.meta.url));
-  const distDir = path.resolve(__selfDir, '../dist');
+  // Find package root — works from both source (server/) and compiled (dist/server/server/)
+  let pkgRoot = __selfDir;
+  while (pkgRoot !== path.dirname(pkgRoot)) {
+    if (fs.existsSync(path.join(pkgRoot, 'package.json'))) break;
+    pkgRoot = path.dirname(pkgRoot);
+  }
+  const distDir = path.join(pkgRoot, 'dist');
   const hasBuiltFrontend = fs.existsSync(path.join(distDir, 'index.html'));
   const devMode = !hasBuiltFrontend;
   if (hasBuiltFrontend) {

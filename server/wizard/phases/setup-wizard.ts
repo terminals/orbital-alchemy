@@ -7,12 +7,11 @@
 
 import fs from 'fs';
 import * as p from '@clack/prompts';
-import pc from 'picocolors';
 import type { SetupState } from '../types.js';
 import { NOTES } from '../ui.js';
-import { isValidProjectPath, resolveProjectPath, ORBITAL_HOME } from '../detect.js';
+import { ORBITAL_HOME } from '../detect.js';
 
-export async function phaseSetupWizard(state: SetupState): Promise<void> {
+export async function phaseSetupWizard(_state: SetupState): Promise<void> {
   // Welcome and core concepts
   p.note(NOTES.setupWelcome, 'Welcome');
 
@@ -40,39 +39,9 @@ export async function phaseSetupWizard(state: SetupState): Promise<void> {
     process.exit(1);
   }
 
-  // Offer to link projects
-  p.note(NOTES.addProject, 'Projects');
-
-  let addMore = true;
-  while (addMore) {
-    const wantsProject = await p.confirm({
-      message: state.linkedProjects.length === 0
-        ? 'Add a project now?'
-        : 'Add another project?',
-      initialValue: state.linkedProjects.length === 0,
-    });
-
-    if (p.isCancel(wantsProject) || !wantsProject) {
-      addMore = false;
-      break;
-    }
-
-    const projectPath = await p.text({
-      message: 'Project path',
-      placeholder: '~/Code/my-project',
-      validate: (val) => {
-        if (!val || !val.trim()) return 'Path is required';
-        return isValidProjectPath(val.trim());
-      },
-    });
-
-    if (p.isCancel(projectPath)) {
-      addMore = false;
-      break;
-    }
-
-    const resolved = resolveProjectPath(projectPath.trim());
-    state.linkedProjects.push(resolved);
-    p.log.success(`Added: ${pc.cyan(resolved)}`);
-  }
+  // Direct user to the dashboard for project setup
+  p.note(
+    'Launch the dashboard to add your first project.\nThe setup wizard will guide you through it.',
+    'Next Steps',
+  );
 }

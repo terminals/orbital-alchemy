@@ -32,7 +32,7 @@ Think of it as the control tower that turns a collection of AI-assisted coding s
 ## Quick Start
 
 ```bash
-npm install orbital-command
+npm install -g orbital-command
 cd my-project
 orbital
 ```

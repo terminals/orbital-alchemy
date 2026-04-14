@@ -90,7 +90,7 @@ export function HeroSection() {
             animate={{ opacity: 1 }}
             transition={{ duration: 0.6, delay: 1.3 }}
           >
-            <code>npm install orbital-command</code>
+            <code>npm install -g orbital-command</code>
           </motion.div>
         </motion.div>
 

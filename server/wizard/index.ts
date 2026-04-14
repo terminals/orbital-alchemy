@@ -19,7 +19,6 @@ import { phaseWelcome } from './phases/welcome.js';
 import { phaseProjectSetup } from './phases/project-setup.js';
 import { phaseWorkflowSetup } from './phases/workflow-setup.js';
 import { phaseConfirm, showPostInstall } from './phases/confirm.js';
-import { NOTES } from './ui.js';
 import { runConfigEditor } from './config-editor.js';
 import { runDoctor } from './doctor.js';
 import { isITerm2Available } from '../adapters/iterm2-adapter.js';
@@ -30,8 +29,8 @@ export { runConfigEditor, runDoctor };
 // ─── Phase 1: Setup Wizard ─────────────────────────────────────
 
 /**
- * First-time setup. Creates ~/.orbital/, seeds primitives,
- * optionally links projects (running Phase 2 for each).
+ * First-time setup. Creates ~/.orbital/ and seeds primitives.
+ * Project setup is now handled by the frontend Add Project modal.
  */
 export async function runSetupWizard(packageVersion: string): Promise<void> {
   const state = buildSetupState(packageVersion);
@@ -40,21 +39,7 @@ export async function runSetupWizard(packageVersion: string): Promise<void> {
 
   await phaseSetupWizard(state);
 
-  // If user linked projects, run Phase 2 for each
-  for (const projectRoot of state.linkedProjects) {
-    p.log.step(`Setting up ${pc.cyan(path.basename(projectRoot))}...`);
-    await runProjectSetupInline(projectRoot, packageVersion);
-  }
-
-  if (state.linkedProjects.length === 0) {
-    p.note(NOTES.setupComplete, 'Done');
-  }
-
-  p.outro(
-    state.linkedProjects.length > 0
-      ? `Run ${pc.cyan('orbital')} to launch the dashboard.`
-      : `Run ${pc.cyan('orbital')} in a project directory to get started.`
-  );
+  p.outro(`Run ${pc.cyan('orbital')} to launch the dashboard and add your first project.`);
 }
 
 // ─── Phase 2: Project Setup ────────────────────────────────────
@@ -119,23 +104,24 @@ async function runProjectPhases(state: ReturnType<typeof buildProjectState>, use
   showPostInstall(state);
 }
 
-/**
- * Inline project setup — called from Phase 1 when user links a project.
- * Skips intro/outro since the setup wizard already has those.
- */
-async function runProjectSetupInline(projectRoot: string, packageVersion: string): Promise<void> {
-  const state = buildProjectState(projectRoot, packageVersion);
-
-  // Skip welcome gate for inline — this is a fresh project being linked
-  await runProjectPhases(state, false);
-}
-
 // ─── Update Check ─────────────────────────────────────────────
 
 interface UpdateInfo {
   current: string;
   latest: string;
   isOutdated: boolean;
+}
+
+/** Returns true if `a` is older than `b` (semver comparison). */
+function isOlderThan(a: string, b: string): boolean {
+  const pa = a.match(/^(\d+)\.(\d+)\.(\d+)/);
+  const pb = b.match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!pa || !pb) return false;
+  for (let i = 1; i <= 3; i++) {
+    if (parseInt(pa[i]) < parseInt(pb[i])) return true;
+    if (parseInt(pa[i]) > parseInt(pb[i])) return false;
+  }
+  return false;
 }
 
 async function checkForUpdate(
@@ -146,7 +132,7 @@ async function checkForUpdate(
   if (cache.lastUpdateCheck && cache.latestVersion) {
     const age = Date.now() - new Date(cache.lastUpdateCheck).getTime();
     if (age < 24 * 60 * 60 * 1000) {
-      const isOutdated = cache.latestVersion !== currentVersion;
+      const isOutdated = isOlderThan(currentVersion, cache.latestVersion);
       return {
         info: { current: currentVersion, latest: cache.latestVersion, isOutdated },
         cacheChanged: false,
@@ -162,7 +148,7 @@ async function checkForUpdate(
     const data = await res.json() as { version: string };
     const latest = data.version;
     return {
-      info: { current: currentVersion, latest, isOutdated: latest !== currentVersion },
+      info: { current: currentVersion, latest, isOutdated: isOlderThan(currentVersion, latest) },
       cacheChanged: true,
     };
   } catch {

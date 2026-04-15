@@ -8,6 +8,7 @@ import type {
   ManifestValidationReport,
   UpdatePlanPreview,
 } from '@/types';
+import { formatActionKey } from './aggregate-manifest-utils';
 
 export function useAggregateManifest() {
   const { getApiBase } = useProjects();
@@ -89,7 +90,7 @@ export function useAggregateManifest() {
   // ─── Actions ──────────────────────────────────────────────
 
   const updateAll = useCallback(async () => {
-    setActionLoading('update-all');
+    setActionLoading(formatActionKey('update-all'));
     try {
       await fetch('/api/orbital/aggregate/manifest/update-all', {
         method: 'POST',
@@ -101,7 +102,7 @@ export function useAggregateManifest() {
   }, [fetchSummary]);
 
   const previewProjectUpdate = useCallback(async (projectId: string) => {
-    setActionLoading(`preview:${projectId}`);
+    setActionLoading(formatActionKey('preview', projectId));
     try {
       const res = await fetch(`${getApiBase(projectId)}/manifest/update`, {
         method: 'POST',
@@ -118,7 +119,7 @@ export function useAggregateManifest() {
   }, [getApiBase]);
 
   const applyProjectUpdate = useCallback(async (projectId: string) => {
-    setActionLoading(`update:${projectId}`);
+    setActionLoading(formatActionKey('update', projectId));
     try {
       const res = await fetch(`${getApiBase(projectId)}/manifest/update`, {
         method: 'POST',
@@ -135,7 +136,7 @@ export function useAggregateManifest() {
   }, [getApiBase, fetchSummary]);
 
   const initProject = useCallback(async (projectId: string) => {
-    setActionLoading(`init:${projectId}`);
+    setActionLoading(formatActionKey('init', projectId));
     try {
       await fetch(`${getApiBase(projectId)}/manifest/init`, {
         method: 'POST',
@@ -147,7 +148,7 @@ export function useAggregateManifest() {
   }, [getApiBase, fetchSummary]);
 
   const validateProject = useCallback(async (projectId: string) => {
-    setActionLoading(`validate:${projectId}`);
+    setActionLoading(formatActionKey('validate', projectId));
     try {
       const res = await fetch(`${getApiBase(projectId)}/manifest/validate`);
       if (res.ok) {
@@ -159,7 +160,7 @@ export function useAggregateManifest() {
   }, [getApiBase]);
 
   const pinFile = useCallback(async (projectId: string, file: string, reason?: string) => {
-    setActionLoading(`pin:${file}`);
+    setActionLoading(formatActionKey('pin', file));
     try {
       await fetch(`${getApiBase(projectId)}/manifest/pin`, {
         method: 'POST',
@@ -171,7 +172,7 @@ export function useAggregateManifest() {
   }, [getApiBase]);
 
   const unpinFile = useCallback(async (projectId: string, file: string) => {
-    setActionLoading(`unpin:${file}`);
+    setActionLoading(formatActionKey('unpin', file));
     try {
       await fetch(`${getApiBase(projectId)}/manifest/unpin`, {
         method: 'POST',
@@ -183,7 +184,7 @@ export function useAggregateManifest() {
   }, [getApiBase]);
 
   const resetFile = useCallback(async (projectId: string, file: string) => {
-    setActionLoading(`reset:${file}`);
+    setActionLoading(formatActionKey('reset', file));
     try {
       await fetch(`${getApiBase(projectId)}/manifest/reset`, {
         method: 'POST',
@@ -195,7 +196,7 @@ export function useAggregateManifest() {
   }, [getApiBase]);
 
   const revertFile = useCallback(async (projectId: string, file: string) => {
-    setActionLoading(`revert:${file}`);
+    setActionLoading(formatActionKey('revert', file));
     try {
       await fetch(`${getApiBase(projectId)}/manifest/revert`, {
         method: 'POST',
@@ -207,7 +208,7 @@ export function useAggregateManifest() {
   }, [getApiBase]);
 
   const getDiff = useCallback(async (projectId: string, file: string, status?: ManifestFileEntry['status']) => {
-    setActionLoading(`diff:${file}`);
+    setActionLoading(formatActionKey('diff', file));
     setDiffFile(file);
     setDiffFileStatus(status ?? null);
     setDiffProjectId(projectId);
@@ -239,3 +240,15 @@ export function useAggregateManifest() {
     getDiff, clearDiff,
   };
 }
+
+// Re-export consumer-facing utils for components that inspect hook state
+export {
+  formatActionKey,
+  parseActionKey,
+  isActionLoading,
+  isProjectActionLoading,
+  isFileActionLoading,
+  getFileStatusLabel,
+  fileNeedsAttention,
+  canRevertFile,
+} from './aggregate-manifest-utils';

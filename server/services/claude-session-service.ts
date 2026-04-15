@@ -59,7 +59,8 @@ export interface SessionStats {
   };
 }
 
-function getSessionsDir(projectRoot?: string): string {
+function getSessionsDir(projectRoot: string): string {
+  // Guard kept for safety — callers must always provide projectRoot
   if (!projectRoot) throw new Error('projectRoot is required for getSessionsDir');
   return getClaudeSessionsDir(projectRoot);
 }
@@ -147,7 +148,7 @@ async function parseSessionFile(filePath: string): Promise<ClaudeSession | null>
   };
 }
 
-export async function getClaudeSessions(since?: string, projectRoot?: string): Promise<ClaudeSession[]> {
+export async function getClaudeSessions(since: string | undefined, projectRoot: string): Promise<ClaudeSession[]> {
   const sessionsDir = getSessionsDir(projectRoot);
   const cached = cacheByDir.get(sessionsDir);
   if (cached && Date.now() < cached.expiry) {
@@ -250,7 +251,7 @@ function extractFirstUserMessage(lines: string[], max: number): string | null {
  * Parse a full JSONL file and return detailed stats grouped by line type.
  * This is heavier than parseSessionFile — only called for the detail view.
  */
-export function getSessionStats(claudeSessionId: string, projectRoot?: string): SessionStats | null {
+export function getSessionStats(claudeSessionId: string, projectRoot: string): SessionStats | null {
   const filePath = path.join(getSessionsDir(projectRoot), `${claudeSessionId}.jsonl`);
   if (!fs.existsSync(filePath)) return null;
 
@@ -362,7 +363,7 @@ export function getSessionStats(claudeSessionId: string, projectRoot?: string): 
  * 2. For each scope, parse the sessions JSON: Record<phase, uuid[]>
  * 3. For each (phase, uuid), UPSERT into sessions table with JSONL metadata if available
  */
-export async function syncClaudeSessionsToDB(db: Database.Database, scopeService: ScopeService, projectRoot?: string): Promise<number> {
+export async function syncClaudeSessionsToDB(db: Database.Database, scopeService: ScopeService, projectRoot: string): Promise<number> {
   cacheByDir.clear(); // Force fresh read from filesystem
 
   const scopeRows = scopeService.getAll()

@@ -8,6 +8,7 @@ import { DEFAULT_DISPATCH_FLAGS, DEFAULT_DISPATCH_CONFIG, validateDispatchFlags,
 import type { DispatchFlags, DispatchConfig } from '../../shared/api-types.js';
 import { getClaudeSessions, getSessionStats } from '../services/claude-session-service.js';
 import { getActiveScopeIds, getAbandonedScopeIds } from '../utils/dispatch-utils.js';
+import { getITerm2Status, launchITerm2, waitForITerm2Ready } from '../adapters/iterm2-adapter.js';
 import { ConfigService, isValidPrimitiveType } from '../services/config-service.js';
 import { GLOBAL_PRIMITIVES_DIR } from '../global-config.js';
 import { WorkflowEngine } from '../../shared/workflow-engine.js';
@@ -714,6 +715,30 @@ export function createAggregateRoutes({ projectManager, io, syncService }: Aggre
     }
 
     res.json({ active: null });
+  });
+
+  /** POST /aggregate/dispatch/iterm-launch — open iTerm2 and wait for it to be ready. */
+  router.post('/aggregate/dispatch/iterm-launch', async (_req, res) => {
+    const initial = getITerm2Status();
+    if (initial.running) {
+      res.json({ ok: true, status: 'running' as const });
+      return;
+    }
+    if (!initial.installed) {
+      res.json({ ok: false, status: 'not-installed' as const });
+      return;
+    }
+    try {
+      await launchITerm2();
+      if (await waitForITerm2Ready()) {
+        res.json({ ok: true, status: 'running' as const });
+      } else {
+        res.json({ ok: false, status: 'installed' as const });
+      }
+    } catch (err) {
+      log.error('iTerm2 launch failed', { error: String(err) });
+      res.status(500).json({ ok: false, status: 'installed' as const, error: String(err) });
+    }
   });
 
   // ─── Aggregate: Manifest Health ────────────────────────────

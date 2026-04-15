@@ -2,7 +2,8 @@ import { Router } from 'express';
 import type Database from 'better-sqlite3';
 import type { Emitter } from '../project-emitter.js';
 import type { ScopeService } from '../services/scope-service.js';
-import { launchInCategorizedTerminal, escapeForAnsiC, shellQuote, buildSessionName, snapshotSessionPids, discoverNewSession, renameSession } from '../utils/terminal-launcher.js';
+import { launchInCategorizedTerminal, launchInTerminal, escapeForAnsiC, shellQuote, buildSessionName, snapshotSessionPids, discoverNewSession, renameSession } from '../utils/terminal-launcher.js';
+import { isITerm2Available } from '../adapters/iterm2-adapter.js';
 import { resolveDispatchEvent, resolveAbandonedDispatchesForScope, getActiveScopeIds, getAbandonedScopeIds, linkPidToDispatch } from '../utils/dispatch-utils.js';
 import type { WorkflowEngine } from '../../shared/workflow-engine.js';
 import type { OrbitalConfig } from '../config.js';
@@ -212,6 +213,27 @@ export function createDispatchRoutes({ db, io, scopeService, projectRoot, engine
     } catch (err) {
       log.error('Error dismissing abandoned dispatches', { error: String(err) });
       res.status(500).json({ error: 'Internal server error', details: String(err) });
+    }
+  });
+
+  /** GET /dispatch/iterm-status — check if iTerm2 is available on the host system. */
+  router.get('/dispatch/iterm-status', (_req, res) => {
+    res.json({ available: isITerm2Available() });
+  });
+
+  /** POST /dispatch/iterm-launch — launch a raw command in iTerm2. */
+  router.post('/dispatch/iterm-launch', async (req, res) => {
+    const { command } = req.body as { command?: string };
+    if (!command) {
+      res.status(400).json({ error: 'command is required' });
+      return;
+    }
+    try {
+      await launchInTerminal(command);
+      res.json({ ok: true });
+    } catch (err) {
+      log.error('iTerm launch failed', { error: String(err) });
+      res.status(500).json({ error: 'Failed to launch terminal', details: String(err) });
     }
   });
 

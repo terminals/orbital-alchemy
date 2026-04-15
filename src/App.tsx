@@ -4,6 +4,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { ProjectProvider } from '@/hooks/useProjectContext';
 import { WorkflowProvider } from '@/hooks/useWorkflow';
 import { ActiveDispatchContext, useActiveDispatchProvider } from '@/hooks/useActiveDispatches';
+import { DispatchGuardProvider } from '@/hooks/useDispatchGuard';
 import { OnboardingProvider } from '@/components/onboarding/OnboardingProvider';
 import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { ScopeBoard } from '@/views/ScopeBoard';
@@ -54,6 +55,7 @@ function AppInner() {
 
   return (
     <ActiveDispatchContext.Provider value={activeDispatchCtx}>
+      <DispatchGuardProvider>
       <OnboardingErrorBoundary>
         <Routes>
           <Route path="landing" element={<Suspense fallback={null}><Landing /></Suspense>} />
@@ -70,6 +72,7 @@ function AppInner() {
           </Route>
         </Routes>
       </OnboardingErrorBoundary>
+      </DispatchGuardProvider>
     </ActiveDispatchContext.Provider>
   );
 }

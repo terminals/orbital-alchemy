@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TOUR_STEPS } from '../src/components/onboarding/tour-steps';
+import { TOUR_STEPS } from './tour-steps';
 
 describe('onboarding tour steps', () => {
   it('should have at least one step', () => {

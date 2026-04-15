@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { ArrowLeft, Terminal, ChevronRight } from 'lucide-react';
 import { useProjectUrl } from '@/hooks/useProjectUrl';
+import { useDispatchGuard } from '@/hooks/useDispatchGuard';
+import { isITermError } from '@/lib/iterm-errors';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -50,6 +52,7 @@ interface SessionContent {
 
 export function SessionPanel({ sessions, loading }: SessionPanelProps) {
   const buildUrl = useProjectUrl();
+  const { showITermModal } = useDispatchGuard();
   const [selected, setSelected] = useState<EnrichedSession | null>(null);
   const [content, setContent] = useState<SessionContent | null>(null);
   const [contentLoading, setContentLoading] = useState(false);
@@ -77,17 +80,22 @@ export function SessionPanel({ sessions, loading }: SessionPanelProps) {
 
     setResuming(true);
     try {
-      await fetch(buildUrl(`/sessions/${selected.id}/resume`), {
+      const res = await fetch(buildUrl(`/sessions/${selected.id}/resume`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ claude_session_id: sessionId }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const itermStatus = isITermError(body.details ?? body.error ?? '');
+        if (itermStatus) showITermModal(itermStatus);
+      }
     } catch {
       // silent
     } finally {
       resumeTimerRef.current = setTimeout(() => setResuming(false), 2000);
     }
-  }, [selected, buildUrl]);
+  }, [selected, buildUrl, showITermModal]);
 
   if (loading) {
     return (

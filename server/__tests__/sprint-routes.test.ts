@@ -115,4 +115,38 @@ describe('sprint-routes', () => {
       expect(res.status).toBe(200);
     });
   });
+
+  describe('GET /sprints/:id/graph', () => {
+    it('returns execution graph', async () => {
+      const res = await request(app).get('/api/orbital/sprints/1/graph');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ nodes: [], edges: [] });
+      expect(mockSprintOrchestrator.getExecutionGraph).toHaveBeenCalledWith(1);
+    });
+
+    it('returns 404 for unknown sprint', async () => {
+      mockSprintOrchestrator.getExecutionGraph.mockReturnValueOnce(null);
+
+      const res = await request(app).get('/api/orbital/sprints/999/graph');
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain('Sprint not found');
+    });
+  });
+
+  describe('POST /sprints/:id/cancel', () => {
+    it('cancels a sprint', async () => {
+      const res = await request(app).post('/api/orbital/sprints/1/cancel');
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(mockSprintOrchestrator.cancelSprint).toHaveBeenCalledWith(1);
+    });
+
+    it('returns 400 when sprint cannot be cancelled', async () => {
+      mockSprintOrchestrator.cancelSprint.mockReturnValueOnce(false);
+
+      const res = await request(app).post('/api/orbital/sprints/999/cancel');
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('cannot be cancelled');
+    });
+  });
 });

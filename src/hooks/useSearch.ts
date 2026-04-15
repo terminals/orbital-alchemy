@@ -4,12 +4,12 @@ import { scopeKey } from '@/lib/scope-key';
 
 export type SearchMode = 'filter' | 'highlight';
 
-function scopeName(filePath: string): string {
+export function scopeName(filePath: string): string {
   const base = filePath.split('/').pop() ?? '';
   return base.replace(/\.md$/, '').toLowerCase();
 }
 
-function matchesSearch(scope: Scope, query: string): boolean {
+export function matchesSearch(scope: Scope, query: string): boolean {
   const q = query.toLowerCase().trim();
   if (!q) return true;
   if (scope.title.toLowerCase().includes(q)) return true;

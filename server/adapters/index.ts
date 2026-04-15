@@ -4,16 +4,18 @@ import { ITerm2Adapter, isITerm2Available } from './iterm2-adapter.js';
 import { SubprocessAdapter } from './subprocess-adapter.js';
 
 export type { TerminalAdapter, LaunchOptions, CategorizedLaunchOptions, WindowCategory } from './terminal-adapter.js';
+export type { ITerm2Status } from './iterm2-adapter.js';
+export { isITerm2Available, isITerm2Running, isITerm2Installed, getITerm2Status, launchITerm2, waitForITerm2Ready } from './iterm2-adapter.js';
 
 let _adapter: TerminalAdapter | null = null;
 
 /**
  * Get the terminal adapter singleton.
  * Auto-detects based on config and platform:
- *   - "iterm2" → iTerm2 adapter (macOS only)
- *   - "subprocess" → cross-platform subprocess fallback
- *   - "none" → no-op adapter (for headless/CI)
- *   - "auto" → iTerm2 if available, else subprocess
+ *   - "iterm2" -> iTerm2 adapter (macOS only)
+ *   - "subprocess" -> cross-platform subprocess fallback
+ *   - "none" -> no-op adapter (for headless/CI)
+ *   - "auto" -> iTerm2 if available, else subprocess
  */
 export function getTerminalAdapter(): TerminalAdapter {
   if (_adapter) return _adapter;
@@ -38,4 +40,9 @@ export function getTerminalAdapter(): TerminalAdapter {
 
   _adapter = new SubprocessAdapter();
   return _adapter;
+}
+
+/** Clear the cached adapter so the next getTerminalAdapter() call re-evaluates. */
+export function resetTerminalAdapter(): void {
+  _adapter = null;
 }

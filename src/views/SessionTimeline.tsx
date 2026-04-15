@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Clock, ExternalLink, FileText, Terminal } from 'lucide-react';
 import { useProjects } from '@/hooks/useProjectContext';
+import { useDispatchGuard } from '@/hooks/useDispatchGuard';
+import { isITermError } from '@/lib/iterm-errors';
 import { format } from 'date-fns';
 import { socket } from '@/socket';
 import { useTheme } from '@/hooks/useTheme';
@@ -95,6 +97,7 @@ function actionLabel(action: string): string {
 
 export function SessionTimeline() {
   const { activeProjectId, getApiBase } = useProjects();
+  const { showITermModal } = useDispatchGuard();
   const [allSessions, setAllSessions] = useState<TimelineSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<TimelineSession | null>(null);
@@ -178,14 +181,19 @@ export function SessionTimeline() {
     setResuming(true);
     try {
       const base = getApiBase(selected.project_id ?? activeProjectId);
-      await fetch(`${base}/sessions/${selected.id}/resume`, {
+      const res = await fetch(`${base}/sessions/${selected.id}/resume`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ claude_session_id: sessionId }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const itermStatus = isITermError(body.details ?? body.error ?? '');
+        if (itermStatus) showITermModal(itermStatus);
+      }
     } catch { /* silent */ }
     finally { resumeTimerRef.current = setTimeout(() => setResuming(false), 2000); }
-  }, [selected, detail, getApiBase]);
+  }, [selected, detail, getApiBase, showITermModal]);
 
   useEffect(() => () => { clearTimeout(resumeTimerRef.current); }, []);
 

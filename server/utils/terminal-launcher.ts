@@ -8,10 +8,34 @@ import os from 'os';
 import { getConfig } from '../config.js';
 import { createLogger } from './logger.js';
 import { WorkflowEngine } from '../../shared/workflow-engine.js';
+import { getITerm2Status, launchITerm2, waitForITerm2Ready } from '../adapters/index.js';
 
 const log = createLogger('terminal');
 
 const execFileAsync = promisify(execFileCb);
+
+/**
+ * Ensure iTerm2 is running before attempting AppleScript dispatch.
+ * If installed but not running, auto-launches and polls up to 10s.
+ * Throws with structured error prefix for frontend parsing.
+ */
+async function ensureITerm2Running(): Promise<void> {
+  if (process.platform !== 'darwin') return;
+  const status = getITerm2Status();
+  if (status.running) return;
+
+  if (status.installed) {
+    try {
+      await launchITerm2();
+    } catch {
+      throw new Error('ITERM2_NOT_RUNNING: iTerm2 is installed but could not be started. Please open iTerm2 manually and retry.');
+    }
+    if (await waitForITerm2Ready()) return;
+    throw new Error('ITERM2_NOT_RUNNING: iTerm2 is installed but could not be started. Please open iTerm2 manually and retry.');
+  }
+
+  throw new Error('ITERM2_NOT_INSTALLED: iTerm2 is required for dispatch. Download it from https://iterm2.com');
+}
 
 // ─── iTerm2 Dynamic Profiles ────────────────────────────────
 
@@ -241,6 +265,7 @@ export function escapeForAnsiC(text: string): string {
  * and can't interpret builtins like `cd` or operators like `&&`.
  */
 export async function launchInTerminal(command: string): Promise<void> {
+  await ensureITerm2Running();
   const escaped = command.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   await execFileAsync('osascript', [
     '-e', 'tell application "iTerm2"',
@@ -338,6 +363,7 @@ async function createTabInWindow(windowId: number, command: string, category: Wi
  * Falls back to launchInTerminal() for unmapped commands.
  */
 export async function launchInCategorizedTerminal(command: string, fullCmd: string, tabName?: string | null): Promise<void> {
+  await ensureITerm2Running();
   const category = commandToWindowCategory(command);
 
   if (!category) {

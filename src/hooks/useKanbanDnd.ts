@@ -6,6 +6,8 @@ import { WorkflowNormalizer } from '../../shared/workflow-normalizer';
 import { useWorkflow } from './useWorkflow';
 import { useProjectUrl } from './useProjectUrl';
 import { useProjects } from './useProjectContext';
+import { useDispatchGuard } from './useDispatchGuard';
+import { isITermError } from '@/lib/iterm-errors';
 import {
   checkActiveDispatch,
   parseDragId,
@@ -19,6 +21,7 @@ export type { PendingDispatch, KanbanDndState } from './kanban-dnd-utils';
 export function useKanbanDnd({ scopes, sprints, onAddToSprint, onRemoveFromSprint, isPhaseView, projectEngines, defaultProjectId }: UseKanbanDndOptions & { defaultProjectId?: string }) {
   const { engine } = useWorkflow();
   const buildUrl = useProjectUrl();
+  const { showITermModal } = useDispatchGuard();
   const { getApiBase, hasMultipleProjects } = useProjects();
 
   // Build URL routed to a specific scope's project (for mutations in All Projects view)
@@ -287,7 +290,7 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint, onRemoveFromSprin
         const res = await fetch(url(`/ideas/${scope.slug}/promote`), { method: 'POST' });
         if (!res.ok) {
           const body = await res.json().catch(() => ({ error: 'Request failed' }));
-          throw new Error(body.error ?? `HTTP ${res.status}`);
+          throw new Error(body.details ?? body.error ?? `HTTP ${res.status}`);
         }
       } else if (command) {
         const res = await fetch(url('/dispatch'), {
@@ -306,7 +309,7 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint, onRemoveFromSprin
 
         if (!res.ok) {
           const body = await res.json().catch(() => ({ error: 'Request failed' }));
-          throw new Error(body.error ?? `HTTP ${res.status}`);
+          throw new Error(body.details ?? body.error ?? `HTTP ${res.status}`);
         }
       } else {
         const res = await fetch(url(`/scopes/${scope.id}`), {
@@ -329,13 +332,18 @@ export function useKanbanDnd({ scopes, sprints, onAddToSprint, onRemoveFromSprin
         dispatching: false,
       }));
     } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Dispatch failed';
+      const itermStatus = isITermError(msg);
+      if (itermStatus) showITermModal(itermStatus);
       setState((prev) => ({
         ...prev,
         dispatching: false,
-        error: err instanceof Error ? err.message : 'Dispatch failed',
+        showModal: itermStatus ? false : prev.showModal,
+        showPopover: itermStatus ? false : prev.showPopover,
+        error: itermStatus ? null : msg,
       }));
     }
-  }, [state, engine, buildScopeUrl, isPhaseView, projectEngines]);
+  }, [state, engine, buildScopeUrl, isPhaseView, projectEngines, showITermModal]);
 
   const selectDisambiguation = useCallback(async (edge: WorkflowEdge) => {
     const disambiguation = state.pendingDisambiguation;

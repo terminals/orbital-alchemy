@@ -33,7 +33,6 @@ import { IdeaDetailModal } from '@/components/IdeaDetailModal';
 import { ScopeFilterBar } from '@/components/ScopeFilterBar';
 import { SearchInput } from '@/components/SearchInput';
 import { SprintPreflightModal } from '@/components/SprintPreflightModal';
-
 import { SprintDependencyDialog } from '@/components/SprintDependencyDialog';
 import { ColumnHeaderActions } from '@/components/ColumnHeaderActions';
 import { sprintAwareCollision } from '@/lib/collisionDetection';
@@ -160,6 +159,7 @@ export function ScopeBoard() {
     projectEngines: isAllProjects ? projectEngines : undefined,
     defaultProjectId,
   });
+
 
   // 8px activation constraint so clicks pass through to detail modal
   const sensors = useSensors(

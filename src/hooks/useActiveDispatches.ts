@@ -4,12 +4,20 @@ import type { OrbitalEvent, Scope, DispatchResolvedPayload } from '@/types';
 import { useWorkflow } from './useWorkflow';
 import { useProjects } from './useProjectContext';
 import { scopeKey } from '@/lib/scope-key';
+import {
+  parseActiveScopeIds,
+  parseAbandonedScopes,
+  extractDispatchScopeIds,
+  extractResolvedScopeIds,
+  buildScopeKeys,
+  addToActiveSet,
+  removeFromActiveSet,
+  isNewDispatchEvent,
+  extractProjectId,
+} from './active-dispatch-utils';
+import type { AbandonedInfo } from './active-dispatch-utils';
 
-export interface AbandonedInfo {
-  from_status: string | null;
-  abandoned_at: string;
-  project_id?: string;
-}
+export type { AbandonedInfo };
 
 interface ActiveDispatchContextValue {
   activeScopes: Set<string>;
@@ -80,29 +88,10 @@ export function useActiveDispatchProvider(): ActiveDispatchContextValue {
       if (!mountedRef.current) return;
 
       // Parse active scopes — handle both old (number[]) and new ({scope_id, project_id}[]) shapes
-      const newActive = new Set<string>();
-      for (const item of data.scope_ids) {
-        if (typeof item === 'number') {
-          newActive.add(makeScopeKey(item));
-        } else {
-          newActive.add(scopeKey({ id: item.scope_id, project_id: item.project_id }));
-        }
-      }
-      setActiveScopes(newActive);
+      setActiveScopes(parseActiveScopeIds(data.scope_ids, makeScopeKey));
 
       if (data.abandoned_scopes) {
-        const map = new Map<string, AbandonedInfo>();
-        for (const item of data.abandoned_scopes) {
-          const key = item.project_id
-            ? scopeKey({ id: item.scope_id, project_id: item.project_id })
-            : makeScopeKey(item.scope_id);
-          map.set(key, {
-            from_status: item.from_status,
-            abandoned_at: item.abandoned_at,
-            project_id: item.project_id,
-          });
-        }
-        setAbandonedScopes(map);
+        setAbandonedScopes(parseAbandonedScopes(data.abandoned_scopes, makeScopeKey));
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -165,54 +154,28 @@ export function useActiveDispatchProvider(): ActiveDispatchContextValue {
   }, [fetchActiveScopes]);
 
   useEffect(() => {
-    function extractProjectId(payload: Record<string, unknown>): string | undefined {
-      return payload.project_id as string | undefined;
-    }
-
     function onNewEvent(event: OrbitalEvent) {
-      if (event.type !== 'DISPATCH' || event.data.resolved != null) return;
+      if (!isNewDispatchEvent(event)) return;
       const eventProjectId = extractProjectId(event as unknown as Record<string, unknown>);
 
-      // Collect scope IDs: single dispatch uses event.scope_id, batch uses data.scope_ids
-      const ids: number[] = [];
-      if (event.scope_id != null) ids.push(event.scope_id);
-      if (Array.isArray(event.data.scope_ids)) {
-        for (const id of event.data.scope_ids as number[]) {
-          if (!ids.includes(id)) ids.push(id);
-        }
-      }
+      const ids = extractDispatchScopeIds(event);
       if (ids.length === 0) return;
 
-      setActiveScopes((prev) => {
-        const keys = ids.map(id => scopeKey({ id, project_id: eventProjectId ?? activeProjectIdRef.current ?? undefined }));
-        const toAdd = keys.filter(k => !prev.has(k));
-        if (toAdd.length === 0) return prev;
-        const next = new Set(prev);
-        for (const k of toAdd) next.add(k);
-        return next;
-      });
-      for (const id of ids) {
-        removeFromAbandoned(scopeKey({ id, project_id: eventProjectId ?? activeProjectIdRef.current ?? undefined }));
+      const keys = buildScopeKeys(ids, eventProjectId, activeProjectIdRef.current ?? undefined);
+      setActiveScopes((prev) => addToActiveSet(prev, keys));
+      for (const k of keys) {
+        removeFromAbandoned(k);
       }
     }
 
     function onDispatchResolved(payload: DispatchResolvedPayload) {
       const eventProjectId = extractProjectId(payload as unknown as Record<string, unknown>);
-      // Collect all scope IDs: single dispatch + batch scope_ids
-      const ids: number[] = [];
-      if (payload.scope_id != null) ids.push(payload.scope_id);
-      if (Array.isArray(payload.scope_ids)) ids.push(...payload.scope_ids);
+      const ids = extractResolvedScopeIds(payload);
       if (ids.length === 0) return;
 
-      const keys = ids.map(id => scopeKey({ id, project_id: eventProjectId ?? activeProjectIdRef.current ?? undefined }));
+      const keys = buildScopeKeys(ids, eventProjectId, activeProjectIdRef.current ?? undefined);
 
-      setActiveScopes((prev) => {
-        const toRemove = keys.filter(k => prev.has(k));
-        if (toRemove.length === 0) return prev;
-        const next = new Set(prev);
-        for (const k of toRemove) next.delete(k);
-        return next;
-      });
+      setActiveScopes((prev) => removeFromActiveSet(prev, keys));
 
       if (payload.outcome === 'abandoned') {
         fetchActiveScopes();
@@ -225,12 +188,7 @@ export function useActiveDispatchProvider(): ActiveDispatchContextValue {
       if (terminalStatuses.has(scope.status)) {
         const eventProjectId = extractProjectId(scope as unknown as Record<string, unknown>);
         const key = scopeKey({ id: scope.id, project_id: eventProjectId ?? scope.project_id ?? activeProjectIdRef.current ?? undefined });
-        setActiveScopes((prev) => {
-          if (!prev.has(key)) return prev;
-          const next = new Set(prev);
-          next.delete(key);
-          return next;
-        });
+        setActiveScopes((prev) => removeFromActiveSet(prev, [key]));
         // Terminal state clears abandoned
         removeFromAbandoned(key);
       }

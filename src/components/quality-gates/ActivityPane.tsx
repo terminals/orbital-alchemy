@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   ShieldAlert, Zap, Play,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { useDispatchGuard } from '@/hooks/useDispatchGuard';
+import { isITermError } from '@/lib/iterm-errors';
 import {
   ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis,
   Tooltip as RechartsTooltip,
@@ -29,6 +31,7 @@ const EVENT_FILTERS = [
 
 export function ActivityPane() {
   const buildUrl = useProjectUrl();
+  const { showITermModal } = useDispatchGuard();
   const { scopes } = useScopes();
   const { totalViolations, totalOverrides, loading: violationsLoading } = useViolations();
   const { trend, loading: trendLoading } = useEnforcementRules();
@@ -37,6 +40,9 @@ export function ActivityPane() {
   const [eventsLoading, setEventsLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [resumingSession, setResumingSession] = useState<string | null>(null);
+  const resumeTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => () => { clearTimeout(resumeTimerRef.current); }, []);
 
   const fetchEvents = useCallback(async () => {
     try {
@@ -77,18 +83,22 @@ export function ActivityPane() {
   async function handleResume(sessionId: string) {
     setResumingSession(sessionId);
     try {
-      // Fetch session to get claude_session_id
       const detailRes = await fetch(buildUrl(`/sessions/${sessionId}/content`));
       if (!detailRes.ok) return;
       const detail = await detailRes.json();
       if (!detail.claude_session_id) return;
-      await fetch(buildUrl(`/sessions/${sessionId}/resume`), {
+      const res = await fetch(buildUrl(`/sessions/${sessionId}/resume`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ claude_session_id: detail.claude_session_id }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const itermStatus = isITermError(body.details ?? body.error ?? '');
+        if (itermStatus) showITermModal(itermStatus);
+      }
     } catch { /* ok */ }
-    finally { setTimeout(() => setResumingSession(null), 2000); }
+    finally { resumeTimerRef.current = setTimeout(() => setResumingSession(null), 2000); }
   }
 
   return (

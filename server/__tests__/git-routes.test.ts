@@ -133,10 +133,10 @@ describe('git-routes', () => {
     it('connects via PAT when method is pat', async () => {
       const res = await request(app)
         .post('/api/orbital/github/connect')
-        .send({ method: 'pat', token: 'ghp_testtoken123' });
+        .send({ method: 'pat', token: 'test-token-not-a-real-pat' });
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(mockGithubService.connectWithToken).toHaveBeenCalledWith('ghp_testtoken123');
+      expect(mockGithubService.connectWithToken).toHaveBeenCalledWith('test-token-not-a-real-pat');
     });
 
     it('returns 500 on connection failure', async () => {

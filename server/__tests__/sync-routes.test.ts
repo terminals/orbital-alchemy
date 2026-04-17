@@ -333,12 +333,16 @@ describe('sync-routes', () => {
   // ─── Browse (task C2 #5) ──────────────────────────────
 
   describe('POST /api/orbital/projects/browse', () => {
-    it('returns selected folder path on macOS', async () => {
+    it('returns selected folder path on macOS, not_supported elsewhere', async () => {
       const res = await request(app).post('/api/orbital/projects/browse');
-      // On macOS (CI or local), the mock returns a path
       expect(res.status).toBe(200);
-      // The mock execFile returns '/tmp/selected-folder'
-      expect(res.body.path).toBe('/tmp/selected-folder');
+      if (process.platform === 'darwin') {
+        // Mocked execFile yields '/tmp/selected-folder'
+        expect(res.body.path).toBe('/tmp/selected-folder');
+      } else {
+        // Linux/Windows CI: handler short-circuits before execFile
+        expect(res.body.error).toBe('not_supported');
+      }
     });
   });
 
